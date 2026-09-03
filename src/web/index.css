@@ -1,0 +1,74 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/typography';
+
+/* Theme tokens. Light is the base; dark redefines the same names. */
+:root {
+  --bg: #f5f7f9;
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --ink: #1b222d;
+  --ink-2: #4e5a6b;
+  --ink-3: #8a94a3;
+  --line: #d5dbe3;
+  --accent: #0e7c74;
+  --accent-soft: rgba(14, 124, 116, 0.1);
+  --warn: #b4600a;
+  --warn-soft: rgba(180, 96, 10, 0.1);
+  --danger: #b42318;
+  --danger-soft: rgba(180, 35, 24, 0.08);
+  --ok: #1f7a3a;
+  --ok-soft: rgba(31, 122, 58, 0.1);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12161c;
+    --surface: #1a2028;
+    --surface-2: #232b35;
+    --ink: #e5e9ef;
+    --ink-2: #a3adbb;
+    --ink-3: #6b7683;
+    --line: #2e3742;
+    --accent: #3fc1b3;
+    --accent-soft: rgba(63, 193, 179, 0.14);
+    --warn: #f0a63a;
+    --warn-soft: rgba(240, 166, 58, 0.14);
+    --danger: #f97066;
+    --danger-soft: rgba(249, 112, 102, 0.12);
+    --ok: #4ade80;
+    --ok-soft: rgba(74, 222, 128, 0.12);
+  }
+}
+
+/* Expose the tokens as Tailwind utilities: bg-surface, text-ink, border-line, ... */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
