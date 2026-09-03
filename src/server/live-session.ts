@@ -13,11 +13,13 @@ import {
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import type {
+  CommandInfo,
   PermissionRequest,
   ServerMessage,
   SessionMeta,
   SessionStatus,
 } from '../shared/protocol.js';
+import { toCommandInfo } from './commands.js';
 
 /** Push-based async iterable that feeds user turns into the engine. */
 class InputQueue implements AsyncIterable<SDKUserMessage> {
@@ -57,6 +59,8 @@ type Pending = {
 
 export type LiveSessionOptions = {
   cwd: string;
+  /** Called once the engine reports its slash commands / skills. */
+  onCommands?: (commands: CommandInfo[]) => void;
   /** Resume this persisted session. When omitted a fresh session is created. */
   resume?: string;
   model?: string;
@@ -80,10 +84,13 @@ export class LiveSession {
   /** Everything the engine has emitted this process lifetime, minus stream events. */
   private readonly buffer: SDKMessage[] = [];
   private closed = false;
+  private terminalOnlyCommands: string[] = [];
+  private readonly onCommands: ((commands: CommandInfo[]) => void) | undefined;
 
   constructor(opts: LiveSessionOptions) {
     this.sessionId = opts.resume ?? randomUUID();
     this.cwd = opts.cwd;
+    this.onCommands = opts.onCommands;
     this.meta.permissionMode = opts.permissionMode ?? 'default';
     if (opts.model) this.meta.model = opts.model;
 
@@ -249,6 +256,7 @@ export class LiveSession {
         tools: message.tools,
         slashCommands: message.slash_commands,
       };
+      this.terminalOnlyCommands = message.terminal_slash_commands ?? [];
       this.setStatus('idle');
       this.broadcast({ type: 'meta', sessionId: this.sessionId, meta: this.meta });
       void this.loadInitDetails();
@@ -270,6 +278,7 @@ export class LiveSession {
   private async loadInitDetails() {
     try {
       const init = await this.q.initializationResult();
+      const commands = toCommandInfo(init.commands, this.terminalOnlyCommands);
       this.meta = {
         ...this.meta,
         models: init.models.map((m) => ({
@@ -277,8 +286,10 @@ export class LiveSession {
           label: m.displayName,
           description: m.description,
         })),
+        commands,
       };
       this.broadcast({ type: 'meta', sessionId: this.sessionId, meta: this.meta });
+      this.onCommands?.(commands);
     } catch (err) {
       console.error(`[engine ${this.shortId}] initializationResult failed: ${String(err)}`);
     }

@@ -5,13 +5,16 @@ import {
   renameSession,
   type PermissionMode,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { HistoryMessage, SessionSummary } from '../shared/protocol.js';
+import type { CommandInfo, HistoryMessage, SessionSummary } from '../shared/protocol.js';
+import { probeCommands } from './commands.js';
 import { LiveSession } from './live-session.js';
 
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 
 export class SessionManager {
   private readonly live = new Map<string, LiveSession>();
+  private commandsCache: CommandInfo[] | null = null;
+  private commandsProbe: Promise<CommandInfo[]> | null = null;
 
   constructor(readonly projectDir: string) {
     setInterval(() => this.reapIdle(), 5 * 60 * 1000).unref();
@@ -39,12 +42,32 @@ export class SessionManager {
       cwd: this.projectDir,
       ...(sessionId ? { resume: sessionId } : {}),
       ...opts,
+      onCommands: (commands) => {
+        this.commandsCache = commands;
+      },
     });
     this.live.set(session.sessionId, session);
     console.log(
       `[sessions] ${sessionId ? 'resumed' : 'started'} ${session.shortId} in ${this.projectDir}`,
     );
     return session;
+  }
+
+  /** Slash commands / skills for this project, from a live engine or a one-off probe. */
+  async commands(): Promise<CommandInfo[]> {
+    if (this.commandsCache) return this.commandsCache;
+    if (!this.commandsProbe) {
+      this.commandsProbe = probeCommands(this.projectDir)
+        .then((commands) => {
+          this.commandsCache = commands;
+          console.log(`[sessions] discovered ${commands.length} commands`);
+          return commands;
+        })
+        .finally(() => {
+          this.commandsProbe = null;
+        });
+    }
+    return this.commandsProbe;
   }
 
   async list(): Promise<SessionSummary[]> {

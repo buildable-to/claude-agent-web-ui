@@ -25,6 +25,14 @@ app.get('/api/config', (_req, res) => {
   res.json(body);
 });
 
+app.get('/api/commands', async (_req, res, next) => {
+  try {
+    res.json(await sessions.commands());
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.get('/api/tree', async (_req, res, next) => {
   try {
     res.json(await buildTree(config.projectDir));

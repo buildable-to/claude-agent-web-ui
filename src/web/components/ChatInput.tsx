@@ -1,6 +1,7 @@
-import { ArrowUp, Square } from 'lucide-react';
-import { useEffect, useRef, type KeyboardEvent } from 'react';
-import type { SessionStatus } from '@shared/protocol';
+import { ArrowUp, SlashSquare, Square } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import type { CommandInfo, SessionStatus } from '@shared/protocol';
+import { CommandPicker, matchCommands } from './CommandPicker';
 
 type Props = {
   value: string;
@@ -8,15 +9,44 @@ type Props = {
   status: SessionStatus | 'connecting';
   onSend: (text: string) => void;
   onStop: () => void;
+  commands: CommandInfo[];
+  commandsLoading: boolean;
   autoFocus?: boolean;
   /** Bumped by the parent when it wants the textarea focused (e.g. after inserting a path). */
   focusKey?: number;
 };
 
-export function ChatInput({ value, onChange, status, onSend, onStop, autoFocus, focusKey }: Props) {
+/** The picker is open while the draft is a lone "/word" with no space yet. */
+function pickerQuery(value: string): string | null {
+  if (!value.startsWith('/')) return null;
+  if (/\s/.test(value)) return null;
+  return value.slice(1);
+}
+
+export function ChatInput({
+  value,
+  onChange,
+  status,
+  onSend,
+  onStop,
+  commands,
+  commandsLoading,
+  autoFocus,
+  focusKey,
+}: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  const [active, setActive] = useState(0);
   const busy = status === 'running' || status === 'requires_action';
   const disabled = status === 'connecting';
+
+  const query = pickerQuery(value);
+  const pickerOpen = query !== null && dismissed !== value;
+  const matches = useMemo(() => (query === null ? [] : matchCommands(commands, query)), [commands, query]);
+
+  useEffect(() => {
+    setActive(0);
+  }, [query]);
 
   useEffect(() => {
     const el = ref.current;
@@ -36,7 +66,35 @@ export function ChatInput({ value, onChange, status, onSend, onStop, autoFocus, 
     onChange('');
   };
 
+  const pick = (c: CommandInfo) => {
+    onChange(`/${c.name} `);
+    setDismissed(null);
+    ref.current?.focus();
+  };
+
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (pickerOpen && matches.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActive((i) => (i + 1) % matches.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActive((i) => (i - 1 + matches.length) % matches.length);
+        return;
+      }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+        e.preventDefault();
+        pick(matches[active] ?? matches[0]!);
+        return;
+      }
+    }
+    if (pickerOpen && e.key === 'Escape') {
+      e.preventDefault();
+      setDismissed(value);
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       submit();
@@ -48,11 +106,21 @@ export function ChatInput({ value, onChange, status, onSend, onStop, autoFocus, 
       ? 'The engine stopped. Send a message to start it again.'
       : busy
         ? 'Send a follow-up. It runs after the current step.'
-        : 'Ask for a change, a plan, or a diagnosis…';
+        : 'Ask for a change, a plan, or a diagnosis… or type / for skills';
 
   return (
     <div className="mx-auto w-full max-w-3xl px-6 pt-3 pb-4">
-      <div className="focus-glow rounded-lg border border-line-2 bg-panel shadow-strong transition">
+      <div className="focus-glow relative rounded-lg border border-line-2 bg-panel shadow-strong transition">
+        {pickerOpen && (
+          <CommandPicker
+            commands={commands}
+            query={query ?? ''}
+            activeIndex={active}
+            loading={commandsLoading}
+            onHover={setActive}
+            onPick={pick}
+          />
+        )}
         <textarea
           ref={ref}
           value={value}
@@ -61,12 +129,27 @@ export function ChatInput({ value, onChange, status, onSend, onStop, autoFocus, 
           placeholder={placeholder}
           disabled={disabled}
           rows={1}
+          aria-autocomplete="list"
+          aria-expanded={pickerOpen}
           className="block w-full resize-none bg-transparent px-4 pt-3 pb-1.5 text-[13.5px] leading-relaxed text-ink outline-none placeholder:text-ink-3 disabled:opacity-60"
         />
         <div className="flex items-center justify-between gap-3 px-2.5 pb-2.5">
-          <span className="pl-1.5 text-[11px] text-ink-3">
-            Enter to send · Shift+Enter for a new line
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                onChange('/');
+                setDismissed(null);
+                ref.current?.focus();
+              }}
+              className="flex h-7 items-center gap-1 rounded-md px-2 text-[11.5px] font-medium text-ink-2 hover:bg-panel-2 hover:text-ink"
+              title="Browse skills"
+            >
+              <SlashSquare className="size-3.5" /> Skills
+              {commands.length > 0 && <span className="text-ink-3">{commands.length}</span>}
+            </button>
+            <span className="text-[11px] text-ink-3">Enter to send · Shift+Enter for a new line</span>
+          </div>
           <div className="flex items-center gap-2">
             {busy && (
               <button

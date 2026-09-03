@@ -8,6 +8,7 @@ import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { api } from './lib/api';
 import { ws, type ConnectionState } from './lib/ws';
+import { useCommands } from './state/useCommands';
 import { useSession } from './state/useSession';
 import { useSessions } from './state/useSessions';
 
@@ -36,6 +37,7 @@ export default function App() {
   }, [refresh]);
   const session = useSession(selected.id, selected.nonce, onTurnEnd);
   const { state } = session;
+  const { commands, loading: commandsLoading } = useCommands(state.meta.commands);
 
   // The tab itself reports state: a dot on the icon and a title prefix.
   useEffect(() => {
@@ -147,6 +149,8 @@ export default function App() {
           status={state.status}
           onSend={session.send}
           onStop={session.interrupt}
+          commands={commands}
+          commandsLoading={commandsLoading}
           autoFocus
           focusKey={focusKey}
         />

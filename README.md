@@ -58,6 +58,13 @@ allowed without asking, like in the terminal.
 The permission mode can be changed per session from the top bar. "Bypass all"
 never asks; use it only for throwaway work.
 
+## Skills
+
+Type `/` in the composer (or click **Skills**) to pick from the slash commands
+and skills the engine knows for this project: built-ins, your `.claude`
+commands and skills, and plugin skills. The list comes from the engine itself
+(`GET /api/commands` spawns it briefly the first time, then caches).
+
 ## Security
 
 This is a shell with a web page in front of it. The server binds to

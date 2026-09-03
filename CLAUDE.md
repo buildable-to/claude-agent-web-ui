@@ -29,6 +29,10 @@ everything to a React page over a WebSocket. See README.md for the user view.
   chips that expand into a timeline; auto-opens while the turn is live.
 - `src/web/components/FileTree.tsx` + `src/server/tree.ts` — project files
   panel (`GET /api/tree`), refreshed after every turn.
+- `src/server/commands.ts` — slash command / skill discovery: from a live
+  engine's initialize reply, or a throwaway `query()` probe (no message sent,
+  `persistSession: false`). Cached per server in SessionManager.
+- `src/web/components/CommandPicker.tsx` — the `/` picker in the composer.
 - Theme: Buildable's precision-dark CAD look, dark only. Tokens in
   `src/web/index.css` mirror `buildable/static/css/_variables.css` in the
   ezdxf-flask repo (DM Sans / Archivo / JetBrains Mono, blue accent). The

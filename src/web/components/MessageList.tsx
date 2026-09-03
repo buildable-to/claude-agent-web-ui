@@ -96,6 +96,14 @@ export function MessageList({ turns, status, loading, projectName, onSuggest }: 
                     {s}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => onSuggest('/')}
+                  className="pill border-accent/40 text-accent active:translate-y-px"
+                  title="Type / in the composer to see every skill"
+                >
+                  Browse skills <span className="font-mono">/</span>
+                </button>
               </div>
             </div>
           </div>

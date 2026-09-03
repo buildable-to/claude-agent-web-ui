@@ -26,6 +26,13 @@ export type PermissionRequest = {
 
 export type ModelOption = { value: string; label: string; description?: string };
 
+/** A slash command or skill the engine accepts in a message. */
+export type CommandInfo = {
+  name: string;
+  description: string;
+  argumentHint?: string;
+};
+
 export type SessionMeta = {
   model?: string;
   permissionMode?: PermissionMode;
@@ -33,6 +40,7 @@ export type SessionMeta = {
   claudeCodeVersion?: string;
   tools?: string[];
   slashCommands?: string[];
+  commands?: CommandInfo[];
   totalCostUsd?: number;
 };
 
