@@ -401,12 +401,12 @@ function applyUser(
   const command = /<command-name>([^<]*)<\/command-name>(?:.*?<command-args>([^<]*)<\/command-args>)?/s.exec(rawText);
   if (command) {
     const line = `${command[1]!.trim()} ${(command[2] ?? '').trim()}`.trim();
-    return addNote({ ...t, seen }, uuid, 'info', line.startsWith('/') ? line : `/${line}`);
+    return addNote(t, uuid, 'info', line.startsWith('/') ? line : `/${line}`);
   }
   const stdout = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(rawText);
   if (stdout) {
     const out = stripAnsi(stdout[1]!).trim();
-    return out ? addNote({ ...t, seen }, uuid, 'info', out.length > 400 ? `${out.slice(0, 400)}…` : out) : { ...t, seen };
+    return out ? addNote(t, uuid, 'info', out.length > 400 ? `${out.slice(0, 400)}…` : out) : { ...t, seen };
   }
 
   // Injected context (system reminders etc.) is not something the user typed.
@@ -414,7 +414,7 @@ function applyUser(
   if (!text && !images) return { ...t, seen };
 
   if (isSynthetic || /^\[Request interrupted/.test(text)) {
-    return addNote({ ...t, seen }, uuid, 'info', text.replace(/^\[|\]$/g, ''));
+    return addNote(t, uuid, 'info', text.replace(/^\[|\]$/g, ''));
   }
   const closed = closeOpenTurn({ ...t, seen });
   return { ...closed, turns: [...closed.turns, { kind: 'user', id: uuid, text, images }] };
