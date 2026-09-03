@@ -37,8 +37,11 @@ export type SessionMeta = {
 };
 
 export type ClientMessage =
-  | { type: 'attach'; sessionId: string | null; cwd?: string }
+  /** Subscribe to a session that is already running. Answered with `attached` or `not_live`. */
+  | { type: 'attach'; sessionId: string }
   | { type: 'detach'; sessionId: string }
+  /** Start (null) or resume (id) an engine and send the first message in one go. */
+  | { type: 'start'; sessionId: string | null; text: string; uuid?: string }
   | { type: 'send'; sessionId: string; text: string; uuid?: string }
   | {
       type: 'permission';
@@ -62,6 +65,7 @@ export type ServerMessage =
       pending: PermissionRequest[];
       meta: SessionMeta;
     }
+  | { type: 'not_live'; sessionId: string }
   | { type: 'message'; sessionId: string; message: SDKMessage }
   | { type: 'permission_request'; sessionId: string; request: PermissionRequest }
   | { type: 'permission_resolved'; sessionId: string; requestId: string }

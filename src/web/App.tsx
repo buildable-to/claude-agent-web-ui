@@ -22,7 +22,9 @@ export default function App() {
 
   useEffect(() => {
     api.config().then(setConfig).catch(() => setConfig(null));
-    return ws.onState(setConnection);
+    const off = ws.onState(setConnection);
+    setConnection(ws.state);
+    return off;
   }, []);
 
   // A new session gets its id from the server; keep the sidebar in sync.

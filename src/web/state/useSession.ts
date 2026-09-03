@@ -18,9 +18,11 @@ import {
 import { ws } from '@/lib/ws';
 
 export type SessionState = {
-  /** Id once the server has attached; null while a new session is starting. */
+  /** Known session id; null until a brand-new session has been started. */
   sessionId: string | null;
   cwd: string | null;
+  /** True while this page is subscribed to a running engine. */
+  attached: boolean;
   status: SessionStatus | 'connecting';
   meta: SessionMeta;
   transcript: Transcript;
@@ -34,13 +36,15 @@ type Action =
   | { type: 'history'; transcript: Transcript }
   | { type: 'server'; message: ServerMessage }
   | { type: 'local_user'; id: string; text: string }
+  | { type: 'starting' }
   | { type: 'error'; message: string | null };
 
 function initial(sessionId: string | null): SessionState {
   return {
     sessionId,
     cwd: null,
-    status: 'connecting',
+    attached: false,
+    status: sessionId ? 'connecting' : 'idle',
     meta: {},
     transcript: emptyTranscript(),
     pending: [],
@@ -57,6 +61,8 @@ function reducer(state: SessionState, action: Action): SessionState {
       return { ...state, transcript: action.transcript, loadingHistory: false };
     case 'local_user':
       return { ...state, transcript: addLocalUserTurn(state.transcript, action.id, action.text) };
+    case 'starting':
+      return { ...state, status: 'starting', error: null };
     case 'error':
       return { ...state, error: action.message };
     case 'server': {
@@ -69,6 +75,7 @@ function reducer(state: SessionState, action: Action): SessionState {
             ...state,
             sessionId: m.sessionId,
             cwd: m.cwd,
+            attached: true,
             status: m.status,
             meta: { ...state.meta, ...m.meta },
             pending: m.pending,
@@ -76,6 +83,8 @@ function reducer(state: SessionState, action: Action): SessionState {
             error: null,
           };
         }
+        case 'not_live':
+          return { ...state, attached: false, status: 'idle', pending: [] };
         case 'message':
           return { ...state, transcript: applyMessage(state.transcript, m.message) };
         case 'permission_request':
@@ -85,13 +94,19 @@ function reducer(state: SessionState, action: Action): SessionState {
         case 'permission_resolved':
           return { ...state, pending: state.pending.filter((p) => p.requestId !== m.requestId) };
         case 'status':
-          return { ...state, status: m.status };
+          return {
+            ...state,
+            status: m.status,
+            attached: m.status === 'closed' ? false : state.attached,
+            pending: m.status === 'closed' ? [] : state.pending,
+          };
         case 'meta':
           return { ...state, meta: { ...state.meta, ...m.meta } };
         case 'error':
           return {
             ...state,
             error: m.message,
+            status: state.status === 'starting' ? 'idle' : state.status,
             transcript: addNote(state.transcript, `err-${Date.now()}`, 'error', m.message),
           };
       }
@@ -101,29 +116,31 @@ function reducer(state: SessionState, action: Action): SessionState {
 }
 
 /**
- * Drives one chat: loads history, attaches to the live engine over the
- * WebSocket, and exposes the actions the UI needs.
+ * Drives one chat. Loads history for an existing session and subscribes to
+ * its engine if one is running. An engine is only started (or resumed) when
+ * the user sends a message, so opening the page or browsing old sessions
+ * never spawns processes.
  *
- * `requested` is the session the user picked (null = start a new one) and
- * `nonce` changes each time they pick, so picking "new" twice works.
+ * `requested` is the session the user picked (null = new) and `nonce`
+ * changes each time they pick, so picking "new" twice in a row works.
  */
 export function useSession(requested: string | null, nonce: number, onTurnEnd?: () => void) {
   const [state, dispatch] = useReducer(reducer, requested, initial);
   const activeId = useRef<string | null>(requested);
-  const pendingNew = useRef(requested === null);
+  const attached = useRef(false);
+  const awaitingNew = useRef(false);
   const turnEnd = useRef(onTurnEnd);
   turnEnd.current = onTurnEnd;
 
   useEffect(() => {
     let cancelled = false;
     activeId.current = requested;
-    pendingNew.current = requested === null;
+    attached.current = false;
+    awaitingNew.current = false;
     dispatch({ type: 'reset', sessionId: requested });
 
-    const attach = () => ws.send({ type: 'attach', sessionId: activeId.current });
-
-    (async () => {
-      if (requested) {
+    if (requested) {
+      void (async () => {
         try {
           const history = await api.history(requested);
           if (cancelled) return;
@@ -132,16 +149,17 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
           if (cancelled) return;
           dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
         }
-      }
-      if (!cancelled) attach();
-    })();
+        if (!cancelled) ws.send({ type: 'attach', sessionId: requested });
+      })();
+    }
 
     const unsubscribe = ws.subscribe((m) => {
       if (m.type === 'attached') {
-        if (activeId.current === null && pendingNew.current) {
+        if (activeId.current === null && awaitingNew.current) {
           activeId.current = m.sessionId;
-          pendingNew.current = false;
+          awaitingNew.current = false;
         } else if (m.sessionId !== activeId.current) return;
+        attached.current = true;
         dispatch({ type: 'server', message: m });
         return;
       }
@@ -149,28 +167,38 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
         if (m.type === 'error' && !m.sessionId) dispatch({ type: 'server', message: m });
         return;
       }
+      if (m.type === 'not_live' || (m.type === 'status' && m.status === 'closed')) {
+        attached.current = false;
+      }
       dispatch({ type: 'server', message: m });
       if (m.type === 'status' && (m.status === 'idle' || m.status === 'closed')) turnEnd.current?.();
     });
     const unsubState = ws.onState((s) => {
-      if (s === 'open' && activeId.current) attach();
+      // After a reconnect, re-subscribe to the engine if we had one.
+      if (s === 'open' && activeId.current && attached.current) {
+        ws.send({ type: 'attach', sessionId: activeId.current });
+      }
     });
 
     return () => {
       cancelled = true;
       unsubscribe();
       unsubState();
-      if (activeId.current) ws.send({ type: 'detach', sessionId: activeId.current });
+      if (activeId.current && attached.current) ws.send({ type: 'detach', sessionId: activeId.current });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requested, nonce]);
 
   const send = useCallback((text: string) => {
-    const id = activeId.current;
-    if (!id) return;
     const uuid = crypto.randomUUID();
     dispatch({ type: 'local_user', id: uuid, text });
-    ws.send({ type: 'send', sessionId: id, text, uuid });
+    if (attached.current && activeId.current) {
+      ws.send({ type: 'send', sessionId: activeId.current, text, uuid });
+      return;
+    }
+    if (activeId.current === null) awaitingNew.current = true;
+    dispatch({ type: 'starting' });
+    ws.send({ type: 'start', sessionId: activeId.current, text, uuid });
   }, []);
 
   const answerPermission = useCallback(
@@ -184,17 +212,17 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
 
   const interrupt = useCallback(() => {
     const id = activeId.current;
-    if (id) ws.send({ type: 'interrupt', sessionId: id });
+    if (id && attached.current) ws.send({ type: 'interrupt', sessionId: id });
   }, []);
 
   const setPermissionMode = useCallback((mode: PermissionMode) => {
     const id = activeId.current;
-    if (id) ws.send({ type: 'set_permission_mode', sessionId: id, mode });
+    if (id && attached.current) ws.send({ type: 'set_permission_mode', sessionId: id, mode });
   }, []);
 
   const setModel = useCallback((model: string | null) => {
     const id = activeId.current;
-    if (id) ws.send({ type: 'set_model', sessionId: id, model });
+    if (id && attached.current) ws.send({ type: 'set_model', sessionId: id, model });
   }, []);
 
   return { state, send, answerPermission, interrupt, setPermissionMode, setModel };

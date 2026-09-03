@@ -13,7 +13,7 @@ export function ChatInput({ status, onSend, onStop, autoFocus }: Props) {
   const [text, setText] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
   const busy = status === 'running' || status === 'requires_action';
-  const disabled = status === 'connecting' || status === 'closed';
+  const disabled = status === 'connecting';
 
   useEffect(() => {
     const el = ref.current;
@@ -50,7 +50,7 @@ export function ChatInput({ status, onSend, onStop, autoFocus }: Props) {
           onKeyDown={onKey}
           placeholder={
             status === 'closed'
-              ? 'This session has stopped. Reopen it from the list to continue.'
+              ? 'The engine stopped. Sending a message starts it again.'
               : busy
                 ? 'Send a follow-up (it will run after the current step)…'
                 : 'Message Claude… (Enter to send, Shift+Enter for a new line)'

@@ -1,6 +1,7 @@
 import type { IncomingMessage, Server } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage } from '../shared/protocol.js';
+import type { LiveSession } from './live-session.js';
 import type { SessionManager } from './session-manager.js';
 
 type Attachment = { unsubscribe: () => void };
@@ -49,19 +50,19 @@ export function attachWebSocket(server: Server, sessions: SessionManager) {
     async function handle(msg: ClientMessage) {
       switch (msg.type) {
         case 'attach': {
+          const session = sessions.get(msg.sessionId);
+          if (!session) {
+            send({ type: 'not_live', sessionId: msg.sessionId });
+            return;
+          }
+          attach(session);
+          return;
+        }
+        case 'start': {
           const session = await sessions.open(msg.sessionId);
-          attachments.get(session.sessionId)?.unsubscribe();
-          const unsubscribe = session.subscribe(send);
-          attachments.set(session.sessionId, { unsubscribe });
-          send({
-            type: 'attached',
-            sessionId: session.sessionId,
-            cwd: session.cwd,
-            status: session.status,
-            replay: session.replay,
-            pending: session.pendingRequests,
-            meta: session.meta,
-          });
+          attach(session);
+          const text = msg.text.trim();
+          if (text) session.send(text, msg.uuid);
           return;
         }
         case 'detach': {
@@ -96,6 +97,21 @@ export function attachWebSocket(server: Server, sessions: SessionManager) {
           return;
         }
       }
+    }
+
+    function attach(session: LiveSession) {
+      attachments.get(session.sessionId)?.unsubscribe();
+      const unsubscribe = session.subscribe(send);
+      attachments.set(session.sessionId, { unsubscribe });
+      send({
+        type: 'attached',
+        sessionId: session.sessionId,
+        cwd: session.cwd,
+        status: session.status,
+        replay: session.replay,
+        pending: session.pendingRequests,
+        meta: session.meta,
+      });
     }
 
     function requireLive(sessionId: string) {

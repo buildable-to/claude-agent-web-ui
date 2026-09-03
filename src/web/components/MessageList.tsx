@@ -33,7 +33,8 @@ export function MessageList({ turns, status, loading, projectName }: Props) {
 
   const last = turns[turns.length - 1];
   const waiting =
-    status === 'running' && (!last || last.kind !== 'assistant' || last.blocks.length === 0);
+    (status === 'running' || status === 'starting') &&
+    (!last || last.kind !== 'assistant' || last.blocks.length === 0);
 
   return (
     <div ref={ref} className="min-h-0 flex-1 overflow-y-auto">
@@ -55,7 +56,7 @@ export function MessageList({ turns, status, loading, projectName }: Props) {
         {waiting && (
           <div className="flex items-center gap-2 text-[13px] text-ink-3">
             <span className="size-2 animate-pulse rounded-full bg-accent" />
-            Working…
+            {status === 'starting' ? 'Starting Claude Code…' : 'Working…'}
           </div>
         )}
       </div>
