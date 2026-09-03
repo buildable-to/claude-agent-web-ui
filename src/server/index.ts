@@ -25,9 +25,9 @@ app.get('/api/config', (_req, res) => {
   res.json(body);
 });
 
-app.get('/api/commands', async (_req, res, next) => {
+app.get('/api/engine', async (_req, res, next) => {
   try {
-    res.json(await sessions.commands());
+    res.json(await sessions.engineInfo());
   } catch (err) {
     next(err);
   }

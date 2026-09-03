@@ -5,16 +5,16 @@ import {
   renameSession,
   type PermissionMode,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { CommandInfo, HistoryMessage, SessionSummary } from '../shared/protocol.js';
-import { probeCommands } from './commands.js';
+import type { EngineInfo, HistoryMessage, SessionSummary } from '../shared/protocol.js';
+import { probeEngine } from './commands.js';
 import { LiveSession } from './live-session.js';
 
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 
 export class SessionManager {
   private readonly live = new Map<string, LiveSession>();
-  private commandsCache: CommandInfo[] | null = null;
-  private commandsProbe: Promise<CommandInfo[]> | null = null;
+  private infoCache: EngineInfo | null = null;
+  private infoProbe: Promise<EngineInfo> | null = null;
 
   constructor(readonly projectDir: string) {
     setInterval(() => this.reapIdle(), 5 * 60 * 1000).unref();
@@ -42,8 +42,8 @@ export class SessionManager {
       cwd: this.projectDir,
       ...(sessionId ? { resume: sessionId } : {}),
       ...opts,
-      onCommands: (commands) => {
-        this.commandsCache = commands;
+      onInfo: (info) => {
+        this.infoCache = info;
       },
     });
     this.live.set(session.sessionId, session);
@@ -53,21 +53,21 @@ export class SessionManager {
     return session;
   }
 
-  /** Slash commands / skills for this project, from a live engine or a one-off probe. */
-  async commands(): Promise<CommandInfo[]> {
-    if (this.commandsCache) return this.commandsCache;
-    if (!this.commandsProbe) {
-      this.commandsProbe = probeCommands(this.projectDir)
-        .then((commands) => {
-          this.commandsCache = commands;
-          console.log(`[sessions] discovered ${commands.length} commands`);
-          return commands;
+  /** Commands, skills and models for this project, from a live engine or a one-off probe. */
+  async engineInfo(): Promise<EngineInfo> {
+    if (this.infoCache) return this.infoCache;
+    if (!this.infoProbe) {
+      this.infoProbe = probeEngine(this.projectDir)
+        .then((info) => {
+          this.infoCache = info;
+          console.log(`[sessions] discovered ${info.commands.length} commands, ${info.models.length} models`);
+          return info;
         })
         .finally(() => {
-          this.commandsProbe = null;
+          this.infoProbe = null;
         });
     }
-    return this.commandsProbe;
+    return this.infoProbe;
   }
 
   async list(): Promise<SessionSummary[]> {

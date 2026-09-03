@@ -1,5 +1,5 @@
 import { PanelRight } from 'lucide-react';
-import type { PermissionMode, SessionMeta, SessionStatus } from '@shared/protocol';
+import type { ModelOption, PermissionMode, SessionMeta, SessionStatus } from '@shared/protocol';
 import { money, shortPath } from '@/lib/format';
 
 type Props = {
@@ -8,6 +8,7 @@ type Props = {
   status: SessionStatus | 'connecting';
   connection: 'connecting' | 'open' | 'closed';
   meta: SessionMeta;
+  models: ModelOption[];
   filesOpen: boolean;
   onToggleFiles: () => void;
   onModel: (model: string | null) => void;
@@ -47,16 +48,20 @@ export function TopBar({
   status,
   connection,
   meta,
+  models,
   filesOpen,
   onToggleFiles,
   onModel,
   onMode,
 }: Props) {
   const s = statusLabel(status, connection);
-  const models = meta.models ?? [];
-  const modelValue = meta.model ?? '';
-  const modelKnown = models.some((m) => m.value === modelValue);
-  const locked = status === 'closed' || status === 'connecting';
+  const current = meta.model ?? '';
+  // The engine reports a resolved id; the menu lists aliases. Match either.
+  const match =
+    models.find((m) => m.value === current || m.resolved === current) ??
+    (current ? undefined : (models.find((m) => m.value === 'default') ?? models[0]));
+  const modelValue = match?.value ?? '';
+  const locked = status === 'connecting';
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-5">
@@ -78,12 +83,12 @@ export function TopBar({
       )}
       <select
         className="pill"
-        value={modelKnown ? modelValue : ''}
+        value={modelValue}
         onChange={(e) => onModel(e.target.value || null)}
         disabled={locked}
         title="Model"
       >
-        {!modelKnown && <option value="">{modelValue || 'Default model'}</option>}
+        {!match && <option value="">{current || 'Default model'}</option>}
         {models.map((m) => (
           <option key={m.value} value={m.value} title={m.description}>
             {m.label}

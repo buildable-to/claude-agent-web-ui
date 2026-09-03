@@ -59,7 +59,10 @@ export function attachWebSocket(server: Server, sessions: SessionManager) {
           return;
         }
         case 'start': {
-          const session = await sessions.open(msg.sessionId);
+          const session = await sessions.open(msg.sessionId, {
+            ...(msg.model ? { model: msg.model } : {}),
+            ...(msg.permissionMode ? { permissionMode: msg.permissionMode } : {}),
+          });
           attach(session);
           const text = msg.text.trim();
           if (text) session.send(text, msg.uuid);

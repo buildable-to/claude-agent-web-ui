@@ -24,7 +24,16 @@ export type PermissionRequest = {
   createdAt: number;
 };
 
-export type ModelOption = { value: string; label: string; description?: string };
+export type ModelOption = {
+  value: string;
+  label: string;
+  description?: string;
+  /** Wire id an alias resolves to, e.g. "opus" -> "claude-opus-5". */
+  resolved?: string;
+};
+
+/** What the engine reports for this project before/without a session. */
+export type EngineInfo = { commands: CommandInfo[]; models: ModelOption[] };
 
 /** A slash command or skill the engine accepts in a message. */
 export type CommandInfo = {
@@ -49,7 +58,14 @@ export type ClientMessage =
   | { type: 'attach'; sessionId: string }
   | { type: 'detach'; sessionId: string }
   /** Start (null) or resume (id) an engine and send the first message in one go. */
-  | { type: 'start'; sessionId: string | null; text: string; uuid?: string }
+  | {
+      type: 'start';
+      sessionId: string | null;
+      text: string;
+      uuid?: string;
+      model?: string;
+      permissionMode?: PermissionMode;
+    }
   | { type: 'send'; sessionId: string; text: string; uuid?: string }
   | {
       type: 'permission';

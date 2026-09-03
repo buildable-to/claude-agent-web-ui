@@ -2,10 +2,20 @@
 // without sending it a message: spawn it, read the initialize reply, stop.
 import {
   query,
+  type ModelInfo,
   type SDKUserMessage,
   type SlashCommand,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { CommandInfo } from '../shared/protocol.js';
+import type { CommandInfo, EngineInfo, ModelOption } from '../shared/protocol.js';
+
+export function toModelOptions(models: ModelInfo[]): ModelOption[] {
+  return models.map((m) => ({
+    value: m.value,
+    label: m.displayName,
+    description: m.description,
+    ...(m.resolvedModel ? { resolved: m.resolvedModel } : {}),
+  }));
+}
 
 export function toCommandInfo(commands: SlashCommand[], terminalOnly: string[] = []): CommandInfo[] {
   const hide = new Set(terminalOnly.map((n) => n.replace(/^\//, '')));
@@ -30,7 +40,7 @@ const never: AsyncIterable<SDKUserMessage> = {
   [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => undefined) }),
 };
 
-export async function probeCommands(cwd: string, timeoutMs = 25_000): Promise<CommandInfo[]> {
+export async function probeEngine(cwd: string, timeoutMs = 25_000): Promise<EngineInfo> {
   const abort = new AbortController();
   const q = query({
     prompt: never,
@@ -59,7 +69,7 @@ export async function probeCommands(cwd: string, timeoutMs = 25_000): Promise<Co
       q.initializationResult(),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error('engine did not initialize in time')), timeoutMs)),
     ]);
-    return toCommandInfo(init.commands, terminalOnly);
+    return { commands: toCommandInfo(init.commands, terminalOnly), models: toModelOptions(init.models) };
   } finally {
     abort.abort();
     await pump;

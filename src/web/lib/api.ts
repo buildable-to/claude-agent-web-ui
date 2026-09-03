@@ -1,4 +1,4 @@
-import type { CommandInfo, DirectoryTree, HistoryMessage, ServerConfig, SessionSummary } from '@shared/protocol';
+import type { DirectoryTree, EngineInfo, HistoryMessage, ServerConfig, SessionSummary } from '@shared/protocol';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -22,7 +22,7 @@ export const api = {
   config: () => request<ServerConfig>('/api/config'),
   sessions: () => request<SessionSummary[]>('/api/sessions'),
   tree: () => request<DirectoryTree>('/api/tree'),
-  commands: () => request<CommandInfo[]>('/api/commands'),
+  engine: () => request<EngineInfo>('/api/engine'),
   history: (id: string) => request<HistoryMessage[]>(`/api/sessions/${id}/messages`),
   rename: (id: string, title: string) =>
     request<{ ok: true }>(`/api/sessions/${id}`, { method: 'PATCH', body: JSON.stringify({ title }) }),

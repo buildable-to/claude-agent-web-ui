@@ -37,6 +37,7 @@ type Action =
   | { type: 'server'; message: ServerMessage }
   | { type: 'local_user'; id: string; text: string }
   | { type: 'starting' }
+  | { type: 'choose'; model?: string | null; permissionMode?: PermissionMode }
   | { type: 'error'; message: string | null };
 
 function initial(sessionId: string | null): SessionState {
@@ -63,6 +64,15 @@ function reducer(state: SessionState, action: Action): SessionState {
       return { ...state, transcript: addLocalUserTurn(state.transcript, action.id, action.text) };
     case 'starting':
       return { ...state, status: 'starting', error: null };
+    case 'choose':
+      return {
+        ...state,
+        meta: {
+          ...state.meta,
+          ...(action.model !== undefined ? { model: action.model ?? undefined } : {}),
+          ...(action.permissionMode ? { permissionMode: action.permissionMode } : {}),
+        },
+      };
     case 'error':
       return { ...state, error: action.message };
     case 'server': {
@@ -126,6 +136,7 @@ function reducer(state: SessionState, action: Action): SessionState {
  */
 export function useSession(requested: string | null, nonce: number, onTurnEnd?: () => void) {
   const [state, dispatch] = useReducer(reducer, requested, initial);
+  const chosen = useRef<{ model?: string; permissionMode?: PermissionMode }>({});
   const activeId = useRef<string | null>(requested);
   const attached = useRef(false);
   const awaitingNew = useRef(false);
@@ -198,7 +209,7 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
     }
     if (activeId.current === null) awaitingNew.current = true;
     dispatch({ type: 'starting' });
-    ws.send({ type: 'start', sessionId: activeId.current, text, uuid });
+    ws.send({ type: 'start', sessionId: activeId.current, text, uuid, ...chosen.current });
   }, []);
 
   const answerPermission = useCallback(
@@ -217,12 +228,24 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
 
   const setPermissionMode = useCallback((mode: PermissionMode) => {
     const id = activeId.current;
-    if (id && attached.current) ws.send({ type: 'set_permission_mode', sessionId: id, mode });
+    if (id && attached.current) {
+      ws.send({ type: 'set_permission_mode', sessionId: id, mode });
+      return;
+    }
+    // No engine yet: remember the choice for when it starts.
+    chosen.current.permissionMode = mode;
+    dispatch({ type: 'choose', permissionMode: mode });
   }, []);
 
   const setModel = useCallback((model: string | null) => {
     const id = activeId.current;
-    if (id && attached.current) ws.send({ type: 'set_model', sessionId: id, model });
+    if (id && attached.current) {
+      ws.send({ type: 'set_model', sessionId: id, model });
+      return;
+    }
+    if (model) chosen.current.model = model;
+    else delete chosen.current.model;
+    dispatch({ type: 'choose', model });
   }, []);
 
   return { state, send, answerPermission, interrupt, setPermissionMode, setModel };
