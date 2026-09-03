@@ -72,3 +72,47 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
+
+/* Markdown rendered by the typography plugin follows the theme tokens. */
+.prose {
+  --tw-prose-body: var(--ink);
+  --tw-prose-headings: var(--ink);
+  --tw-prose-lead: var(--ink-2);
+  --tw-prose-links: var(--accent);
+  --tw-prose-bold: var(--ink);
+  --tw-prose-counters: var(--ink-3);
+  --tw-prose-bullets: var(--ink-3);
+  --tw-prose-hr: var(--line);
+  --tw-prose-quotes: var(--ink-2);
+  --tw-prose-quote-borders: var(--line);
+  --tw-prose-captions: var(--ink-3);
+  --tw-prose-code: var(--ink);
+  --tw-prose-pre-code: var(--ink);
+  --tw-prose-pre-bg: var(--surface-2);
+  --tw-prose-th-borders: var(--line);
+  --tw-prose-td-borders: var(--line);
+}
+.prose :where(code):not(:where(pre *))::before,
+.prose :where(code):not(:where(pre *))::after {
+  content: none;
+}
+.prose :where(code):not(:where(pre *)) {
+  background: var(--surface-2);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-weight: 500;
+}
+.prose :where(pre) {
+  border: 1px solid var(--line);
+}
+.prose > :first-child {
+  margin-top: 0;
+}
+.prose > :last-child {
+  margin-bottom: 0;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
