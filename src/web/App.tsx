@@ -41,6 +41,18 @@ export default function App() {
 
   useEffect(() => applyTheme(theme), [theme]);
 
+  // The tab itself reports state: a dot on the icon and a title prefix.
+  useEffect(() => {
+    const name = config?.projectName ?? 'Claude Agent Web UI';
+    const attention = state.status === 'requires_action';
+    const working = state.status === 'running' || state.status === 'starting';
+    document.title = attention ? `● Needs you · ${name}` : working ? `… Working · ${name}` : name;
+    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (link) {
+      link.href = attention ? '/favicon-attention.svg' : working ? '/favicon-working.svg' : '/favicon.svg';
+    }
+  }, [state.status, config?.projectName]);
+
   useEffect(() => {
     api.config().then(setConfig).catch(() => setConfig(null));
     const off = ws.onState(setConnection);
