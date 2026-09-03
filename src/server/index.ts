@@ -6,6 +6,7 @@ import express from 'express';
 import type { ServerConfig } from '../shared/protocol.js';
 import { loadConfig, projectName } from './config.js';
 import { SessionManager } from './session-manager.js';
+import { buildTree } from './tree.js';
 import { attachWebSocket } from './ws.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -22,6 +23,14 @@ app.get('/api/config', (_req, res) => {
     version: '0.1.0',
   };
   res.json(body);
+});
+
+app.get('/api/tree', async (_req, res, next) => {
+  try {
+    res.json(await buildTree(config.projectDir));
+  } catch (err) {
+    next(err);
+  }
 });
 
 app.get('/api/sessions', async (_req, res, next) => {

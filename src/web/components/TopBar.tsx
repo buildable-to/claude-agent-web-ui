@@ -1,5 +1,7 @@
+import { Moon, PanelRight, Sun, SunMoon } from 'lucide-react';
 import type { PermissionMode, SessionMeta, SessionStatus } from '@shared/protocol';
 import { money, shortPath } from '@/lib/format';
+import type { Theme } from '@/lib/theme';
 
 type Props = {
   projectName: string;
@@ -7,64 +9,85 @@ type Props = {
   status: SessionStatus | 'connecting';
   connection: 'connecting' | 'open' | 'closed';
   meta: SessionMeta;
+  filesOpen: boolean;
+  onToggleFiles: () => void;
+  theme: Theme;
+  onTheme: (t: Theme) => void;
   onModel: (model: string | null) => void;
   onMode: (mode: PermissionMode) => void;
 };
 
 const MODES: Array<{ value: PermissionMode; label: string; hint: string }> = [
-  { value: 'default', label: 'Ask first', hint: 'Prompts before edits and commands, like the terminal.' },
-  { value: 'acceptEdits', label: 'Auto-accept edits', hint: 'File edits go through without asking; commands still ask.' },
-  { value: 'plan', label: 'Plan only', hint: 'Read-only. Claude plans but does not change anything.' },
-  { value: 'auto', label: 'Auto (classifier)', hint: 'A model decides what to allow.' },
-  { value: 'bypassPermissions', label: 'Bypass all', hint: 'Never asks. Only for throwaway work.' },
+  { value: 'default', label: 'Ask first', hint: 'Asks before edits and commands, like the terminal.' },
+  { value: 'acceptEdits', label: 'Auto-accept edits', hint: 'File edits go through; commands still ask.' },
+  { value: 'plan', label: 'Plan only', hint: 'Read-only. Claude plans but changes nothing.' },
+  { value: 'auto', label: 'Auto', hint: 'A classifier decides what to allow.' },
+  { value: 'bypassPermissions', label: 'Bypass all', hint: 'Never asks. Throwaway work only.' },
 ];
 
 function statusLabel(status: Props['status'], connection: Props['connection']) {
-  if (connection !== 'open') return { text: connection === 'closed' ? 'Reconnecting…' : 'Connecting…', tone: 'bg-ink-3' };
+  if (connection !== 'open') {
+    return { text: connection === 'closed' ? 'Reconnecting' : 'Connecting', dot: 'bg-ink-3 breathe' };
+  }
   switch (status) {
     case 'connecting':
     case 'starting':
-      return { text: 'Starting engine…', tone: 'bg-ink-3 animate-pulse' };
+      return { text: 'Starting', dot: 'bg-ink-3 breathe' };
     case 'idle':
-      return { text: 'Ready', tone: 'bg-ok' };
+      return { text: 'Ready', dot: 'bg-sea' };
     case 'running':
-      return { text: 'Working', tone: 'bg-accent animate-pulse' };
+      return { text: 'Working', dot: 'bg-accent breathe' };
     case 'requires_action':
-      return { text: 'Needs your approval', tone: 'bg-warn animate-pulse' };
+      return { text: 'Needs you', dot: 'bg-warn breathe' };
     case 'closed':
-      return { text: 'Stopped', tone: 'bg-ink-3' };
+      return { text: 'Stopped', dot: 'bg-ink-3' };
   }
 }
 
-export function TopBar({ projectName, projectDir, status, connection, meta, onModel, onMode }: Props) {
+export function TopBar({
+  projectName,
+  projectDir,
+  status,
+  connection,
+  meta,
+  filesOpen,
+  onToggleFiles,
+  theme,
+  onTheme,
+  onModel,
+  onMode,
+}: Props) {
+  const nextTheme: Theme = theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system';
+  const ThemeIcon = theme === 'light' ? Sun : theme === 'dark' ? Moon : SunMoon;
   const s = statusLabel(status, connection);
   const models = meta.models ?? [];
   const modelValue = meta.model ?? '';
   const modelKnown = models.some((m) => m.value === modelValue);
+  const locked = status === 'closed' || status === 'connecting';
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-4">
+    <header className="flex h-16 shrink-0 items-center gap-3 px-6">
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[13.5px] font-semibold text-ink">{projectName}</div>
+        <div className="font-display truncate text-[17px] font-semibold text-ink">{projectName}</div>
         <div className="truncate font-mono text-[11px] text-ink-3" title={projectDir}>
-          {shortPath(projectDir, 60)}
+          {shortPath(projectDir, 64)}
         </div>
       </div>
-      <div className="flex items-center gap-1.5 text-[12.5px] text-ink-2">
-        <span className={`size-2 rounded-full ${s.tone}`} />
+      <span className="pill" aria-live="polite">
+        <span className={`size-2 rounded-full ${s.dot}`} />
         {s.text}
-      </div>
+      </span>
       {meta.totalCostUsd !== undefined && (
         <span className="font-mono text-[11.5px] text-ink-3" title="Estimated cost this session">
           {money(meta.totalCostUsd)}
         </span>
       )}
       <select
+        className="pill"
         value={modelKnown ? modelValue : ''}
         onChange={(e) => onModel(e.target.value || null)}
-        disabled={status === 'closed' || status === 'connecting'}
+        disabled={locked}
         title="Model"
-        className="rounded-md border border-line bg-surface px-2 py-1 text-[12.5px] text-ink"
       >
         {!modelKnown && <option value="">{modelValue || 'Default model'}</option>}
         {models.map((m) => (
@@ -74,11 +97,11 @@ export function TopBar({ projectName, projectDir, status, connection, meta, onMo
         ))}
       </select>
       <select
+        className="pill"
         value={meta.permissionMode ?? 'default'}
         onChange={(e) => onMode(e.target.value as PermissionMode)}
-        disabled={status === 'closed' || status === 'connecting'}
+        disabled={locked}
         title={MODES.find((m) => m.value === meta.permissionMode)?.hint ?? 'Permission mode'}
-        className="rounded-md border border-line bg-surface px-2 py-1 text-[12.5px] text-ink"
       >
         {MODES.map((m) => (
           <option key={m.value} value={m.value} title={m.hint}>
@@ -86,6 +109,24 @@ export function TopBar({ projectName, projectDir, status, connection, meta, onMo
           </option>
         ))}
       </select>
+      <button
+        type="button"
+        onClick={() => onTheme(nextTheme)}
+        className="pill px-2.5"
+        title={`Theme: ${theme}. Click for ${nextTheme}.`}
+      >
+        <ThemeIcon className="size-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={onToggleFiles}
+        className={`pill ${filesOpen ? 'bg-accent-soft' : ''}`}
+        title={filesOpen ? 'Hide project files' : 'Show project files'}
+        aria-pressed={filesOpen}
+      >
+        <PanelRight className="size-3.5" />
+        Files
+      </button>
     </header>
   );
 }

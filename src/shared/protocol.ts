@@ -99,3 +99,19 @@ export type ServerConfig = {
   projectName: string;
   version: string;
 };
+
+/** Project folder listing for the files panel. */
+export type TreeNode = {
+  name: string;
+  path: string;
+  type: 'file' | 'dir';
+  children?: TreeNode[];
+};
+
+export type DirectoryTree = {
+  root: string;
+  files: number;
+  dirs: number;
+  truncated: boolean;
+  tree: TreeNode;
+};

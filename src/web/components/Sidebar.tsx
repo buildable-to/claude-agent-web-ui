@@ -17,20 +17,22 @@ export function Sidebar({ sessions, activeId, onSelect, onNew, onRename, onDelet
   const [confirming, setConfirming] = useState<string | null>(null);
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-surface">
-      <div className="flex h-12 items-center justify-between border-b border-line px-3">
-        <span className="text-[11px] font-medium tracking-wider text-ink-3 uppercase">Sessions</span>
+    <aside className="flex w-[264px] shrink-0 flex-col border-r border-line bg-panel-2/60">
+      <div className="flex h-16 items-center justify-between px-5">
+        <span className="text-[11px] font-semibold tracking-[0.18em] text-ink-3 uppercase">Sessions</span>
         <button
           type="button"
           onClick={onNew}
-          className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-[12px] font-medium text-white hover:opacity-90"
+          className="flex items-center gap-1 rounded-full bg-accent px-3 py-1.5 text-[12px] font-semibold text-white shadow-soft transition hover:brightness-105 active:translate-y-px"
         >
           <Plus className="size-3.5" /> New
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-4">
         {sessions.length === 0 && (
-          <p className="px-3 py-4 text-[12.5px] text-ink-3">No sessions in this project yet.</p>
+          <p className="px-3 py-4 text-[12.5px] text-ink-3">
+            Nothing here yet. Start with a message on the right.
+          </p>
         )}
         {sessions.map((s) => {
           const active = s.sessionId === activeId;
@@ -39,11 +41,13 @@ export function Sidebar({ sessions, activeId, onSelect, onNew, onRename, onDelet
           return (
             <div
               key={s.sessionId}
-              className={`group relative mx-1.5 my-0.5 rounded-md ${active ? 'bg-accent-soft' : 'hover:bg-surface-2'}`}
+              className={`group relative my-0.5 rounded-xl transition ${
+                active ? 'bg-panel shadow-soft' : 'hover:bg-panel/70'
+              }`}
             >
               {isEditing ? (
                 <form
-                  className="flex items-center gap-1 px-2 py-1.5"
+                  className="flex items-center gap-1 px-2.5 py-2"
                   onSubmit={(e) => {
                     e.preventDefault();
                     if (editing.title.trim()) onRename(s.sessionId, editing.title.trim());
@@ -55,17 +59,17 @@ export function Sidebar({ sessions, activeId, onSelect, onNew, onRename, onDelet
                     value={editing.title}
                     onChange={(e) => setEditing({ id: s.sessionId, title: e.target.value })}
                     onKeyDown={(e) => e.key === 'Escape' && setEditing(null)}
-                    className="min-w-0 flex-1 rounded border border-line bg-surface px-1.5 py-0.5 text-[12.5px] text-ink outline-none focus:border-accent"
+                    className="min-w-0 flex-1 rounded-md border border-line bg-panel px-2 py-1 text-[13px] text-ink outline-none focus:border-accent"
                   />
-                  <button type="submit" className="text-ok" title="Save">
+                  <button type="submit" className="p-1 text-sea" title="Save">
                     <Check className="size-3.5" />
                   </button>
-                  <button type="button" onClick={() => setEditing(null)} className="text-ink-3" title="Cancel">
+                  <button type="button" onClick={() => setEditing(null)} className="p-1 text-ink-3" title="Cancel">
                     <X className="size-3.5" />
                   </button>
                 </form>
               ) : isConfirming ? (
-                <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 text-[12.5px]">
+                <div className="flex items-center justify-between gap-2 px-3 py-2 text-[12.5px]">
                   <span className="text-ink">Delete this session?</span>
                   <span className="flex gap-2">
                     <button
@@ -74,7 +78,7 @@ export function Sidebar({ sessions, activeId, onSelect, onNew, onRename, onDelet
                         onDelete(s.sessionId);
                         setConfirming(null);
                       }}
-                      className="font-medium text-danger"
+                      className="font-semibold text-danger"
                     >
                       Delete
                     </button>
@@ -87,35 +91,35 @@ export function Sidebar({ sessions, activeId, onSelect, onNew, onRename, onDelet
                 <button
                   type="button"
                   onClick={() => onSelect(s.sessionId)}
-                  className="block w-full px-2.5 py-1.5 text-left"
+                  className="block w-full px-3 py-2 text-left"
                 >
-                  <div className="flex items-start gap-1.5">
+                  <div className="flex items-start gap-2">
                     {s.live && (
                       <span
-                        className={`mt-1.5 size-1.5 shrink-0 rounded-full ${
-                          s.status === 'running' || s.status === 'requires_action'
-                            ? 'animate-pulse bg-accent'
-                            : 'bg-ok'
+                        className={`mt-[7px] size-1.5 shrink-0 rounded-full ${
+                          s.status === 'running' || s.status === 'requires_action' ? 'bg-accent breathe' : 'bg-sea'
                         }`}
-                        title={s.status === 'requires_action' ? 'Needs approval' : s.status ?? 'live'}
+                        title={s.status === 'requires_action' ? 'Needs approval' : (s.status ?? 'live')}
                       />
                     )}
-                    <span className="line-clamp-2 text-[12.5px] leading-snug text-ink">{s.title}</span>
+                    <span className={`line-clamp-2 text-[13px] leading-snug ${active ? 'font-medium text-ink' : 'text-ink'}`}>
+                      {s.title}
+                    </span>
                   </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-3">
-                    <span>{timeAgo(s.lastModified)}</span>
+                  <div className="mt-1 flex items-center gap-1.5 pl-0 text-[11px] text-ink-3">
+                    <span className="shrink-0 whitespace-nowrap">{timeAgo(s.lastModified)}</span>
                     {s.gitBranch && s.gitBranch !== 'HEAD' && (
-                      <span className="truncate font-mono">· {s.gitBranch}</span>
+                      <span className="min-w-0 truncate font-mono">· {s.gitBranch}</span>
                     )}
                   </div>
                 </button>
               )}
               {!isEditing && !isConfirming && (
-                <div className="absolute top-1 right-1 hidden gap-0.5 group-hover:flex">
+                <div className="absolute top-1.5 right-1.5 hidden gap-0.5 rounded-lg bg-panel p-0.5 shadow-soft group-hover:flex">
                   <button
                     type="button"
                     onClick={() => setEditing({ id: s.sessionId, title: s.title })}
-                    className="rounded p-1 text-ink-3 hover:bg-surface hover:text-ink"
+                    className="rounded-md p-1 text-ink-3 hover:bg-panel-2 hover:text-ink"
                     title="Rename"
                   >
                     <Pencil className="size-3" />
@@ -123,7 +127,7 @@ export function Sidebar({ sessions, activeId, onSelect, onNew, onRename, onDelet
                   <button
                     type="button"
                     onClick={() => setConfirming(s.sessionId)}
-                    className="rounded p-1 text-ink-3 hover:bg-surface hover:text-danger"
+                    className="rounded-md p-1 text-ink-3 hover:bg-panel-2 hover:text-danger"
                     title="Delete"
                   >
                     <Trash2 className="size-3" />

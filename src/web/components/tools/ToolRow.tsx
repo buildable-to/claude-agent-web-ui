@@ -1,6 +1,7 @@
 import { Check, ChevronDown, ChevronRight, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type { ToolBlock } from '@/lib/transcript';
+import { seconds, useTicker } from '@/lib/useTicker';
 import { toolDetail, toolLook, toolVerb } from './config';
 
 type Props = {
@@ -16,40 +17,50 @@ export function ToolRow({ tool, live, children, defaultOpen = false }: Props) {
   const look = toolLook(tool.name);
   const detail = toolDetail(tool);
   const running = tool.result === undefined && live;
+  const now = useTicker(running && Boolean(tool.startedAt));
+  const elapsed =
+    tool.startedAt && tool.endedAt
+      ? seconds(tool.endedAt - tool.startedAt)
+      : running && tool.startedAt
+        ? seconds(now - tool.startedAt)
+        : null;
   const expandable = Boolean(children);
 
   return (
-    <div className="rounded-md border border-line bg-surface">
+    <div className="rounded-xl border border-line bg-panel/80">
       <button
         type="button"
         onClick={() => expandable && setOpen((o) => !o)}
         aria-expanded={open}
-        className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] ${
-          expandable ? 'cursor-pointer hover:bg-surface-2' : 'cursor-default'
+        className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[13px] transition ${
+          expandable ? 'cursor-pointer hover:bg-panel-2/70' : 'cursor-default'
         }`}
       >
-        <span className={`flex size-4 shrink-0 items-center justify-center ${look.hue}`}>
-          {look.icon}
-        </span>
+        <span className={`flex size-4 shrink-0 items-center justify-center ${look.hue}`}>{look.icon}</span>
         <span className="shrink-0 font-medium text-ink">{toolVerb(tool)}</span>
-        {detail && (
+        {detail ? (
           <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink-2">{detail}</span>
+        ) : (
+          <span className="flex-1" />
         )}
-        {!detail && <span className="flex-1" />}
-        <span className="flex shrink-0 items-center gap-1.5 text-ink-3">
+        <span className="flex shrink-0 items-center gap-2 text-ink-3">
+          {elapsed && <span className="font-mono text-[11px] tabular-nums">{elapsed}</span>}
           {running ? (
-            <span className="size-2 animate-pulse rounded-full bg-accent" title="running" />
+            <span className="flex items-center gap-1.5 text-[11px] text-accent">
+              <span className="size-2 rounded-full bg-accent breathe" />
+              running
+            </span>
           ) : tool.isError ? (
             <X className="size-3.5 text-danger" />
           ) : tool.result !== undefined ? (
-            <Check className="size-3.5 text-ok" />
+            <Check className="size-3.5 text-sea" />
           ) : null}
           {expandable &&
             (open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />)}
         </span>
       </button>
       {open && expandable && (
-        <div className="space-y-2 border-t border-line px-2.5 py-2">{children}</div>
+        <div className="rise space-y-2 border-t border-line px-3 py-2.5">{children}</div>
       )}
     </div>
   );

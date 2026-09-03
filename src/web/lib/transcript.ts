@@ -16,6 +16,9 @@ export type ToolBlock = {
   done: boolean;
   result?: string;
   isError?: boolean;
+  /** Wall-clock timings, only known for blocks seen live. */
+  startedAt?: number;
+  endedAt?: number;
   /** Tool calls made by a sub-agent this tool spawned. */
   children: ToolBlock[];
 };
@@ -239,7 +242,7 @@ function applyStreamEvent(t: Transcript, ev: AnyRecord, uuid: string): Transcrip
       let block = toBlock(raw);
       if (!block) return next;
       if (block.type === 'thinking') block = { ...block, done: false, startedAt: Date.now() };
-      if (block.type === 'tool_use') block = { ...block, done: false, inputJson: '' };
+      if (block.type === 'tool_use') block = { ...block, done: false, inputJson: '', startedAt: Date.now() };
       const turn = next.turns[idx]!;
       if (turn.kind !== 'assistant') return next;
       const blocks = [...turn.blocks, block];
@@ -329,7 +332,14 @@ function applyAssistant(t: Transcript, uuid: string, message: unknown, parentToo
       if (pos !== undefined && existing && existing.type === block.type) {
         const merged: Block =
           existing.type === 'tool_use' && block.type === 'tool_use'
-            ? { ...block, result: existing.result, isError: existing.isError, children: existing.children }
+            ? {
+                ...block,
+                result: existing.result,
+                isError: existing.isError,
+                startedAt: existing.startedAt,
+                endedAt: existing.endedAt,
+                children: existing.children,
+              }
             : existing.type === 'thinking' && block.type === 'thinking'
               ? { ...block, startedAt: existing.startedAt, durationMs: existing.durationMs }
               : block;
@@ -368,6 +378,7 @@ function applyUser(
         ...b,
         result: resultText(r.content),
         isError: Boolean(r.is_error),
+        ...(b.startedAt && !b.endedAt ? { endedAt: Date.now() } : {}),
       }));
     }
     return next;

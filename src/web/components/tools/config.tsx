@@ -140,3 +140,48 @@ export function toolDetail(tool: ToolBlock): string | undefined {
       return undefined;
   }
 }
+
+/** Chip colours per tool family, used by the activity row. */
+export function toolChip(name: string): string {
+  switch (name) {
+    case 'Read':
+    case 'Write':
+    case 'Edit':
+    case 'MultiEdit':
+    case 'NotebookEdit':
+      return 'border-emerald-300/60 bg-emerald-50/70 text-emerald-700 hover:bg-emerald-100/80 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300 dark:hover:bg-emerald-400/20';
+    case 'Bash':
+    case 'BashOutput':
+    case 'KillShell':
+      return 'border-amber-300/60 bg-amber-50/70 text-amber-700 hover:bg-amber-100/80 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300 dark:hover:bg-amber-400/20';
+    case 'Grep':
+    case 'Glob':
+      return 'border-violet-300/60 bg-violet-50/70 text-violet-700 hover:bg-violet-100/80 dark:border-violet-400/30 dark:bg-violet-400/10 dark:text-violet-300 dark:hover:bg-violet-400/20';
+    case 'WebSearch':
+    case 'WebFetch':
+    case 'web_search':
+    case 'web_fetch':
+      return 'border-cyan-300/60 bg-cyan-50/70 text-cyan-700 hover:bg-cyan-100/80 dark:border-cyan-400/30 dark:bg-cyan-400/10 dark:text-cyan-300 dark:hover:bg-cyan-400/20';
+    case 'Task':
+    case 'Agent':
+    case 'TodoWrite':
+      return 'border-indigo-300/60 bg-indigo-50/70 text-indigo-700 hover:bg-indigo-100/80 dark:border-indigo-400/30 dark:bg-indigo-400/10 dark:text-indigo-300 dark:hover:bg-indigo-400/20';
+    case 'Skill':
+      return 'border-rose-300/60 bg-rose-50/70 text-rose-700 hover:bg-rose-100/80 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-300 dark:hover:bg-rose-400/20';
+    default:
+      return 'border-line-2 bg-panel text-ink-2 hover:bg-panel-2';
+  }
+}
+
+export const thinkingChip =
+  'border-purple-300/60 bg-purple-50/70 text-purple-700 hover:bg-purple-100/80 dark:border-purple-400/30 dark:bg-purple-400/10 dark:text-purple-300 dark:hover:bg-purple-400/20';
+
+/** Very short chip text: "Read auth.ts", "Run tests", "Search “TODO”". */
+export function toolChipLabel(tool: ToolBlock): string {
+  const detail = toolDetail(tool);
+  const verb = toolVerb(tool);
+  if (tool.name === 'Bash') return verb.length > 34 ? `${verb.slice(0, 31)}…` : verb;
+  if (!detail) return verb;
+  const d = detail.length > 22 ? `${detail.slice(0, 19)}…` : detail;
+  return `${verb} ${d}`;
+}

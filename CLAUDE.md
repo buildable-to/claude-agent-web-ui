@@ -25,6 +25,12 @@ everything to a React page over a WebSocket. See README.md for the user view.
   the streamed block in order. Tool results attach by `tool_use_id`.
 - `src/web/state/useSession.ts` — engine starts lazily on first send
   (`start`), otherwise the page only attaches to already-running sessions.
+- `src/web/components/ActivityGroup.tsx` — a run of tool calls/thinking as
+  chips that expand into a timeline; auto-opens while the turn is live.
+- `src/web/components/FileTree.tsx` + `src/server/tree.ts` — project files
+  panel (`GET /api/tree`), refreshed after every turn.
+- Theme: tokens live in `src/web/index.css`; `data-theme` on `<html>`
+  overrides the OS preference (see `src/web/lib/theme.ts`).
 
 ## Things that bit us
 

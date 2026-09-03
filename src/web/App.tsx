@@ -1,24 +1,45 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ServerConfig } from '@shared/protocol';
 import { ChatInput } from './components/ChatInput';
+import { FileTree } from './components/FileTree';
 import { MessageList } from './components/MessageList';
 import { PermissionBanner } from './components/PermissionBanner';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { api } from './lib/api';
+import { applyTheme, readTheme, type Theme } from './lib/theme';
 import { ws, type ConnectionState } from './lib/ws';
 import { useSession } from './state/useSession';
 import { useSessions } from './state/useSessions';
 
 ws.connect();
 
+function readFilesOpen(): boolean {
+  try {
+    return localStorage.getItem('filesOpen') !== '0';
+  } catch {
+    return true;
+  }
+}
+
 export default function App() {
   const [config, setConfig] = useState<ServerConfig | null>(null);
   const [connection, setConnection] = useState<ConnectionState>(ws.state);
   const [selected, setSelected] = useState<{ id: string | null; nonce: number }>({ id: null, nonce: 0 });
+  const [draft, setDraft] = useState('');
+  const [focusKey, setFocusKey] = useState(0);
+  const [filesOpen, setFilesOpen] = useState(readFilesOpen);
+  const [theme, setTheme] = useState<Theme>(readTheme);
+  const [treeKey, setTreeKey] = useState(0);
   const { sessions, refresh } = useSessions();
-  const session = useSession(selected.id, selected.nonce, refresh);
+  const onTurnEnd = useCallback(() => {
+    void refresh();
+    setTreeKey((k) => k + 1);
+  }, [refresh]);
+  const session = useSession(selected.id, selected.nonce, onTurnEnd);
   const { state } = session;
+
+  useEffect(() => applyTheme(theme), [theme]);
 
   useEffect(() => {
     api.config().then(setConfig).catch(() => setConfig(null));
@@ -27,13 +48,13 @@ export default function App() {
     return off;
   }, []);
 
-  // A new session gets its id from the server; keep the sidebar in sync.
   useEffect(() => {
     if (state.sessionId && selected.id === null) void refresh();
   }, [state.sessionId, selected.id, refresh]);
 
   const select = useCallback((id: string | null) => {
     setSelected((s) => ({ id, nonce: s.nonce + 1 }));
+    setFocusKey((k) => k + 1);
   }, []);
 
   const rename = useCallback(
@@ -53,6 +74,22 @@ export default function App() {
     [refresh, select, state.sessionId],
   );
 
+  const toggleFiles = useCallback(() => {
+    setFilesOpen((o) => {
+      try {
+        localStorage.setItem('filesOpen', o ? '0' : '1');
+      } catch {
+        // ignore
+      }
+      return !o;
+    });
+  }, []);
+
+  const insertText = useCallback((text: string) => {
+    setDraft((d) => (d && !d.endsWith(' ') ? `${d} ${text}` : `${d}${text}`));
+    setFocusKey((k) => k + 1);
+  }, []);
+
   const projectName = config?.projectName ?? '…';
   const projectDir = config?.projectDir ?? '';
   const pending = state.pending[0];
@@ -67,13 +104,17 @@ export default function App() {
         onRename={rename}
         onDelete={remove}
       />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="glass flex min-w-0 flex-1 flex-col">
         <TopBar
           projectName={projectName}
           projectDir={projectDir}
           status={state.status}
           connection={connection}
           meta={state.meta}
+          filesOpen={filesOpen}
+          onToggleFiles={toggleFiles}
+          theme={theme}
+          onTheme={setTheme}
           onModel={session.setModel}
           onMode={session.setPermissionMode}
         />
@@ -82,6 +123,10 @@ export default function App() {
           status={state.status}
           loading={state.loadingHistory}
           projectName={projectName}
+          onSuggest={(text) => {
+            setDraft(text);
+            setFocusKey((k) => k + 1);
+          }}
         />
         {pending && (
           <PermissionBanner
@@ -90,8 +135,17 @@ export default function App() {
             onAnswer={session.answerPermission}
           />
         )}
-        <ChatInput status={state.status} onSend={session.send} onStop={session.interrupt} autoFocus />
+        <ChatInput
+          value={draft}
+          onChange={setDraft}
+          status={state.status}
+          onSend={session.send}
+          onStop={session.interrupt}
+          autoFocus
+          focusKey={focusKey}
+        />
       </div>
+      {filesOpen && <FileTree onPick={(p) => insertText(p)} refreshKey={treeKey} />}
     </div>
   );
 }
