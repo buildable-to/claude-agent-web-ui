@@ -1,7 +1,6 @@
-import { Moon, PanelRight, Sun, SunMoon } from 'lucide-react';
+import { PanelRight } from 'lucide-react';
 import type { PermissionMode, SessionMeta, SessionStatus } from '@shared/protocol';
 import { money, shortPath } from '@/lib/format';
-import type { Theme } from '@/lib/theme';
 
 type Props = {
   projectName: string;
@@ -11,8 +10,6 @@ type Props = {
   meta: SessionMeta;
   filesOpen: boolean;
   onToggleFiles: () => void;
-  theme: Theme;
-  onTheme: (t: Theme) => void;
   onModel: (model: string | null) => void;
   onMode: (mode: PermissionMode) => void;
 };
@@ -52,13 +49,9 @@ export function TopBar({
   meta,
   filesOpen,
   onToggleFiles,
-  theme,
-  onTheme,
   onModel,
   onMode,
 }: Props) {
-  const nextTheme: Theme = theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system';
-  const ThemeIcon = theme === 'light' ? Sun : theme === 'dark' ? Moon : SunMoon;
   const s = statusLabel(status, connection);
   const models = meta.models ?? [];
   const modelValue = meta.model ?? '';
@@ -66,10 +59,11 @@ export function TopBar({
   const locked = status === 'closed' || status === 'connecting';
 
   return (
-    <header className="flex h-16 shrink-0 items-center gap-3 px-6">
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-5">
+      <img src="/mark.png" alt="" className="h-6 w-auto opacity-90" />
       <div className="min-w-0 flex-1">
-        <div className="font-display truncate text-[17px] font-semibold text-ink">{projectName}</div>
-        <div className="truncate font-mono text-[11px] text-ink-3" title={projectDir}>
+        <div className="font-display truncate text-[14px] font-semibold tracking-tight text-ink">{projectName}</div>
+        <div className="truncate font-mono text-[10.5px] text-ink-3" title={projectDir}>
           {shortPath(projectDir, 64)}
         </div>
       </div>
@@ -109,14 +103,6 @@ export function TopBar({
           </option>
         ))}
       </select>
-      <button
-        type="button"
-        onClick={() => onTheme(nextTheme)}
-        className="pill px-2.5"
-        title={`Theme: ${theme}. Click for ${nextTheme}.`}
-      >
-        <ThemeIcon className="size-3.5" />
-      </button>
       <button
         type="button"
         onClick={onToggleFiles}

@@ -22,8 +22,8 @@ const SUGGESTIONS = [
 function Skeleton() {
   return (
     <div className="space-y-4 pt-2" aria-label="Loading conversation">
-      <div className="ml-auto h-10 w-2/5 rounded-2xl bg-panel-2 breathe" />
-      <div className="h-24 w-4/5 rounded-2xl bg-panel-2 breathe" />
+      <div className="ml-auto h-10 w-2/5 rounded-xl bg-panel-2 breathe" />
+      <div className="h-24 w-4/5 rounded-xl bg-panel-2 breathe" />
       <div className="h-8 w-1/2 rounded-xl bg-panel-2 breathe" />
     </div>
   );
@@ -74,14 +74,14 @@ export function MessageList({ turns, status, loading, projectName, onSuggest }: 
 
         {!loading && turns.length === 0 && (
           <div className="rise pt-16">
-            <div className="rounded-3xl border border-line bg-panel/80 px-8 py-10 text-center shadow-soft">
+            <div className="rounded-2xl border border-line-2 bg-panel/90 px-8 py-10 text-center shadow-strong">
               <p className="text-[11px] font-semibold tracking-[0.3em] text-ink-3 uppercase">
                 Claude Code · {projectName}
               </p>
-              <h2 className="font-display mt-3 text-[30px] leading-tight font-semibold text-ink text-balance">
+              <h2 className="font-display mt-3 text-[26px] leading-tight font-semibold text-ink text-balance">
                 What are we building?
               </h2>
-              <p className="mx-auto mt-3 max-w-md text-[14px] leading-relaxed text-ink-2">
+              <p className="mx-auto mt-3 max-w-md text-[13px] leading-relaxed text-ink-2">
                 Claude can read and edit files and run commands in this project. It asks before
                 anything it isn’t already allowed to do.
               </p>
@@ -91,7 +91,7 @@ export function MessageList({ turns, status, loading, projectName, onSuggest }: 
                     key={s}
                     type="button"
                     onClick={() => onSuggest(s)}
-                    className="pill text-[12.5px] hover:bg-panel-2 active:translate-y-px"
+                    className="pill active:translate-y-px"
                   >
                     {s}
                   </button>

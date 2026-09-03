@@ -83,6 +83,11 @@ An engine process starts only when you send the first message of a session
 (new or resumed) and is kept alive while the chat is open, so follow-ups are
 fast. Idle engines are closed after an hour.
 
+## Look
+
+The UI uses Buildable's own dark CAD theme (same tokens, fonts and mark as the
+studio in the ezdxf-flask repo), since it replaces Buildable's in-app agent.
+
 ## Credits
 
 Tool card components are adapted from

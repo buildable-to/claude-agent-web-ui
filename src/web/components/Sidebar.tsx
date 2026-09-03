@@ -17,13 +17,13 @@ export function Sidebar({ sessions, activeId, onSelect, onNew, onRename, onDelet
   const [confirming, setConfirming] = useState<string | null>(null);
 
   return (
-    <aside className="flex w-[264px] shrink-0 flex-col border-r border-line bg-panel-2/60">
-      <div className="flex h-16 items-center justify-between px-5">
+    <aside className="flex w-[240px] shrink-0 flex-col border-r border-line bg-sidebar">
+      <div className="flex h-14 items-center justify-between border-b border-line px-4">
         <span className="text-[11px] font-semibold tracking-[0.18em] text-ink-3 uppercase">Sessions</span>
         <button
           type="button"
           onClick={onNew}
-          className="flex items-center gap-1 rounded-full bg-accent px-3 py-1.5 text-[12px] font-semibold text-white shadow-soft transition hover:brightness-105 active:translate-y-px"
+          className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-accent-dim active:translate-y-px"
         >
           <Plus className="size-3.5" /> New
         </button>
@@ -41,8 +41,8 @@ export function Sidebar({ sessions, activeId, onSelect, onNew, onRename, onDelet
           return (
             <div
               key={s.sessionId}
-              className={`group relative my-0.5 rounded-xl transition ${
-                active ? 'bg-panel shadow-soft' : 'hover:bg-panel/70'
+              className={`group relative my-0.5 rounded-lg transition ${
+                active ? 'bg-panel-3' : 'hover:bg-panel-2'
               }`}
             >
               {isEditing ? (
@@ -102,7 +102,7 @@ export function Sidebar({ sessions, activeId, onSelect, onNew, onRename, onDelet
                         title={s.status === 'requires_action' ? 'Needs approval' : (s.status ?? 'live')}
                       />
                     )}
-                    <span className={`line-clamp-2 text-[13px] leading-snug ${active ? 'font-medium text-ink' : 'text-ink'}`}>
+                    <span className={`line-clamp-2 text-[12.5px] leading-snug ${active ? 'font-medium text-ink' : 'text-ink-2 group-hover:text-ink'}`}>
                       {s.title}
                     </span>
                   </div>
@@ -115,7 +115,7 @@ export function Sidebar({ sessions, activeId, onSelect, onNew, onRename, onDelet
                 </button>
               )}
               {!isEditing && !isConfirming && (
-                <div className="absolute top-1.5 right-1.5 hidden gap-0.5 rounded-lg bg-panel p-0.5 shadow-soft group-hover:flex">
+                <div className="absolute top-1.5 right-1.5 hidden gap-0.5 rounded-md border border-line-2 bg-panel p-0.5 group-hover:flex">
                   <button
                     type="button"
                     onClick={() => setEditing({ id: s.sessionId, title: s.title })}

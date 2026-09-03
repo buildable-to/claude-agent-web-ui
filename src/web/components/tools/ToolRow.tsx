@@ -27,12 +27,12 @@ export function ToolRow({ tool, live, children, defaultOpen = false }: Props) {
   const expandable = Boolean(children);
 
   return (
-    <div className="rounded-xl border border-line bg-panel/80">
+    <div className="rounded-lg border border-line bg-panel/80">
       <button
         type="button"
         onClick={() => expandable && setOpen((o) => !o)}
         aria-expanded={open}
-        className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[13px] transition ${
+        className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-[12.5px] transition ${
           expandable ? 'cursor-pointer hover:bg-panel-2/70' : 'cursor-default'
         }`}
       >

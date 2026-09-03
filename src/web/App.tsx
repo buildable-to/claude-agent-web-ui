@@ -7,7 +7,6 @@ import { PermissionBanner } from './components/PermissionBanner';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { api } from './lib/api';
-import { applyTheme, readTheme, type Theme } from './lib/theme';
 import { ws, type ConnectionState } from './lib/ws';
 import { useSession } from './state/useSession';
 import { useSessions } from './state/useSessions';
@@ -29,7 +28,6 @@ export default function App() {
   const [draft, setDraft] = useState('');
   const [focusKey, setFocusKey] = useState(0);
   const [filesOpen, setFilesOpen] = useState(readFilesOpen);
-  const [theme, setTheme] = useState<Theme>(readTheme);
   const [treeKey, setTreeKey] = useState(0);
   const { sessions, refresh } = useSessions();
   const onTurnEnd = useCallback(() => {
@@ -39,8 +37,6 @@ export default function App() {
   const session = useSession(selected.id, selected.nonce, onTurnEnd);
   const { state } = session;
 
-  useEffect(() => applyTheme(theme), [theme]);
-
   // The tab itself reports state: a dot on the icon and a title prefix.
   useEffect(() => {
     const name = config?.projectName ?? 'Claude Agent Web UI';
@@ -49,7 +45,7 @@ export default function App() {
     document.title = attention ? `● Needs you · ${name}` : working ? `… Working · ${name}` : name;
     const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if (link) {
-      link.href = attention ? '/favicon-attention.svg' : working ? '/favicon-working.svg' : '/favicon.svg';
+      link.href = attention ? '/favicon-attention.png' : working ? '/favicon-working.png' : '/favicon.png';
     }
   }, [state.status, config?.projectName]);
 
@@ -125,8 +121,6 @@ export default function App() {
           meta={state.meta}
           filesOpen={filesOpen}
           onToggleFiles={toggleFiles}
-          theme={theme}
-          onTheme={setTheme}
           onModel={session.setModel}
           onMode={session.setPermissionMode}
         />

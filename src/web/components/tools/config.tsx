@@ -26,34 +26,34 @@ const icon = (node: ReactNode) => node;
 export function toolLook(name: string): ToolLook {
   switch (name) {
     case 'Read':
-      return { icon: icon(<FileText className="size-3.5" />), hue: 'text-emerald-600 dark:text-emerald-400' };
+      return { icon: icon(<FileText className="size-3.5" />), hue: 'text-emerald-400' };
     case 'Write':
-      return { icon: icon(<FilePen className="size-3.5" />), hue: 'text-emerald-600 dark:text-emerald-400' };
+      return { icon: icon(<FilePen className="size-3.5" />), hue: 'text-emerald-400' };
     case 'Edit':
     case 'MultiEdit':
-      return { icon: icon(<FilePenLine className="size-3.5" />), hue: 'text-emerald-600 dark:text-emerald-400' };
+      return { icon: icon(<FilePenLine className="size-3.5" />), hue: 'text-emerald-400' };
     case 'NotebookEdit':
-      return { icon: icon(<BookOpen className="size-3.5" />), hue: 'text-emerald-600 dark:text-emerald-400' };
+      return { icon: icon(<BookOpen className="size-3.5" />), hue: 'text-emerald-400' };
     case 'Bash':
     case 'BashOutput':
     case 'KillShell':
-      return { icon: icon(<Terminal className="size-3.5" />), hue: 'text-amber-600 dark:text-amber-400' };
+      return { icon: icon(<Terminal className="size-3.5" />), hue: 'text-amber-400' };
     case 'Grep':
-      return { icon: icon(<SearchCode className="size-3.5" />), hue: 'text-violet-600 dark:text-violet-400' };
+      return { icon: icon(<SearchCode className="size-3.5" />), hue: 'text-violet-400' };
     case 'Glob':
-      return { icon: icon(<Search className="size-3.5" />), hue: 'text-violet-600 dark:text-violet-400' };
+      return { icon: icon(<Search className="size-3.5" />), hue: 'text-violet-400' };
     case 'WebSearch':
     case 'web_search':
     case 'WebFetch':
     case 'web_fetch':
-      return { icon: icon(<Globe className="size-3.5" />), hue: 'text-cyan-600 dark:text-cyan-400' };
+      return { icon: icon(<Globe className="size-3.5" />), hue: 'text-cyan-400' };
     case 'Task':
     case 'Agent':
-      return { icon: icon(<Bot className="size-3.5" />), hue: 'text-indigo-600 dark:text-indigo-400' };
+      return { icon: icon(<Bot className="size-3.5" />), hue: 'text-indigo-400' };
     case 'TodoWrite':
-      return { icon: icon(<ListTodo className="size-3.5" />), hue: 'text-indigo-600 dark:text-indigo-400' };
+      return { icon: icon(<ListTodo className="size-3.5" />), hue: 'text-indigo-400' };
     case 'Skill':
-      return { icon: icon(<Sparkles className="size-3.5" />), hue: 'text-rose-600 dark:text-rose-400' };
+      return { icon: icon(<Sparkles className="size-3.5" />), hue: 'text-rose-400' };
     default:
       return { icon: icon(<Wrench className="size-3.5" />), hue: 'text-ink-2' };
   }
@@ -149,32 +149,32 @@ export function toolChip(name: string): string {
     case 'Edit':
     case 'MultiEdit':
     case 'NotebookEdit':
-      return 'border-emerald-300/60 bg-emerald-50/70 text-emerald-700 hover:bg-emerald-100/80 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300 dark:hover:bg-emerald-400/20';
+      return 'text-emerald-300 hover:bg-emerald-400/20';
     case 'Bash':
     case 'BashOutput':
     case 'KillShell':
-      return 'border-amber-300/60 bg-amber-50/70 text-amber-700 hover:bg-amber-100/80 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300 dark:hover:bg-amber-400/20';
+      return 'text-amber-300 hover:bg-amber-400/20';
     case 'Grep':
     case 'Glob':
-      return 'border-violet-300/60 bg-violet-50/70 text-violet-700 hover:bg-violet-100/80 dark:border-violet-400/30 dark:bg-violet-400/10 dark:text-violet-300 dark:hover:bg-violet-400/20';
+      return 'text-violet-300 hover:bg-violet-400/20';
     case 'WebSearch':
     case 'WebFetch':
     case 'web_search':
     case 'web_fetch':
-      return 'border-cyan-300/60 bg-cyan-50/70 text-cyan-700 hover:bg-cyan-100/80 dark:border-cyan-400/30 dark:bg-cyan-400/10 dark:text-cyan-300 dark:hover:bg-cyan-400/20';
+      return 'text-cyan-300 hover:bg-cyan-400/20';
     case 'Task':
     case 'Agent':
     case 'TodoWrite':
-      return 'border-indigo-300/60 bg-indigo-50/70 text-indigo-700 hover:bg-indigo-100/80 dark:border-indigo-400/30 dark:bg-indigo-400/10 dark:text-indigo-300 dark:hover:bg-indigo-400/20';
+      return 'text-indigo-300 hover:bg-indigo-400/20';
     case 'Skill':
-      return 'border-rose-300/60 bg-rose-50/70 text-rose-700 hover:bg-rose-100/80 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-300 dark:hover:bg-rose-400/20';
+      return 'text-rose-300 hover:bg-rose-400/20';
     default:
       return 'border-line-2 bg-panel text-ink-2 hover:bg-panel-2';
   }
 }
 
 export const thinkingChip =
-  'border-purple-300/60 bg-purple-50/70 text-purple-700 hover:bg-purple-100/80 dark:border-purple-400/30 dark:bg-purple-400/10 dark:text-purple-300 dark:hover:bg-purple-400/20';
+  'text-purple-300 hover:bg-purple-400/20';
 
 /** Very short chip text: "Read auth.ts", "Run tests", "Search “TODO”". */
 export function toolChipLabel(tool: ToolBlock): string {

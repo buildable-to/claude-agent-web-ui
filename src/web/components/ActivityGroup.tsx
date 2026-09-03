@@ -35,7 +35,7 @@ function ToolChip({ tool, live, onClick }: { tool: ToolBlock; live: boolean; onC
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-[3px] text-[11.5px] font-medium transition active:translate-y-px ${toolChip(tool.name)} ${
+      className={`inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-[3px] font-mono text-[11px] font-medium transition active:translate-y-px ${toolChip(tool.name)} ${
         running ? 'breathe' : ''
       }`}
       title={`${tool.name}${tool.isError ? ' (failed)' : ''}`}
@@ -59,7 +59,7 @@ function ThinkChip({ block, onClick }: { block: ThinkingBlock; onClick: () => vo
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-[3px] text-[11.5px] font-medium transition active:translate-y-px ${thinkingChip} ${
+      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-[3px] font-mono text-[11px] font-medium transition active:translate-y-px ${thinkingChip} ${
         block.done ? '' : 'breathe'
       }`}
       title="Thinking"

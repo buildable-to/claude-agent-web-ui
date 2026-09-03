@@ -17,7 +17,7 @@ function Code({ children, tone = 'plain' }: { children: string; tone?: 'plain' |
   } as const;
   return (
     <pre
-      className={`max-h-56 overflow-auto rounded-xl px-3.5 py-2.5 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap break-words ${tones[tone]}`}
+      className={`max-h-56 overflow-auto rounded-lg px-3.5 py-2.5 font-mono text-[12px] leading-relaxed whitespace-pre-wrap break-words ${tones[tone]}`}
     >
       {children}
     </pre>
@@ -67,17 +67,17 @@ export function PermissionBanner({ request, queued, onAnswer }: Props) {
   const d = describe(request);
   const title = request.title ?? `Claude wants to ${d.title}`;
   const btn =
-    'h-9 rounded-full px-4 text-[13px] font-semibold transition active:translate-y-px focus-visible:outline-inverse-ink';
+    'h-8 rounded-md px-3.5 text-[12.5px] font-semibold transition active:translate-y-px focus-visible:outline-inverse-ink';
   return (
     <div className="mx-auto w-full max-w-3xl px-6">
-      <div className="rise rounded-2xl bg-inverse p-4 text-inverse-ink shadow-strong">
+      <div className="rise rounded-xl bg-inverse p-4 text-inverse-ink shadow-strong">
         <div className="flex items-start gap-3">
-          <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-warn/20 text-warn">
+          <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-warn/25 text-[#8a5a00]">
             <ShieldAlert className="size-4" />
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-baseline gap-x-2">
-              <span className="text-[14.5px] font-semibold">{title}</span>
+              <span className="text-[14px] font-semibold">{title}</span>
               {queued > 0 && <span className="text-[12px] text-inverse-ink-2">+{queued} more waiting</span>}
             </div>
             {request.description && <p className="mt-0.5 text-[12.5px] text-inverse-ink-2">{request.description}</p>}
@@ -108,7 +108,7 @@ export function PermissionBanner({ request, queued, onAnswer }: Props) {
           <button
             type="button"
             onClick={() => onAnswer(request.requestId, 'allow')}
-            className={`${btn} bg-accent text-white shadow-soft hover:brightness-105`}
+            className={`${btn} bg-accent text-white hover:bg-accent-dim`}
           >
             Approve
           </button>

@@ -24,7 +24,7 @@ function Node({ node, depth, onPick }: { node: TreeNode; depth: number; onPick: 
       <button
         type="button"
         onClick={() => (isDir ? setOpen((o) => !o) : onPick(node.path))}
-        className="group flex w-full items-center gap-1.5 rounded-md py-[3px] pr-2 text-left text-[12.5px] text-ink-2 hover:bg-panel hover:text-ink"
+        className="group flex w-full items-center gap-1.5 rounded-md py-[3px] pr-2 text-left text-[12px] text-ink-2 hover:bg-panel-2 hover:text-ink"
         style={{ paddingLeft: 8 + depth * 14 }}
         title={isDir ? node.path || node.name : `Add ${node.path} to your message`}
       >
@@ -64,8 +64,8 @@ export function FileTree({ onPick, refreshKey = 0 }: Props) {
   }, [refresh, refreshKey]);
 
   return (
-    <aside className="flex w-[280px] shrink-0 flex-col border-l border-line bg-panel-2/60">
-      <div className="flex h-16 items-center justify-between px-4">
+    <aside className="flex w-[264px] shrink-0 flex-col border-l border-line bg-sidebar">
+      <div className="flex h-14 items-center justify-between border-b border-line px-4">
         <div className="min-w-0">
           <div className="text-[11px] font-semibold tracking-[0.18em] text-ink-3 uppercase">Project files</div>
           {tree && (

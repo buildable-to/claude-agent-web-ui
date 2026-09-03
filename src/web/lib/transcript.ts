@@ -219,6 +219,11 @@ export function closeOpenTurn(t: Transcript): Transcript {
   return { ...closed, stream: null };
 }
 
+function stripAnsi(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '');
+}
+
 function cryptoId() {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
@@ -386,12 +391,26 @@ function applyUser(
 
   if (parentToolUseId) return { ...t, seen };
 
-  const text = raws
+  const rawText = raws
     .filter((r) => r.type === 'text')
     .map((r) => String(r.text ?? ''))
-    .join('\n')
-    .trim();
+    .join('\n');
   const images = raws.filter((r) => r.type === 'image').length;
+
+  // Claude Code records slash commands and their output as user messages.
+  const command = /<command-name>([^<]*)<\/command-name>(?:.*?<command-args>([^<]*)<\/command-args>)?/s.exec(rawText);
+  if (command) {
+    const line = `${command[1]!.trim()} ${(command[2] ?? '').trim()}`.trim();
+    return addNote({ ...t, seen }, uuid, 'info', line.startsWith('/') ? line : `/${line}`);
+  }
+  const stdout = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(rawText);
+  if (stdout) {
+    const out = stripAnsi(stdout[1]!).trim();
+    return out ? addNote({ ...t, seen }, uuid, 'info', out.length > 400 ? `${out.slice(0, 400)}…` : out) : { ...t, seen };
+  }
+
+  // Injected context (system reminders etc.) is not something the user typed.
+  const text = rawText.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim();
   if (!text && !images) return { ...t, seen };
 
   if (isSynthetic || /^\[Request interrupted/.test(text)) {

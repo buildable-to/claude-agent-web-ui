@@ -20,7 +20,7 @@ export function ThinkingRow({ block }: { block: ThinkingBlock }) {
       <button
         type="button"
         onClick={() => hasText && setOpen((o) => !o)}
-        className={`flex items-center gap-1.5 text-[13px] text-purple-700 dark:text-purple-300 ${
+        className={`flex items-center gap-1.5 text-[13px] text-purple-300 ${
           hasText ? 'cursor-pointer hover:opacity-80' : 'cursor-default'
         }`}
       >

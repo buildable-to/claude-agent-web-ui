@@ -10,14 +10,14 @@ export function Pre({
   maxHeight?: boolean;
 }) {
   const tones = {
-    plain: 'bg-surface-2 text-ink',
+    plain: 'bg-paper text-ink border border-line',
     error: 'bg-danger-soft text-danger',
     add: 'bg-ok-soft text-ok',
     remove: 'bg-danger-soft text-danger',
   } as const;
   return (
     <pre
-      className={`overflow-x-auto rounded-md px-3 py-2 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap break-words ${tones[tone]} ${
+      className={`overflow-x-auto rounded-md px-3 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap break-words ${tones[tone]} ${
         maxHeight ? 'max-h-80 overflow-y-auto' : ''
       }`}
     >

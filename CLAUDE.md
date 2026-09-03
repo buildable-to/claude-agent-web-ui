@@ -29,8 +29,10 @@ everything to a React page over a WebSocket. See README.md for the user view.
   chips that expand into a timeline; auto-opens while the turn is live.
 - `src/web/components/FileTree.tsx` + `src/server/tree.ts` — project files
   panel (`GET /api/tree`), refreshed after every turn.
-- Theme: tokens live in `src/web/index.css`; `data-theme` on `<html>`
-  overrides the OS preference (see `src/web/lib/theme.ts`).
+- Theme: Buildable's precision-dark CAD look, dark only. Tokens in
+  `src/web/index.css` mirror `buildable/static/css/_variables.css` in the
+  ezdxf-flask repo (DM Sans / Archivo / JetBrains Mono, blue accent). The
+  favicon and top-bar mark are generated from Buildable's print logo.
 
 ## Things that bit us
 

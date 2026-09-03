@@ -30,7 +30,7 @@ export const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
   if (turn.kind === 'user') {
     return (
       <div className="rise flex justify-end">
-        <div className="max-w-[min(40rem,85%)] rounded-2xl rounded-br-md border border-line bg-panel px-4.5 py-3 text-[14.5px] leading-relaxed whitespace-pre-wrap break-words text-ink shadow-soft">
+        <div className="max-w-[min(40rem,85%)] rounded-xl rounded-br-sm border border-accent/25 bg-accent-soft px-4 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap break-words text-ink">
           {turn.text}
           {turn.images > 0 && (
             <div className="mt-1 text-[12px] text-ink-2">
@@ -46,7 +46,7 @@ export const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
     const error = turn.level === 'error';
     return (
       <div
-        className={`rise flex items-start gap-2 rounded-xl px-3.5 py-2.5 text-[13px] ${
+        className={`rise flex items-start gap-2 rounded-lg px-3.5 py-2.5 text-[12.5px] ${
           error ? 'bg-danger-soft text-danger' : 'bg-panel-2 text-ink-2'
         }`}
       >
@@ -65,7 +65,7 @@ export const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
         if (piece.kind === 'text') {
           const streamingText = turn.open && i === pieces.length - 1;
           return (
-            <div key={i} className="rise rounded-2xl border border-line bg-panel/70 px-4.5 py-3.5 text-[14.5px] leading-relaxed text-ink">
+            <div key={i} className="rise rounded-xl border border-line bg-panel/80 px-4 py-3 text-[13.5px] leading-relaxed text-ink">
               <Markdown>{piece.text}</Markdown>
               {streamingText && (
                 <span className="ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[3px] bg-accent breathe" aria-hidden />

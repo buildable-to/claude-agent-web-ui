@@ -51,8 +51,8 @@ export function ChatInput({ value, onChange, status, onSend, onStop, autoFocus, 
         : 'Ask for a change, a plan, or a diagnosis…';
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 pt-3 pb-5">
-      <div className="rounded-2xl border border-line bg-panel shadow-strong transition focus-within:border-line-2">
+    <div className="mx-auto w-full max-w-3xl px-6 pt-3 pb-4">
+      <div className="focus-glow rounded-xl border border-line-2 bg-panel shadow-strong transition">
         <textarea
           ref={ref}
           value={value}
@@ -61,7 +61,7 @@ export function ChatInput({ value, onChange, status, onSend, onStop, autoFocus, 
           placeholder={placeholder}
           disabled={disabled}
           rows={1}
-          className="block w-full resize-none bg-transparent px-5 pt-4 pb-2 text-[15px] leading-relaxed text-ink outline-none placeholder:text-ink-3 focus-visible:outline-none disabled:opacity-60"
+          className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-[14px] leading-relaxed text-ink outline-none placeholder:text-ink-3 focus-visible:outline-none disabled:opacity-60"
         />
         <div className="flex items-center justify-between gap-3 px-3 pb-3">
           <span className="pl-2 text-[11.5px] text-ink-3">
@@ -73,7 +73,7 @@ export function ChatInput({ value, onChange, status, onSend, onStop, autoFocus, 
                 type="button"
                 onClick={onStop}
                 title="Stop the current turn"
-                className="flex h-9 items-center gap-1.5 rounded-full border border-line px-3 text-[12.5px] font-medium text-ink hover:border-danger hover:text-danger"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-line-2 px-3 text-[12px] font-medium text-ink hover:border-danger hover:text-danger"
               >
                 <Square className="size-3" fill="currentColor" /> Stop
               </button>
@@ -83,7 +83,7 @@ export function ChatInput({ value, onChange, status, onSend, onStop, autoFocus, 
               onClick={submit}
               disabled={disabled || !value.trim()}
               title="Send"
-              className="flex h-9 items-center gap-1.5 rounded-full bg-accent pr-3 pl-4 text-[12.5px] font-semibold text-white shadow-soft transition hover:brightness-105 active:translate-y-px disabled:opacity-40 disabled:shadow-none"
+              className="flex h-8 items-center gap-1.5 rounded-md bg-accent pr-3 pl-3.5 text-[12px] font-semibold text-white transition hover:bg-accent-dim active:translate-y-px disabled:opacity-40"
             >
               Send <ArrowUp className="size-3.5" />
             </button>
