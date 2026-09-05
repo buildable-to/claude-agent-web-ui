@@ -1,12 +1,19 @@
 import type { IncomingMessage, Server } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage } from '../shared/protocol.js';
+import type { Account } from './accounts.js';
 import type { LiveSession } from './live-session.js';
 import type { SessionManager } from './session-manager.js';
 
 type Attachment = { unsubscribe: () => void };
 
-export function attachWebSocket(server: Server, sessions: SessionManager) {
+/** Turns a token (or a dev-mode account id) into the folder's session manager. */
+export type Resolver = (
+  token: string | undefined,
+  devAccount: string | undefined,
+) => { manager: SessionManager; dir: string; account?: Account };
+
+export function attachWebSocket(server: Server, resolveCtx: Resolver) {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', (req: IncomingMessage, socket, head) => {
@@ -15,10 +22,20 @@ export function attachWebSocket(server: Server, sessions: SessionManager) {
       socket.destroy();
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+    // One connection speaks for one account, decided at the handshake.
+    let ctx: ReturnType<Resolver>;
+    try {
+      ctx = resolveCtx(url.searchParams.get('token') ?? undefined, url.searchParams.get('account') ?? undefined);
+    } catch (err) {
+      socket.write(`HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n${err instanceof Error ? err.message : ''}`);
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req, ctx));
   });
 
-  wss.on('connection', (ws: WebSocket) => {
+  wss.on('connection', (ws: WebSocket, _req: IncomingMessage, ctx: ReturnType<Resolver>) => {
+    const sessions = ctx.manager;
     const attachments = new Map<string, Attachment>();
     const send = (message: ServerMessage) => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));

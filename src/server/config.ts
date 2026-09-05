@@ -6,6 +6,12 @@ export type Config = {
   port: number;
   host: string;
   production: boolean;
+  /** Set = multi-account mode: one folder per account under this root. */
+  agentsRoot?: string;
+  /** HS256 secret shared with the app that mints the tokens. Empty = dev mode. */
+  authSecret: string;
+  /** Per-account settings.json to seed new folders with. */
+  accountTemplate?: string;
 };
 
 function readArg(name: string): string | undefined {
@@ -23,11 +29,16 @@ export function loadConfig(): Config {
   }
   const port = Number(readArg('port') ?? process.env.PORT ?? 3456);
   const host = readArg('host') ?? process.env.HOST ?? '127.0.0.1';
+  const agentsRoot = readArg('agents-root') ?? process.env.AGENTS_ROOT;
+  const accountTemplate = readArg('account-template') ?? process.env.ACCOUNT_SETTINGS_TEMPLATE;
   return {
     projectDir,
     port,
     host,
     production: process.env.NODE_ENV === 'production',
+    ...(agentsRoot ? { agentsRoot: resolve(agentsRoot) } : {}),
+    authSecret: readArg('auth-secret') ?? process.env.AGENT_AUTH_SECRET ?? '',
+    ...(accountTemplate ? { accountTemplate: resolve(accountTemplate) } : {}),
   };
 }
 

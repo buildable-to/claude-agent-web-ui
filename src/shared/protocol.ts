@@ -122,6 +122,10 @@ export type ServerConfig = {
   projectDir: string;
   projectName: string;
   version: string;
+  /** Present in multi-account mode: who this page speaks for. */
+  account?: { id: string; email?: string };
+  /** The project session the page was opened on, if the token named one. */
+  project?: string;
 };
 
 /** Project folder listing for the files panel. */

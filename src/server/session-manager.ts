@@ -70,7 +70,7 @@ export class SessionManager {
     return this.infoProbe;
   }
 
-  async list(): Promise<SessionSummary[]> {
+  async list(_project?: string): Promise<SessionSummary[]> {
     const persisted = await listSessions({ dir: this.projectDir, limit: 200 });
     const rows: SessionSummary[] = persisted.map((s) => {
       const live = this.get(s.sessionId);
