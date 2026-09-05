@@ -13,7 +13,20 @@ export type Resolver = (
   devAccount: string | undefined,
 ) => { manager: SessionManager; dir: string; account?: Account };
 
-export function attachWebSocket(server: Server, resolveCtx: Resolver, path = '/ws') {
+export type ServerState = {
+  /** A restart is waiting for running turns: no new turn starts, the rest works. */
+  draining: () => boolean;
+};
+
+export const DRAINING_MESSAGE =
+  'The agent is restarting for an update and will be back in a minute. Your conversation is kept; send again then.';
+
+export function attachWebSocket(
+  server: Server,
+  resolveCtx: Resolver,
+  path = '/ws',
+  state: ServerState = { draining: () => false },
+) {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', (req: IncomingMessage, socket, head) => {
@@ -81,6 +94,7 @@ export function attachWebSocket(server: Server, resolveCtx: Resolver, path = '/w
           return;
         }
         case 'start': {
+          if (state.draining()) throw new Error(DRAINING_MESSAGE);
           refuseUnlessAsking(msg.permissionMode);
           // The token's project is signed; the page's is not. A token that names
           // a project pins it, otherwise the page may say which one.
@@ -105,6 +119,7 @@ export function attachWebSocket(server: Server, resolveCtx: Resolver, path = '/w
           return;
         }
         case 'send': {
+          if (state.draining()) throw new Error(DRAINING_MESSAGE);
           const session = requireLive(msg.sessionId);
           const text = msg.text.trim();
           if (!text) return;

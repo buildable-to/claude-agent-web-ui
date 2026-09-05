@@ -14,6 +14,7 @@ import {
   applyHistory,
   applyMessage,
   emptyTranscript,
+  markCut,
   type Transcript,
 } from '@/lib/transcript';
 import { ws } from '@/lib/ws';
@@ -95,7 +96,15 @@ function reducer(state: SessionState, action: Action): SessionState {
           };
         }
         case 'not_live':
-          return { ...state, attached: false, status: 'idle', pending: [] };
+          // No engine holds this conversation. If its last turn never
+          // finished, the engine died under it (a restart): say so.
+          return {
+            ...state,
+            attached: false,
+            status: 'idle',
+            pending: [],
+            transcript: markCut(state.transcript, `cut-${m.sessionId}-${state.transcript.turns.length}`),
+          };
         case 'message':
           return { ...state, transcript: applyMessage(state.transcript, m.message) };
         case 'permission_request':
@@ -110,6 +119,10 @@ function reducer(state: SessionState, action: Action): SessionState {
             status: m.status,
             attached: m.status === 'closed' ? false : state.attached,
             pending: m.status === 'closed' ? [] : state.pending,
+            transcript:
+              m.status === 'closed'
+                ? markCut(state.transcript, `cut-${m.sessionId}-${state.transcript.turns.length}`)
+                : state.transcript,
           };
         case 'meta':
           return { ...state, meta: { ...state.meta, ...m.meta } };

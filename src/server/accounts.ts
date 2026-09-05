@@ -158,6 +158,12 @@ export class Accounts {
     for (const m of this.managers.values()) m.closeAll();
   }
 
+  busy(): number {
+    let n = 0;
+    for (const m of this.managers.values()) n += m.busy();
+    return n;
+  }
+
   private readonly trusted = new Set<string>();
   private readonly remembered = new Set<string>();
 

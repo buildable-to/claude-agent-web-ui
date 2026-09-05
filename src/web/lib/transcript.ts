@@ -221,6 +221,28 @@ export function addNote(t: Transcript, id: string, level: 'info' | 'error', text
   return { ...t, seen, turns: [...t.turns, { kind: 'note', id, level, text }] };
 }
 
+/** Said when the engine died under an unfinished turn (a restart, a crash). */
+export const CUT_TEXT =
+  'The agent was stopped before it finished, by a restart. Say "continue" to pick up where it left off.';
+
+/** A conversation whose newest turn (ignoring notes) ends in a tool call
+ *  with no result never finished: the engine died under it. */
+export function endedMidTurn(t: Transcript): boolean {
+  let i = t.turns.length - 1;
+  while (i >= 0 && t.turns[i]!.kind === 'note') i--;
+  const turn = t.turns[i];
+  if (!turn || turn.kind !== 'assistant') return false;
+  const last = turn.blocks[turn.blocks.length - 1];
+  return Boolean(last && last.type === 'tool_use' && last.result === undefined);
+}
+
+/** The engine is gone under this conversation: close what was open and say so once. */
+export function markCut(t: Transcript, id: string): Transcript {
+  if (lastAssistant(t) === -1 && !endedMidTurn(t)) return t;
+  if (t.turns.some((x) => x.kind === 'note' && x.text === CUT_TEXT && x.id === id)) return t;
+  return addNote(closeOpenTurn(t), id, 'info', CUT_TEXT);
+}
+
 export function closeOpenTurn(t: Transcript): Transcript {
   const idx = lastAssistant(t);
   if (idx === -1) return { ...t, stream: null };

@@ -213,6 +213,11 @@ export class SessionManager {
     return [...this.live.values()].filter((s) => s.status !== 'closed');
   }
 
+  /** Engines in the middle of a turn, or waiting on the engineer. */
+  busy(): number {
+    return this.liveSessions().filter((s) => s.status === 'running' || s.status === 'requires_action' || s.status === 'starting').length;
+  }
+
   /** Stop one conversation's engine: deny what it is waiting on, interrupt, close. */
   async stop(sessionId: string): Promise<boolean> {
     const s = this.get(sessionId);
