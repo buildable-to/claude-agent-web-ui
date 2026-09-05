@@ -7,9 +7,10 @@ import {
   type PermissionMode,
 } from '@anthropic-ai/claude-agent-sdk';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineInfo, HistoryMessage, SessionSummary } from '../shared/protocol.js';
-import { probeEngine } from './commands.js';
+import { installedSkills, probeEngine } from './commands.js';
 import { LiveSession } from './live-session.js';
 
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
@@ -66,11 +67,13 @@ export class SessionManager {
     }
     const project = opts.project ?? (sessionId ? this.projects[sessionId] : undefined);
     const { project: _p, ...rest } = opts;
+    const only = await this.offeredCommands();
     const session = new LiveSession({
       cwd: this.projectDir,
       ...(sessionId ? { resume: sessionId } : {}),
       ...rest,
       ...(project ? { project } : {}),
+      ...(only ? { onlyCommands: only } : {}),
       ...(project && process.env.BUILDABLE_URL
         ? { projectUrl: `${process.env.BUILDABLE_URL.replace(/\/$/, '')}/project-v4/sessions/${project}` }
         : {}),
@@ -99,11 +102,20 @@ export class SessionManager {
     return session;
   }
 
+  /** On the shared server the composer offers the skills installed for the
+   *  agent (Buildable's own), not Claude Code's commands; a laptop's single
+   *  folder keeps everything the engine knows. */
+  private async offeredCommands(): Promise<Set<string> | null> {
+    if (!this.accountId) return null;
+    return installedSkills([homedir(), this.projectDir]);
+  }
+
   /** Commands, skills and models for this project, from a live engine or a one-off probe. */
   async engineInfo(): Promise<EngineInfo> {
     if (this.info.value) return this.info.value;
     if (!this.info.probe) {
-      this.info.probe = probeEngine(this.projectDir)
+      this.info.probe = this.offeredCommands()
+        .then((only) => probeEngine(this.projectDir, only))
         .then((info) => {
           this.info.value = info;
           console.log(`[sessions] discovered ${info.commands.length} commands, ${info.models.length} models`);

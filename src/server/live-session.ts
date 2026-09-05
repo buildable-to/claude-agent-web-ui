@@ -87,6 +87,8 @@ export type LiveSessionOptions = {
   persistAlways?: boolean;
   /** Where the app shows the project, for the preface of the first message. */
   projectUrl?: string;
+  /** Offer only these slash commands in the composer (the installed skills on a shared server). */
+  onlyCommands?: ReadonlySet<string>;
 };
 
 export type Subscriber = (message: ServerMessage) => void;
@@ -108,6 +110,7 @@ export class LiveSession {
   private readonly buffer: SDKMessage[] = [];
   private closed = false;
   private terminalOnlyCommands: string[] = [];
+  private readonly onlyCommands: ReadonlySet<string> | null;
   private readonly onInfo: ((info: EngineInfo) => void) | undefined;
   private readonly onResult: LiveSessionOptions['onResult'];
   /** tool_use ids of shell commands that write the app's project for real. */
@@ -121,6 +124,7 @@ export class LiveSession {
     this.persistAlways = opts.persistAlways ?? true;
     this.onInfo = opts.onInfo;
     this.onResult = opts.onResult;
+    this.onlyCommands = opts.onlyCommands ?? null;
     this.meta.permissionMode = opts.permissionMode ?? 'default';
     if (opts.model) this.meta.model = opts.model;
 
@@ -358,7 +362,7 @@ export class LiveSession {
   private async loadInitDetails() {
     try {
       const init = await this.q.initializationResult();
-      const commands = toCommandInfo(init.commands, this.terminalOnlyCommands);
+      const commands = toCommandInfo(init.commands, this.terminalOnlyCommands, this.onlyCommands);
       const models = toModelOptions(init.models);
       this.meta = { ...this.meta, models, commands };
       this.broadcast({ type: 'meta', sessionId: this.sessionId, meta: this.meta });
