@@ -7,7 +7,7 @@ import { PermissionBanner } from './components/PermissionBanner';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { api } from './lib/api';
-import { page, tellParent } from './lib/page';
+import { BASE, page, tellParent } from './lib/page';
 import { ws, type ConnectionState } from './lib/ws';
 import { useEngineInfo } from './state/useEngineInfo';
 import { useSession } from './state/useSession';
@@ -88,7 +88,7 @@ export default function App() {
     document.title = attention ? `● Needs you · ${name}` : working ? `… Working · ${name}` : name;
     const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if (link) {
-      link.href = attention ? '/favicon-attention.png' : working ? '/favicon-working.png' : '/favicon.png';
+      link.href = `${BASE}/${attention ? 'favicon-attention.png' : working ? 'favicon-working.png' : 'favicon.png'}`;
     }
   }, [state.status, config?.projectName]);
 

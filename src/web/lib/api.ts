@@ -1,8 +1,8 @@
 import type { DirectoryTree, EngineInfo, HistoryMessage, ServerConfig, SessionSummary } from '@shared/protocol';
-import { authHeaders } from '@/lib/page';
+import { authHeaders, BASE } from '@/lib/page';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers: { 'content-type': 'application/json', ...authHeaders(), ...(init?.headers ?? {}) },
   });

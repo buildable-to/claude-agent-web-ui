@@ -1,6 +1,7 @@
 import { PanelRight } from 'lucide-react';
 import type { ModelOption, PermissionMode, SessionMeta, SessionStatus } from '@shared/protocol';
 import { money, shortPath } from '@/lib/format';
+import { BASE } from '@/lib/page';
 
 type Props = {
   projectName: string;
@@ -69,7 +70,7 @@ export function TopBar({
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-5">
-      <img src="/mark.png" alt="" className="h-6 w-auto opacity-90" />
+      <img src={`${BASE}/mark.png`} alt="" className="h-6 w-auto opacity-90" />
       <div className="min-w-0 flex-1">
         <div className="font-display truncate text-[14px] font-semibold tracking-tight text-ink">{projectName}</div>
         <div className="truncate font-mono text-[10.5px] text-ink-3" title={projectDir}>

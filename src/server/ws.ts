@@ -13,12 +13,12 @@ export type Resolver = (
   devAccount: string | undefined,
 ) => { manager: SessionManager; dir: string; account?: Account };
 
-export function attachWebSocket(server: Server, resolveCtx: Resolver) {
+export function attachWebSocket(server: Server, resolveCtx: Resolver, path = '/ws') {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', (req: IncomingMessage, socket, head) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    if (url.pathname !== '/ws') {
+    if (url.pathname !== path) {
       socket.destroy();
       return;
     }

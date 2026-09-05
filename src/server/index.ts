@@ -36,10 +36,11 @@ const resolveCtx: Resolver = (token, devAccount) => {
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
+const base = config.basePath; // '' or '/agent'
 
 // Only the API needs the token; the page and its assets load without one and
 // the browser then sends the token it was given on its URL.
-app.use('/api', (req, res, next) => {
+app.use(`${base}/api`, (req, res, next) => {
   const auth = req.header('authorization');
   const token = auth?.startsWith('Bearer ') ? auth.slice(7) : firstString(req.query.token);
   try {
@@ -53,7 +54,7 @@ app.use('/api', (req, res, next) => {
 
 const ctxOf = (res: express.Response) => res.locals.ctx as Ctx;
 
-app.get('/api/config', (_req, res) => {
+app.get(`${base}/api/config`, (_req, res) => {
   const { dir, account } = ctxOf(res);
   const body: ServerConfig = {
     projectDir: dir,
@@ -65,7 +66,7 @@ app.get('/api/config', (_req, res) => {
   res.json(body);
 });
 
-app.get('/api/engine', async (_req, res, next) => {
+app.get(`${base}/api/engine`, async (_req, res, next) => {
   try {
     res.json(await ctxOf(res).manager.engineInfo());
   } catch (err) {
@@ -73,7 +74,7 @@ app.get('/api/engine', async (_req, res, next) => {
   }
 });
 
-app.get('/api/tree', async (_req, res, next) => {
+app.get(`${base}/api/tree`, async (_req, res, next) => {
   try {
     res.json(await buildTree(ctxOf(res).dir));
   } catch (err) {
@@ -81,7 +82,7 @@ app.get('/api/tree', async (_req, res, next) => {
   }
 });
 
-app.get('/api/sessions', async (req, res, next) => {
+app.get(`${base}/api/sessions`, async (req, res, next) => {
   try {
     const project = firstString(req.query.project);
     res.json(await ctxOf(res).manager.list(project));
@@ -90,7 +91,7 @@ app.get('/api/sessions', async (req, res, next) => {
   }
 });
 
-app.get('/api/sessions/:id/messages', async (req, res, next) => {
+app.get(`${base}/api/sessions/:id/messages`, async (req, res, next) => {
   try {
     res.json(await ctxOf(res).manager.history(String(req.params.id)));
   } catch (err) {
@@ -98,7 +99,7 @@ app.get('/api/sessions/:id/messages', async (req, res, next) => {
   }
 });
 
-app.patch('/api/sessions/:id', async (req, res, next) => {
+app.patch(`${base}/api/sessions/:id`, async (req, res, next) => {
   try {
     const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
     if (!title) {
@@ -112,7 +113,7 @@ app.patch('/api/sessions/:id', async (req, res, next) => {
   }
 });
 
-app.delete('/api/sessions/:id', async (req, res, next) => {
+app.delete(`${base}/api/sessions/:id`, async (req, res, next) => {
   try {
     await ctxOf(res).manager.remove(String(req.params.id));
     res.json({ ok: true });
@@ -130,15 +131,16 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
 // In production the built web app is served from the same port.
 const webDist = resolve(here, '../../web');
 if (existsSync(webDist)) {
-  app.use(express.static(webDist));
-  app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile(resolve(webDist, 'index.html')));
+  app.use(base || '/', express.static(webDist));
+  const escaped = base.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+  app.get(new RegExp(`^${escaped}(?!/api/).*`), (_req, res) => res.sendFile(resolve(webDist, 'index.html')));
 }
 
 const server = createServer(app);
-attachWebSocket(server, resolveCtx);
+attachWebSocket(server, resolveCtx, `${base}/ws`);
 
 server.listen(config.port, config.host, () => {
-  console.log(`claude-agent-web-ui listening on http://${config.host}:${config.port}`);
+  console.log(`claude-agent-web-ui listening on http://${config.host}:${config.port}${base}/`);
   if (accounts) {
     console.log(`accounts under: ${config.agentsRoot} (${config.authSecret ? 'token auth' : 'DEV MODE, no auth'})`);
   } else {

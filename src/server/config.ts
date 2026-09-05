@@ -12,6 +12,8 @@ export type Config = {
   authSecret: string;
   /** Per-account settings.json to seed new folders with. */
   accountTemplate?: string;
+  /** Path prefix the page and API live under ('' or e.g. '/agent'); must match the build's BASE_PATH. */
+  basePath: string;
 };
 
 function readArg(name: string): string | undefined {
@@ -39,6 +41,7 @@ export function loadConfig(): Config {
     ...(agentsRoot ? { agentsRoot: resolve(agentsRoot) } : {}),
     authSecret: readArg('auth-secret') ?? process.env.AGENT_AUTH_SECRET ?? '',
     ...(accountTemplate ? { accountTemplate: resolve(accountTemplate) } : {}),
+    basePath: (readArg('base-path') ?? process.env.BASE_PATH ?? '').replace(/\/+$/, ''),
   };
 }
 

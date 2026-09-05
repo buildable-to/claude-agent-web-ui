@@ -4,9 +4,12 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
 const serverPort = Number(process.env.PORT ?? 3456);
+// Serve the page under a path prefix (e.g. /agent/) when an app embeds it.
+const base = (process.env.BASE_PATH ?? '/').replace(/\/?$/, '/');
 
 export default defineConfig({
   root: resolve(import.meta.dirname, 'src/web'),
+  base,
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

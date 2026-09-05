@@ -19,6 +19,9 @@ function read(name: string): string | null {
   }
 }
 
+/** The path prefix this page is served under ('' or e.g. '/agent'). */
+export const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
+
 export const page = {
   token: read('token'),
   project: read('project'),
