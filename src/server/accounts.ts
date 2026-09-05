@@ -4,17 +4,7 @@
 // Without AGENTS_ROOT the server runs exactly as before: one --dir, no auth.
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import {
-  copyFileSync,
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { SessionManager, type SharedEngineInfo } from './session-manager.js';
@@ -34,9 +24,6 @@ export type AccountsConfig = {
   authSecret: string;
   /** Per-account `.claude/settings.json` to seed a new folder with. */
   settingsTemplate?: string;
-  /** Skills every folder links to as its `.claude/skills` (a laptop, where the
-   *  engine has no shared home with the skills in it; unset on the server). */
-  skillsDir?: string;
   /** Claude Code's own config file, where a folder is marked trusted. */
   claudeConfigPath: string;
 };
@@ -148,7 +135,7 @@ export class Accounts {
   manager(account: Account): SessionManager {
     let m = this.managers.get(account.dir);
     if (!m) {
-      m = new SessionManager(account.dir, account.id, this.engineInfo, Boolean(this.config.skillsDir));
+      m = new SessionManager(account.dir, account.id, this.engineInfo);
       this.managers.set(account.dir, m);
     }
     return m;
@@ -194,7 +181,6 @@ export class Accounts {
       }
       console.log(`[accounts] new folder ${basename(dir)} at ${dir}`);
     }
-    this.linkSkills(dir);
     if (this.trusted.has(dir)) return;
     try {
       const path = this.config.claudeConfigPath;
@@ -213,33 +199,14 @@ export class Accounts {
       console.error(`[accounts] could not mark ${dir} trusted (will retry): ${String(err)}`);
     }
   }
-
-  /** `<folder>/.claude/skills` -> the configured skills dir, so the engine
-   *  (project settings) and the composer's picker see the same skills. An
-   *  existing folder is left alone: someone put it there. */
-  private linkSkills(dir: string) {
-    const target = this.config.skillsDir;
-    if (!target) return;
-    const link = join(dir, '.claude', 'skills');
-    try {
-      lstatSync(link);
-      return; // already there, link or folder
-    } catch {
-      // not there yet
-    }
-    try {
-      symlinkSync(target, link, 'dir');
-    } catch (err) {
-      console.error(`[accounts] could not link skills into ${dir}: ${String(err)}`);
-    }
-  }
 }
 
 export class AuthError extends Error {
   readonly status = 401;
 }
 
-/** Claude Code's `.claude.json` (trust flags live there). Override with CLAUDE_JSON_PATH. */
+/** Claude Code's `.claude.json` (trust flags live there): beside the config
+ *  dir it uses (CLAUDE_CONFIG_DIR or ~/.claude). Override with CLAUDE_JSON_PATH. */
 export function defaultClaudeConfigPath(): string {
-  return process.env.CLAUDE_JSON_PATH ?? join(homedir(), '.claude.json');
+  return process.env.CLAUDE_JSON_PATH ?? join(process.env.CLAUDE_CONFIG_DIR ?? homedir(), '.claude.json');
 }

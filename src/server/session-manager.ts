@@ -7,10 +7,9 @@ import {
   type PermissionMode,
 } from '@anthropic-ai/claude-agent-sdk';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineInfo, HistoryMessage, SessionSummary } from '../shared/protocol.js';
-import { installedSkills, probeEngine } from './commands.js';
+import { claudeConfigDir, installedSkills, probeEngine } from './commands.js';
 import { LiveSession } from './live-session.js';
 
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
@@ -36,8 +35,6 @@ export class SessionManager {
     /** The app account this folder belongs to (multi-account mode). */
     readonly accountId?: string,
     shared?: SharedEngineInfo,
-    /** The folder carries its own skills link (a laptop): offer those, not the home's. */
-    private readonly folderSkillsOnly = false,
   ) {
     this.info = shared ?? { value: null, probe: null };
     this.projects = this.readJson<Record<string, string>>(PROJECTS_FILE);
@@ -104,14 +101,13 @@ export class SessionManager {
     return session;
   }
 
-  /** On the shared server the composer offers the skills installed for the
-   *  agent (Buildable's own), not Claude Code's commands: the agent user's
-   *  home plus the folder, or only the folder's link on a laptop (the home
-   *  there is the developer's, with their own skills in it). A laptop's
-   *  single folder keeps everything the engine knows. */
+  /** In accounts mode the composer offers the skills installed for the
+   *  agent (Buildable's own), not Claude Code's commands: the agent's Claude
+   *  home (CLAUDE_CONFIG_DIR on a laptop, ~/.claude on the server) plus the
+   *  folder's own. Single mode keeps everything the engine knows. */
   private async offeredCommands(): Promise<Set<string> | null> {
     if (!this.accountId) return null;
-    return installedSkills(this.folderSkillsOnly ? [this.projectDir] : [homedir(), this.projectDir]);
+    return installedSkills([claudeConfigDir(), join(this.projectDir, '.claude')]);
   }
 
   /** Commands, skills and models for this project, from a live engine or a one-off probe. */

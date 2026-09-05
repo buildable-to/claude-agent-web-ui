@@ -1,7 +1,7 @@
 // The contract with the app, checked without a browser or an engine:
 //   node --import tsx --test src/server/*.test.ts
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, mkdirSync, readlinkSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -67,18 +67,4 @@ test('dev mode picks the folder from ?account= only when there is no secret', ()
   assert.equal(dev.resolve(undefined, 'luka').id, 'luka');
   const prod = new Accounts({ root, authSecret: SECRET, claudeConfigPath: join(root, 'claude.json') });
   assert.throws(() => prod.resolve(undefined, 'luka'), AuthError);
-});
-
-test('with a skills dir every account folder links to it as .claude/skills', () => {
-  const root = mkdtempSync(join(tmpdir(), 'agents-'));
-  const skills = join(root, 'repo', '.claude', 'skills');
-  mkdirSync(join(skills, 'compose-project'), { recursive: true });
-  writeFileSync(join(skills, 'compose-project', 'SKILL.md'), '---\nname: compose-project\n---\n');
-  const accounts = new Accounts({ root, authSecret: SECRET, skillsDir: skills, claudeConfigPath: join(root, 'claude.json') });
-  const a = accounts.resolve(signToken({ sub: 'u2', exp: now() + 60 }, SECRET), undefined);
-  assert.equal(readlinkSync(join(a.dir, '.claude', 'skills')), skills);
-  assert.ok(existsSync(join(a.dir, '.claude', 'skills', 'compose-project', 'SKILL.md')));
-  // a second sight of the folder leaves the link alone
-  accounts.resolve(signToken({ sub: 'u2', exp: now() + 60 }, SECRET), undefined);
-  assert.equal(readlinkSync(join(a.dir, '.claude', 'skills')), skills);
 });
