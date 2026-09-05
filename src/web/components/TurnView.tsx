@@ -4,8 +4,9 @@ import { NO_RESPONSE, type Block, type ToolBlock, type Turn } from '@/lib/transc
 import Markdown from './Markdown';
 import { Steps } from './Steps';
 
-/** Plumbing the engineer has no use for: a skill loading is not a step. */
-const HIDDEN_TOOLS = new Set(['Skill']);
+/** Plumbing the engineer has no use for: a skill loading is not a step, nor
+ *  is the engine fetching one of its own tool definitions. */
+const HIDDEN_TOOLS = new Set(['Skill', 'ToolSearch']);
 
 type Piece = { kind: 'text'; text: string } | { kind: 'steps'; blocks: ToolBlock[] };
 

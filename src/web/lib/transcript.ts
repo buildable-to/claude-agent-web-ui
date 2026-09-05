@@ -426,9 +426,13 @@ function applyUser(
   const text = rawText.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim();
   if (!text && !images) return { ...t, seen };
 
-  if (isSynthetic || /^\[Request interrupted/.test(text)) {
+  // An interruption is worth a note. Anything else the engine adds in the
+  // user's voice (a skill's text after "Launching skill", other context) is
+  // not the engineer speaking and is not shown; history never has it either.
+  if (/^\[Request interrupted/.test(text)) {
     return addNote(t, uuid, 'info', text.replace(/^\[|\]$/g, ''));
   }
+  if (isSynthetic || /^Base directory for this skill:/.test(text)) return { ...t, seen };
   return addUserTurn({ ...t, seen }, uuid, text, images);
 }
 

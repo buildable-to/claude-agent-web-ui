@@ -120,3 +120,29 @@ test('the page’s echo of a slash command and the engine’s record of it show 
   assert.equal(t.turns.length, 1);
   assert.equal((t.turns[0] as Extract<Turn, { kind: 'user' }>).text, '/compose-project fix the beams');
 });
+
+test('live: a skill’s text and other injected context are not the engineer speaking; an interruption is a note', () => {
+  let t = addLocalUserTurn(emptyTranscript(), 'local', 'what is this project about?');
+  t = applyMessage(
+    t,
+    live({
+      type: 'user',
+      uuid: 'skill-text',
+      isSynthetic: true,
+      message: { role: 'user', content: 'Base directory for this skill: /x/.claude/skills/compose-project\n\n# Compose a project' },
+    }),
+  );
+  t = applyMessage(
+    t,
+    live({ type: 'user', uuid: 'unflagged', message: { role: 'user', content: 'Base directory for this skill: /y\n\n# Another' } }),
+  );
+  t = applyMessage(
+    t,
+    live({ type: 'user', uuid: 'stop', isSynthetic: true, message: { role: 'user', content: '[Request interrupted by user]' } }),
+  );
+  assert.deepEqual(
+    t.turns.map((x) => x.kind),
+    ['user', 'note'],
+  );
+  assert.equal((t.turns[1] as Extract<Turn, { kind: 'note' }>).text, 'Request interrupted by user');
+});
