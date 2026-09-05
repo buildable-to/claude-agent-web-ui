@@ -10,10 +10,12 @@ const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
 
 function Result({ tool }: { tool: ToolBlock }) {
   if (tool.result === undefined) return null;
+  const pictures = tool.images.length;
+  const text = tool.result || (pictures ? `${pictures} picture${pictures === 1 ? '' : 's'} (shown above)` : '(empty)');
   return (
     <div className="space-y-1">
       <Label>{tool.isError ? 'Error' : 'Result'}</Label>
-      <Pre tone={tool.isError ? 'error' : 'plain'}>{tool.result || '(empty)'}</Pre>
+      <Pre tone={tool.isError ? 'error' : 'plain'}>{text}</Pre>
     </div>
   );
 }

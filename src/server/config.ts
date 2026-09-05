@@ -12,6 +12,8 @@ export type Config = {
   authSecret: string;
   /** Per-account settings.json to seed new folders with. */
   accountTemplate?: string;
+  /** Skills dir every account folder links to (a laptop; unset on the server). */
+  accountSkills?: string;
   /** Path prefix the page and API live under ('' or e.g. '/agent'); must match the build's BASE_PATH. */
   basePath: string;
   /** Explicit opt-in to the unauthenticated dev mode (?account=) with AGENTS_ROOT. */
@@ -35,6 +37,7 @@ export function loadConfig(): Config {
   const host = readArg('host') ?? process.env.HOST ?? '127.0.0.1';
   const agentsRoot = readArg('agents-root') ?? process.env.AGENTS_ROOT;
   const accountTemplate = readArg('account-template') ?? process.env.ACCOUNT_SETTINGS_TEMPLATE;
+  const accountSkills = readArg('account-skills') ?? process.env.ACCOUNT_SKILLS_DIR;
   return {
     projectDir,
     port,
@@ -43,6 +46,7 @@ export function loadConfig(): Config {
     ...(agentsRoot ? { agentsRoot: resolve(agentsRoot) } : {}),
     authSecret: readArg('auth-secret') ?? process.env.AGENT_AUTH_SECRET ?? '',
     ...(accountTemplate ? { accountTemplate: resolve(accountTemplate) } : {}),
+    ...(accountSkills ? { accountSkills: resolve(accountSkills) } : {}),
     basePath: (readArg('base-path') ?? process.env.BASE_PATH ?? '').replace(/\/+$/, ''),
     devAuth: process.argv.includes('--dev-auth') || process.env.AGENT_DEV_AUTH === '1',
   };

@@ -135,7 +135,7 @@ export function MessageList({
         {waiting && (
           <div className="rise flex items-center gap-2.5 text-[13px] text-ink-2">
             <Dots />
-            Thinking…
+            Working…
           </div>
         )}
       </div>

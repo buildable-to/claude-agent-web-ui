@@ -1,7 +1,6 @@
 import { Check, ChevronDown, ChevronRight, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type { ToolBlock } from '@/lib/transcript';
-import { seconds, useTicker } from '@/lib/useTicker';
 import { toolDetail, toolLook, toolVerb } from './config';
 
 type Props = {
@@ -17,13 +16,6 @@ export function ToolRow({ tool, live, children, defaultOpen = false }: Props) {
   const look = toolLook(tool.name);
   const detail = toolDetail(tool);
   const running = tool.result === undefined && live;
-  const now = useTicker(running && Boolean(tool.startedAt));
-  const elapsed =
-    tool.startedAt && tool.endedAt
-      ? seconds(tool.endedAt - tool.startedAt)
-      : running && tool.startedAt
-        ? seconds(now - tool.startedAt)
-        : null;
   const expandable = Boolean(children);
 
   return (
@@ -44,7 +36,6 @@ export function ToolRow({ tool, live, children, defaultOpen = false }: Props) {
           <span className="flex-1" />
         )}
         <span className="flex shrink-0 items-center gap-2 text-ink-3">
-          {elapsed && <span className="font-mono text-[11px] tabular-nums">{elapsed}</span>}
           {running ? (
             <span className="flex items-center gap-1.5 text-[11px] text-accent">
               <span className="size-2 rounded-full bg-accent breathe" />
