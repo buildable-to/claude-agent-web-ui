@@ -1,24 +1,29 @@
 import { AlertTriangle, Info } from 'lucide-react';
 import { memo } from 'react';
-import type { Block, Turn } from '@/lib/transcript';
-import { ActivityGroup, type ActivityBlock } from './ActivityGroup';
+import { NO_RESPONSE, type Block, type ToolBlock, type Turn } from '@/lib/transcript';
 import Markdown from './Markdown';
+import { Steps } from './Steps';
 
-type Piece = { kind: 'text'; text: string } | { kind: 'activity'; blocks: ActivityBlock[] };
+/** Plumbing the engineer has no use for: a skill loading is not a step. */
+const HIDDEN_TOOLS = new Set(['Skill']);
 
+type Piece = { kind: 'text'; text: string } | { kind: 'steps'; blocks: ToolBlock[] };
+
+/** The agent's words, and between them the stretches of work. */
 function groupBlocks(blocks: Block[]): Piece[] {
   const pieces: Piece[] = [];
-  let run: ActivityBlock[] = [];
+  let run: ToolBlock[] = [];
   const flush = () => {
-    if (run.length) pieces.push({ kind: 'activity', blocks: run });
+    if (run.length) pieces.push({ kind: 'steps', blocks: run });
     run = [];
   };
   for (const b of blocks) {
     if (b.type === 'text') {
-      if (!b.text.trim()) continue;
+      const text = b.text.trim();
+      if (!text || text === NO_RESPONSE) continue;
       flush();
       pieces.push({ kind: 'text', text: b.text });
-    } else {
+    } else if (!HIDDEN_TOOLS.has(b.name)) {
       run.push(b);
     }
   }
@@ -57,7 +62,6 @@ export const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
   }
 
   const pieces = groupBlocks(turn.blocks);
-  const lastActivity = pieces.map((p) => p.kind).lastIndexOf('activity');
 
   return (
     <div className="space-y-3">
@@ -73,15 +77,7 @@ export const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
             </div>
           );
         }
-        return (
-          <ActivityGroup
-            key={i}
-            blocks={piece.blocks}
-            live={turn.open}
-            latest={i === lastActivity}
-            hasTextAfter={i < pieces.length - 1}
-          />
-        );
+        return <Steps key={i} blocks={piece.blocks} live={turn.open} />;
       })}
     </div>
   );

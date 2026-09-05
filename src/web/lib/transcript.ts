@@ -1,9 +1,15 @@
 // Turns the raw SDK message stream into something a chat view can render:
-// user turns, assistant turns made of text / thinking / tool blocks, and notes.
+// user turns, assistant turns made of text and tool blocks, and notes.
 // Pure functions; every update returns a new Transcript.
+//
+// Two rules keep a conversation looking the same live and after a reload
+// (history has no stream events, no result messages and no clock):
+// thinking blocks are dropped on both paths, and nothing here reads the time.
 
 import type { HistoryMessage, SDKMessage } from '@shared/protocol';
 import { parsePartialJson } from './parsePartialJson';
+
+export type ToolImage = { mediaType: string; data: string };
 
 export type ToolBlock = {
   type: 'tool_use';
@@ -16,21 +22,16 @@ export type ToolBlock = {
   done: boolean;
   result?: string;
   isError?: boolean;
-  /** Wall-clock timings, only known for blocks seen live. */
-  startedAt?: number;
-  endedAt?: number;
+  /** Pictures the tool returned: a Read of a PNG, a screenshot. */
+  images: ToolImage[];
   /** Tool calls made by a sub-agent this tool spawned. */
   children: ToolBlock[];
 };
 export type TextBlock = { type: 'text'; text: string };
-export type ThinkingBlock = {
-  type: 'thinking';
-  thinking: string;
-  done: boolean;
-  startedAt?: number;
-  durationMs?: number;
-};
-export type Block = TextBlock | ThinkingBlock | ToolBlock;
+export type Block = TextBlock | ToolBlock;
+
+/** Claude Code's canned reply to a terminal command (/usage, /compact…); not the agent speaking. */
+export const NO_RESPONSE = 'No response requested.';
 
 export type Turn =
   | { kind: 'user'; id: string; text: string; images: number }
@@ -38,8 +39,10 @@ export type Turn =
   | { kind: 'note'; id: string; level: 'info' | 'error'; text: string };
 
 type StreamState = {
-  /** API content-block index -> index into the open assistant turn's blocks. */
+  /** Rendered blocks in API order -> index into the open assistant turn's blocks. */
   positions: number[];
+  /** API content-block index -> index into the open assistant turn's blocks. */
+  byIndex: Record<number, number>;
   /** How many streamed blocks have been replaced by their final version. */
   finalized: number;
 };
@@ -66,23 +69,35 @@ function contentBlocks(message: unknown): AnyRecord[] {
   return Array.isArray(c) ? c.filter(isRecord) : [];
 }
 
-function resultText(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return content == null ? '' : JSON.stringify(content, null, 2);
-  return content
-    .map((b) => {
-      if (!isRecord(b)) return '';
-      if (b.type === 'text') return String(b.text ?? '');
-      if (b.type === 'image') return '[image]';
-      return '';
-    })
-    .filter(Boolean)
-    .join('\n');
+/** What a tool result holds: its words and its pictures. */
+function resultParts(content: unknown): { text: string; images: ToolImage[] } {
+  if (typeof content === 'string') return { text: content, images: [] };
+  if (!Array.isArray(content)) {
+    return { text: content == null ? '' : JSON.stringify(content, null, 2), images: [] };
+  }
+  const texts: string[] = [];
+  const images: ToolImage[] = [];
+  for (const b of content) {
+    if (!isRecord(b)) continue;
+    if (b.type === 'text') texts.push(String(b.text ?? ''));
+    else if (b.type === 'image') {
+      const source = isRecord(b.source) ? b.source : null;
+      if (source && source.type === 'base64' && typeof source.data === 'string') {
+        images.push({ mediaType: String(source.media_type ?? 'image/png'), data: source.data });
+      }
+    }
+  }
+  return { text: texts.filter(Boolean).join('\n'), images };
 }
 
+/** The open assistant turn, if the newest turn (ignoring notes) is one. */
 function lastAssistant(t: Transcript): number {
-  const last = t.turns[t.turns.length - 1];
-  return last && last.kind === 'assistant' && last.open ? t.turns.length - 1 : -1;
+  // A note (a slash command's echo, a compaction) can land while the turn is
+  // still open; it is not what closes the turn.
+  let i = t.turns.length - 1;
+  while (i >= 0 && t.turns[i]!.kind === 'note') i--;
+  const turn = t.turns[i];
+  return turn && turn.kind === 'assistant' && turn.open ? i : -1;
 }
 
 function withTurn(t: Transcript, index: number, turn: Turn): Transcript {
@@ -137,14 +152,11 @@ function updateTool(t: Transcript, toolId: string, fn: (b: ToolBlock) => ToolBlo
   });
 }
 
+/** A content block worth rendering; thinking is not one. */
 function toBlock(raw: AnyRecord): Block | null {
   switch (raw.type) {
     case 'text':
       return { type: 'text', text: String(raw.text ?? '') };
-    case 'thinking':
-      return { type: 'thinking', thinking: String(raw.thinking ?? ''), done: true };
-    case 'redacted_thinking':
-      return { type: 'thinking', thinking: '', done: true };
     case 'tool_use':
     case 'server_tool_use':
       return {
@@ -153,6 +165,7 @@ function toBlock(raw: AnyRecord): Block | null {
         name: String(raw.name),
         input: isRecord(raw.input) ? raw.input : {},
         done: true,
+        images: [],
         children: [],
       };
     default:
@@ -163,7 +176,7 @@ function toBlock(raw: AnyRecord): Block | null {
 function serverToolResult(raw: AnyRecord): { id: string; text: string } | null {
   if (typeof raw.type !== 'string' || !raw.type.endsWith('_tool_result')) return null;
   if (typeof raw.tool_use_id !== 'string') return null;
-  return { id: raw.tool_use_id, text: resultText(raw.content) };
+  return { id: raw.tool_use_id, text: resultParts(raw.content).text };
 }
 
 // --- reducer ---------------------------------------------------------------
@@ -199,9 +212,7 @@ export function applyHistory(t: Transcript, history: HistoryMessage[]): Transcri
 
 export function addLocalUserTurn(t: Transcript, id: string, text: string): Transcript {
   if (t.seen.has(id)) return t;
-  const seen = new Set(t.seen).add(id);
-  const closed = closeOpenTurn(t);
-  return { ...closed, seen, turns: [...closed.turns, { kind: 'user', id, text, images: 0 }] };
+  return addUserTurn({ ...t, seen: new Set(t.seen).add(id) }, id, text, 0);
 }
 
 export function addNote(t: Transcript, id: string, level: 'info' | 'error', text: string): Transcript {
@@ -217,6 +228,15 @@ export function closeOpenTurn(t: Transcript): Transcript {
   if (turn.kind !== 'assistant') return { ...t, stream: null };
   const closed = withTurn(t, idx, { ...turn, open: false });
   return { ...closed, stream: null };
+}
+
+/** The engineer said something. The same words twice in a row (the page's
+ *  own echo, then the engine's record of the command) show once. */
+function addUserTurn(t: Transcript, id: string, text: string, images: number): Transcript {
+  const last = t.turns[t.turns.length - 1];
+  if (last && last.kind === 'user' && last.text === text && last.images === images) return t;
+  const closed = closeOpenTurn(t);
+  return { ...closed, turns: [...closed.turns, { kind: 'user', id, text, images }] };
 }
 
 function stripAnsi(s: string): string {
@@ -236,37 +256,38 @@ function applyStreamEvent(t: Transcript, ev: AnyRecord, uuid: string): Transcrip
       const [next, idx] = ensureOpenAssistant(t, `turn-${uuid}`);
       const turn = next.turns[idx]!;
       if (turn.kind !== 'assistant') return next;
-      return { ...withTurn(next, idx, { ...turn, open: true }), stream: { positions: [], finalized: 0 } };
+      return {
+        ...withTurn(next, idx, { ...turn, open: true }),
+        stream: { positions: [], byIndex: {}, finalized: 0 },
+      };
     }
     case 'content_block_start': {
       const raw = isRecord(ev.content_block) ? ev.content_block : null;
       const index = typeof ev.index === 'number' ? ev.index : -1;
       if (!raw || index < 0) return t;
       const [next, idx] = ensureOpenAssistant(t, `turn-${uuid}`);
-      const stream = next.stream ?? { positions: [], finalized: 0 };
+      const stream = next.stream ?? { positions: [], byIndex: {}, finalized: 0 };
       let block = toBlock(raw);
       if (!block) return next;
-      if (block.type === 'thinking') block = { ...block, done: false, startedAt: Date.now() };
-      if (block.type === 'tool_use') block = { ...block, done: false, inputJson: '', startedAt: Date.now() };
+      if (block.type === 'tool_use') block = { ...block, done: false, inputJson: '' };
       const turn = next.turns[idx]!;
       if (turn.kind !== 'assistant') return next;
       const blocks = [...turn.blocks, block];
-      const positions = stream.positions.slice();
-      positions[index] = blocks.length - 1;
-      return { ...withTurn(next, idx, { ...turn, blocks }), stream: { ...stream, positions } };
+      const at = blocks.length - 1;
+      return {
+        ...withTurn(next, idx, { ...turn, blocks }),
+        stream: { ...stream, positions: [...stream.positions, at], byIndex: { ...stream.byIndex, [index]: at } },
+      };
     }
     case 'content_block_delta': {
       const index = typeof ev.index === 'number' ? ev.index : -1;
-      const pos = t.stream?.positions[index];
+      const pos = t.stream?.byIndex[index];
       const turnIdx = lastAssistant(t);
       const delta = isRecord(ev.delta) ? ev.delta : null;
       if (pos === undefined || turnIdx === -1 || !delta) return t;
       return updateBlock(t, turnIdx, pos, (b) => {
         if (delta.type === 'text_delta' && b.type === 'text') {
           return { ...b, text: b.text + String(delta.text ?? '') };
-        }
-        if (delta.type === 'thinking_delta' && b.type === 'thinking') {
-          return { ...b, thinking: b.thinking + String(delta.thinking ?? '') };
         }
         if (delta.type === 'input_json_delta' && b.type === 'tool_use') {
           const inputJson = (b.inputJson ?? '') + String(delta.partial_json ?? '');
@@ -278,13 +299,10 @@ function applyStreamEvent(t: Transcript, ev: AnyRecord, uuid: string): Transcrip
     }
     case 'content_block_stop': {
       const index = typeof ev.index === 'number' ? ev.index : -1;
-      const pos = t.stream?.positions[index];
+      const pos = t.stream?.byIndex[index];
       const turnIdx = lastAssistant(t);
       if (pos === undefined || turnIdx === -1) return t;
       return updateBlock(t, turnIdx, pos, (b) => {
-        if (b.type === 'thinking') {
-          return { ...b, done: true, durationMs: b.startedAt ? Date.now() - b.startedAt : undefined };
-        }
         if (b.type === 'tool_use') {
           const parsed = b.inputJson ? parsePartialJson<Record<string, unknown>>(b.inputJson) : null;
           return { ...b, done: true, input: parsed && isRecord(parsed) ? parsed : b.input };
@@ -331,6 +349,7 @@ function applyAssistant(t: Transcript, uuid: string, message: unknown, parentToo
     if (turn.kind !== 'assistant') continue;
     const stream = next.stream;
     // Replace the streamed version of this block with the final one, in order.
+    // Both paths skip the same blocks (thinking), so the order lines up.
     if (stream && stream.finalized < stream.positions.length) {
       const pos = stream.positions[stream.finalized];
       const existing = pos !== undefined ? turn.blocks[pos] : undefined;
@@ -341,13 +360,10 @@ function applyAssistant(t: Transcript, uuid: string, message: unknown, parentToo
                 ...block,
                 result: existing.result,
                 isError: existing.isError,
-                startedAt: existing.startedAt,
-                endedAt: existing.endedAt,
+                images: existing.images,
                 children: existing.children,
               }
-            : existing.type === 'thinking' && block.type === 'thinking'
-              ? { ...block, startedAt: existing.startedAt, durationMs: existing.durationMs }
-              : block;
+            : block;
         next = updateBlock(next, idx, pos, () => merged);
         next = { ...next, stream: { ...stream, finalized: stream.finalized + 1 } };
         continue;
@@ -379,12 +395,8 @@ function applyUser(
     for (const r of results) {
       const id = String(r.tool_use_id ?? '');
       if (!id) continue;
-      next = updateTool(next, id, (b) => ({
-        ...b,
-        result: resultText(r.content),
-        isError: Boolean(r.is_error),
-        ...(b.startedAt && !b.endedAt ? { endedAt: Date.now() } : {}),
-      }));
+      const { text, images } = resultParts(r.content);
+      next = updateTool(next, id, (b) => ({ ...b, result: text, isError: Boolean(r.is_error), images }));
     }
     return next;
   }
@@ -397,11 +409,12 @@ function applyUser(
     .join('\n');
   const images = raws.filter((r) => r.type === 'image').length;
 
-  // Claude Code records slash commands and their output as user messages.
+  // Claude Code records a slash command the engineer typed as a tagged user
+  // message; show it as their own words. Its local output is a note.
   const command = /<command-name>([^<]*)<\/command-name>(?:.*?<command-args>([^<]*)<\/command-args>)?/s.exec(rawText);
   if (command) {
     const line = `${command[1]!.trim()} ${(command[2] ?? '').trim()}`.trim();
-    return addNote(t, uuid, 'info', line.startsWith('/') ? line : `/${line}`);
+    return addUserTurn({ ...t, seen }, uuid, line.startsWith('/') ? line : `/${line}`, 0);
   }
   const stdout = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(rawText);
   if (stdout) {
@@ -416,8 +429,7 @@ function applyUser(
   if (isSynthetic || /^\[Request interrupted/.test(text)) {
     return addNote(t, uuid, 'info', text.replace(/^\[|\]$/g, ''));
   }
-  const closed = closeOpenTurn({ ...t, seen });
-  return { ...closed, turns: [...closed.turns, { kind: 'user', id: uuid, text, images }] };
+  return addUserTurn({ ...t, seen }, uuid, text, images);
 }
 
 function applyResult(t: Transcript, msg: Extract<SDKMessage, { type: 'result' }>): Transcript {

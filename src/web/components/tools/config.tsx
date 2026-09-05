@@ -1,4 +1,4 @@
-// Icons, hues and labels per tool. Adapted from ninehills/claude-agent-ui
+// Icons, hues and plain words per tool. Adapted from ninehills/claude-agent-ui
 // (MIT, see LICENSE-ninehills.txt) and simplified to a single hue per family.
 
 import {
@@ -61,11 +61,13 @@ export function toolLook(name: string): ToolLook {
 
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
 
+const isPicture = (path: string | undefined) => /\.(png|jpe?g|gif|webp|bmp)$/i.test(path ?? '');
+
 /** Short human label for the row header: "Read", "Run", "Search", ... */
 export function toolVerb(tool: ToolBlock): string {
   switch (tool.name) {
     case 'Read':
-      return 'Read';
+      return isPicture(str(tool.input.file_path)) ? 'Looked at' : 'Read';
     case 'Write':
       return 'Write';
     case 'Edit':
@@ -139,49 +141,4 @@ export function toolDetail(tool: ToolBlock): string | undefined {
     default:
       return undefined;
   }
-}
-
-/** Chip colours per tool family, used by the activity row. */
-export function toolChip(name: string): string {
-  switch (name) {
-    case 'Read':
-    case 'Write':
-    case 'Edit':
-    case 'MultiEdit':
-    case 'NotebookEdit':
-      return 'text-emerald-300 hover:bg-emerald-400/20';
-    case 'Bash':
-    case 'BashOutput':
-    case 'KillShell':
-      return 'text-amber-300 hover:bg-amber-400/20';
-    case 'Grep':
-    case 'Glob':
-      return 'text-violet-300 hover:bg-violet-400/20';
-    case 'WebSearch':
-    case 'WebFetch':
-    case 'web_search':
-    case 'web_fetch':
-      return 'text-cyan-300 hover:bg-cyan-400/20';
-    case 'Task':
-    case 'Agent':
-    case 'TodoWrite':
-      return 'text-indigo-300 hover:bg-indigo-400/20';
-    case 'Skill':
-      return 'text-rose-300 hover:bg-rose-400/20';
-    default:
-      return 'border-line-2 bg-panel text-ink-2 hover:bg-panel-2';
-  }
-}
-
-export const thinkingChip =
-  'text-purple-300 hover:bg-purple-400/20';
-
-/** Very short chip text: "Read auth.ts", "Run tests", "Search “TODO”". */
-export function toolChipLabel(tool: ToolBlock): string {
-  const detail = toolDetail(tool);
-  const verb = toolVerb(tool);
-  if (tool.name === 'Bash') return verb.length > 34 ? `${verb.slice(0, 31)}…` : verb;
-  if (!detail) return verb;
-  const d = detail.length > 22 ? `${detail.slice(0, 19)}…` : detail;
-  return `${verb} ${d}`;
 }
