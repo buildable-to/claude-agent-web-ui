@@ -104,7 +104,7 @@ export function attachWebSocket(server: Server, resolveCtx: Resolver) {
         }
         case 'permission': {
           const session = requireLive(msg.sessionId);
-          if (!session.answerPermission(msg.requestId, msg.behavior, msg.always)) {
+          if (!session.answerPermission(msg.requestId, msg.behavior, msg.always, msg.answers)) {
             fail('That permission request is no longer pending', msg.sessionId);
           }
           return;

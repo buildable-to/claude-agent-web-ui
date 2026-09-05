@@ -75,6 +75,8 @@ export type ClientMessage =
       requestId: string;
       behavior: 'allow' | 'deny';
       always?: boolean;
+      /** For AskUserQuestion: question text -> chosen label(s), comma-separated when several. */
+      answers?: Record<string, string>;
     }
   | { type: 'interrupt'; sessionId: string }
   | { type: 'set_permission_mode'; sessionId: string; mode: PermissionMode }

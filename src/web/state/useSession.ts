@@ -221,10 +221,10 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
   }, []);
 
   const answerPermission = useCallback(
-    (requestId: string, behavior: 'allow' | 'deny', always = false) => {
+    (requestId: string, behavior: 'allow' | 'deny', always = false, answers?: Record<string, string>) => {
       const id = activeId.current;
       if (!id) return;
-      ws.send({ type: 'permission', sessionId: id, requestId, behavior, always });
+      ws.send({ type: 'permission', sessionId: id, requestId, behavior, always, ...(answers ? { answers } : {}) });
     },
     [],
   );

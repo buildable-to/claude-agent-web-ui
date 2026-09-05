@@ -168,14 +168,20 @@ export class LiveSession {
     this.setStatus('running');
   }
 
-  answerPermission(requestId: string, behavior: 'allow' | 'deny', always = false): boolean {
+  answerPermission(
+    requestId: string,
+    behavior: 'allow' | 'deny',
+    always = false,
+    answers?: Record<string, string>,
+  ): boolean {
     const p = this.pending.get(requestId);
     if (!p) return false;
     this.pending.delete(requestId);
     if (behavior === 'allow') {
       p.resolve({
         behavior: 'allow',
-        updatedInput: p.request.input,
+        // AskUserQuestion is answered through its own input: the chosen labels ride along.
+        updatedInput: answers ? { ...p.request.input, answers } : p.request.input,
         ...(always && this.persistAlways && p.suggestions ? { updatedPermissions: p.suggestions } : {}),
       });
     } else {
