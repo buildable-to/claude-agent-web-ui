@@ -116,8 +116,11 @@ project and tags new conversations with it (kept in the folder's
 the file tree and the sidebar, shows a conversation picker and end-user copy.
 
 **The folder.** Made on first use: `.claude/settings.json` from
-`ACCOUNT_SETTINGS_TEMPLATE`, `scratch/`, and the trust flag in Claude Code's
-config file (`CLAUDE_JSON_PATH`, default `~/.claude.json`). Sessions and
+`ACCOUNT_SETTINGS_TEMPLATE`, `scratch/`, the trust flag in Claude Code's
+config file (`CLAUDE_JSON_PATH`, default `~/.claude.json`), and, when
+`ACCOUNT_SKILLS_DIR` is set, `.claude/skills` as a link to that dir (a laptop,
+where the engine has no shared home with the skills in it; unset on the
+server, whose agent user carries the skills in its own home). Sessions and
 memory land under Claude Code's home keyed by the folder, so they are per
 account by construction; resume only accepts ids from this folder.
 
