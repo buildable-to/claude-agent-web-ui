@@ -58,12 +58,29 @@ allowed without asking, like in the terminal.
 The permission mode can be changed per session from the top bar. "Bypass all"
 never asks; use it only for throwaway work.
 
+## What the page shows
+
+The engineer's words on the right, the agent's words on the left, and between
+the agent's words one line per stretch of work: "Working · <what it is doing
+now>" while the turn runs, "N steps" when it is done. The line opens into the
+plain-words list of steps (the agent's own description of each command), and
+each step opens into the command and its result. Pictures a step returned (a
+Read of a PNG, a screenshot) show inline; click one for full size. Thinking is
+not shown, a skill loading is not a step, and Claude Code's "No response
+requested." (its reply to a terminal command) is not the agent speaking.
+
+A conversation renders the same live and after a reload: nothing on the page
+depends on the clock or on the live stream, only on what the transcript keeps.
+
 ## Skills
 
-Type `/` in the composer (or click **Skills**) to pick from the slash commands
-and skills the engine knows for this project: built-ins, your `.claude`
-commands and skills, and plugin skills. The list comes from the engine itself
-(`GET /api/commands` spawns it briefly the first time, then caches).
+Type `/` in the composer (or click **Skills**) to pick a skill. The list comes
+from the engine itself (`GET /api/engine` spawns it briefly the first time,
+then caches). In single mode that is everything the engine knows: built-ins,
+your `.claude` commands and skills, plugin skills. In accounts mode (Buildable's
+server) it is only the skills installed for the agent — `~/.claude/skills`
+and `<account folder>/.claude/skills`, named by the frontmatter `name:` or the
+folder — so an engineer is not offered `/usage` or `/compact`.
 
 ## How Buildable uses this (the contract)
 
