@@ -47,7 +47,7 @@ export default function App() {
   const [focusKey, setFocusKey] = useState(0);
   const [filesOpen, setFilesOpen] = useState(readFilesOpen);
   const [treeKey, setTreeKey] = useState(0);
-  const { sessions, refresh } = useSessions();
+  const { sessions, loaded: sessionsLoaded, refresh } = useSessions();
   const onTurnEnd = useCallback(() => {
     void refresh();
     setTreeKey((k) => k + 1);
@@ -60,12 +60,12 @@ export default function App() {
   // Embedded on a project: open its latest conversation, so the engineer
   // continues where they left off instead of starting blank every time.
   useEffect(() => {
-    if (!embed || autoPicked.current || selected.id !== null || sessions.length === 0) return;
-    if (state.transcript.turns.length > 0 || state.status !== 'idle') return;
-    autoPicked.current = true;
+    if (!embed || autoPicked.current || !sessionsLoaded) return;
+    autoPicked.current = true; // decided once, on the first list; "New" later means new
+    if (selected.id !== null || state.transcript.turns.length > 0 || state.status !== 'idle') return;
     const latest = sessions[0];
     if (latest) setSelected((s) => ({ id: latest.sessionId, nonce: s.nonce + 1 }));
-  }, [sessions, selected.id, state.transcript.turns.length, state.status]);
+  }, [sessionsLoaded, sessions, selected.id, state.transcript.turns.length, state.status]);
 
   // The page that embeds us wants two things: when the project changed for
   // real (redraw), and whether the agent needs a human (badge the fold button).
@@ -79,6 +79,9 @@ export default function App() {
   useEffect(() => {
     tellParent({ type: 'status', status: state.status });
   }, [state.status]);
+  useEffect(() => {
+    if (connection === 'expired') tellParent({ type: 'expired' });
+  }, [connection]);
 
   // The tab itself reports state: a dot on the icon and a title prefix.
   useEffect(() => {
@@ -183,8 +186,14 @@ export default function App() {
           }}
           {...(embed ? EMBED_COPY : {})}
         />
+        {connection === 'expired' && (
+          <p className="mx-auto w-full max-w-3xl px-6 text-[12.5px] text-warn">
+            This page’s access has expired. Reload the project to continue.
+          </p>
+        )}
         {pending && (
           <PermissionBanner
+            key={pending.requestId}
             request={pending}
             queued={state.pending.length - 1}
             onAnswer={session.answerPermission}

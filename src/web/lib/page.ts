@@ -26,11 +26,20 @@ export const page = {
   token: read('token'),
   project: read('project'),
   embed: read('embed') === '1',
+  /** Dev mode only (server started with --dev-auth): which folder to use. */
+  account: read('account'),
 };
 
 /** Headers every API call carries in multi-account mode. */
 export function authHeaders(): Record<string, string> {
   return page.token ? { authorization: `Bearer ${page.token}` } : {};
+}
+
+/** Query string the server needs to know who is asking (dev mode's ?account=). */
+export function authQuery(): string {
+  if (page.token) return `token=${encodeURIComponent(page.token)}`;
+  if (page.account) return `account=${encodeURIComponent(page.account)}`;
+  return '';
 }
 
 /** Tell the page that embeds us (Project Studio) something happened. */

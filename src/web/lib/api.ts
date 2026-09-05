@@ -1,8 +1,22 @@
 import type { DirectoryTree, EngineInfo, HistoryMessage, ServerConfig, SessionSummary } from '@shared/protocol';
-import { authHeaders, BASE } from '@/lib/page';
+import { authHeaders, authQuery, BASE, page } from '@/lib/page';
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+function withAccount(path: string): string {
+  if (page.token || !page.account) return path;
+  return `${path}${path.includes('?') ? '&' : '?'}account=${encodeURIComponent(page.account)}`;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${BASE}${withAccount(path)}`, {
     ...init,
     headers: { 'content-type': 'application/json', ...authHeaders(), ...(init?.headers ?? {}) },
   });
@@ -14,10 +28,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // keep statusText
     }
-    throw new Error(detail);
+    throw new ApiError(detail, res.status);
   }
   return (await res.json()) as T;
 }
+
+/** True when this page's token (or dev account) is no longer accepted. */
+export async function authExpired(): Promise<boolean> {
+  try {
+    await request<unknown>('/api/config');
+    return false;
+  } catch (err) {
+    return err instanceof ApiError && err.status === 401;
+  }
+}
+
+export { authQuery };
 
 export const api = {
   config: () => request<ServerConfig>('/api/config'),

@@ -7,7 +7,7 @@ type Props = {
   projectName: string;
   projectDir: string;
   status: SessionStatus | 'connecting';
-  connection: 'connecting' | 'open' | 'closed';
+  connection: 'connecting' | 'open' | 'closed' | 'expired';
   meta: SessionMeta;
   models: ModelOption[];
   filesOpen: boolean;
@@ -34,6 +34,7 @@ const MODES: Array<{ value: PermissionMode; label: string; hint: string }> = [
 ];
 
 function statusLabel(status: Props['status'], connection: Props['connection']) {
+  if (connection === 'expired') return { text: 'Expired · reload', dot: 'bg-warn' };
   if (connection !== 'open') {
     return { text: connection === 'closed' ? 'Reconnecting' : 'Connecting', dot: 'bg-ink-3 breathe' };
   }
