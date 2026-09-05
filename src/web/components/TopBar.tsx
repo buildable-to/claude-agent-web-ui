@@ -33,6 +33,14 @@ const MODES: Array<{ value: PermissionMode; label: string; hint: string }> = [
   // everyone who can reach the page. The terminal keeps it for throwaway work.
 ];
 
+/** "Default (recommended)" says nothing about which model runs; name it:
+ *  "Default · Opus 5 with 1M context" (the engine's own description, first part). */
+function modelLabel(m: ModelOption): string {
+  if (m.value !== 'default' || !m.description) return m.label;
+  const what = m.description.split(' · ')[0]?.trim();
+  return what ? `Default · ${what}` : m.label;
+}
+
 function statusLabel(status: Props['status'], connection: Props['connection']) {
   if (connection === 'expired') return { text: 'Expired · reload', dot: 'bg-warn' };
   if (connection !== 'open') {
@@ -130,7 +138,7 @@ export function TopBar({
         {!match && <option value="">{current || 'Default model'}</option>}
         {models.map((m) => (
           <option key={m.value} value={m.value} title={m.description}>
-            {m.label}
+            {modelLabel(m)}
           </option>
         ))}
       </select>
