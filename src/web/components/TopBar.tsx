@@ -1,6 +1,6 @@
-import { PanelRight } from 'lucide-react';
-import type { ModelOption, PermissionMode, SessionMeta, SessionStatus } from '@shared/protocol';
-import { money, shortPath } from '@/lib/format';
+import { PanelRight, Plus } from 'lucide-react';
+import type { ModelOption, PermissionMode, SessionMeta, SessionStatus, SessionSummary } from '@shared/protocol';
+import { money, shortPath, timeAgo } from '@/lib/format';
 import { BASE } from '@/lib/page';
 
 type Props = {
@@ -13,6 +13,12 @@ type Props = {
   filesOpen: boolean;
   /** Hide the files toggle (embedded in Project Studio there is nothing to browse). */
   hideFiles?: boolean;
+  /** Embedded: the conversations of this project as a picker instead of the sidebar. */
+  picker?: {
+    sessions: SessionSummary[];
+    activeId: string | null;
+    onSelect: (id: string | null) => void;
+  };
   onToggleFiles: () => void;
   onModel: (model: string | null) => void;
   onMode: (mode: PermissionMode) => void;
@@ -55,6 +61,7 @@ export function TopBar({
   models,
   filesOpen,
   hideFiles = false,
+  picker,
   onToggleFiles,
   onModel,
   onMode,
@@ -69,14 +76,40 @@ export function TopBar({
   const locked = status === 'connecting';
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-5">
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-4">
       <img src={`${BASE}/mark.png`} alt="" className="h-6 w-auto opacity-90" />
-      <div className="min-w-0 flex-1">
-        <div className="font-display truncate text-[14px] font-semibold tracking-tight text-ink">{projectName}</div>
-        <div className="truncate font-mono text-[10.5px] text-ink-3" title={projectDir}>
-          {shortPath(projectDir, 64)}
+      {picker ? (
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <select
+            className="pill min-w-0 max-w-[60%] flex-1 truncate"
+            value={picker.activeId ?? ''}
+            onChange={(e) => picker.onSelect(e.target.value || null)}
+            title="This project's conversations"
+          >
+            <option value="">New conversation</option>
+            {picker.sessions.map((s) => (
+              <option key={s.sessionId} value={s.sessionId}>
+                {s.title.length > 48 ? `${s.title.slice(0, 47)}…` : s.title} · {timeAgo(s.lastModified)}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => picker.onSelect(null)}
+            className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-accent-dim active:translate-y-px"
+            title="Start a new conversation on this project"
+          >
+            <Plus className="size-3.5" /> New
+          </button>
         </div>
-      </div>
+      ) : (
+        <div className="min-w-0 flex-1">
+          <div className="font-display truncate text-[14px] font-semibold tracking-tight text-ink">{projectName}</div>
+          <div className="truncate font-mono text-[10.5px] text-ink-3" title={projectDir}>
+            {shortPath(projectDir, 64)}
+          </div>
+        </div>
+      )}
       <span className="pill" aria-live="polite">
         <span className={`size-2 rounded-full ${s.dot}`} />
         {s.text}

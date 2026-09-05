@@ -147,14 +147,16 @@ export default function App() {
 
   return (
     <div className="flex h-full">
-      <Sidebar
-        sessions={sessions}
-        activeId={state.sessionId}
-        onSelect={select}
-        onNew={() => select(null)}
-        onRename={rename}
-        onDelete={remove}
-      />
+      {!embed && (
+        <Sidebar
+          sessions={sessions}
+          activeId={state.sessionId}
+          onSelect={select}
+          onNew={() => select(null)}
+          onRename={rename}
+          onDelete={remove}
+        />
+      )}
       <div className="glass flex min-w-0 flex-1 flex-col">
         <TopBar
           projectName={projectName}
@@ -165,6 +167,7 @@ export default function App() {
           models={models}
           filesOpen={filesOpen}
           hideFiles={embed}
+          {...(embed ? { picker: { sessions, activeId: state.sessionId, onSelect: select } } : {})}
           onToggleFiles={toggleFiles}
           onModel={session.setModel}
           onMode={session.setPermissionMode}
