@@ -10,6 +10,8 @@ type Props = {
   meta: SessionMeta;
   models: ModelOption[];
   filesOpen: boolean;
+  /** Hide the files toggle (embedded in Project Studio there is nothing to browse). */
+  hideFiles?: boolean;
   onToggleFiles: () => void;
   onModel: (model: string | null) => void;
   onMode: (mode: PermissionMode) => void;
@@ -20,7 +22,8 @@ const MODES: Array<{ value: PermissionMode; label: string; hint: string }> = [
   { value: 'acceptEdits', label: 'Auto-accept edits', hint: 'File edits go through; commands still ask.' },
   { value: 'plan', label: 'Plan only', hint: 'Read-only. Claude plans but changes nothing.' },
   { value: 'auto', label: 'Auto', hint: 'A classifier decides what to allow.' },
-  { value: 'bypassPermissions', label: 'Bypass all', hint: 'Never asks. Throwaway work only.' },
+  // No "Bypass all": on a shared server that would switch the gates off for
+  // everyone who can reach the page. The terminal keeps it for throwaway work.
 ];
 
 function statusLabel(status: Props['status'], connection: Props['connection']) {
@@ -50,6 +53,7 @@ export function TopBar({
   meta,
   models,
   filesOpen,
+  hideFiles = false,
   onToggleFiles,
   onModel,
   onMode,
@@ -108,16 +112,18 @@ export function TopBar({
           </option>
         ))}
       </select>
-      <button
-        type="button"
-        onClick={onToggleFiles}
-        className={`pill ${filesOpen ? 'bg-accent-soft' : ''}`}
-        title={filesOpen ? 'Hide project files' : 'Show project files'}
-        aria-pressed={filesOpen}
-      >
-        <PanelRight className="size-3.5" />
-        Files
-      </button>
+      {!hideFiles && (
+        <button
+          type="button"
+          onClick={onToggleFiles}
+          className={`pill ${filesOpen ? 'bg-accent-soft' : ''}`}
+          title={filesOpen ? 'Hide project files' : 'Show project files'}
+          aria-pressed={filesOpen}
+        >
+          <PanelRight className="size-3.5" />
+          Files
+        </button>
+      )}
     </header>
   );
 }

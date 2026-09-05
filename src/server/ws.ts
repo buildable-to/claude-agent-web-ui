@@ -76,6 +76,9 @@ export function attachWebSocket(server: Server, resolveCtx: Resolver) {
           return;
         }
         case 'start': {
+          if (ctx.account && msg.permissionMode === 'bypassPermissions') {
+            throw new Error('Bypass mode is not available on a shared server');
+          }
           const project = msg.project ?? ctx.account?.project;
           const session = await sessions.open(msg.sessionId, {
             ...(msg.model ? { model: msg.model } : {}),
@@ -111,6 +114,9 @@ export function attachWebSocket(server: Server, resolveCtx: Resolver) {
           return;
         }
         case 'set_permission_mode': {
+          if (ctx.account && msg.mode === 'bypassPermissions') {
+            throw new Error('Bypass mode is not available on a shared server');
+          }
           await requireLive(msg.sessionId).setPermissionMode(msg.mode);
           return;
         }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ServerConfig } from '@shared/protocol';
 import { ChatInput } from './components/ChatInput';
 import { FileTree } from './components/FileTree';
@@ -7,6 +7,7 @@ import { PermissionBanner } from './components/PermissionBanner';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { api } from './lib/api';
+import { page, tellParent } from './lib/page';
 import { ws, type ConnectionState } from './lib/ws';
 import { useEngineInfo } from './state/useEngineInfo';
 import { useSession } from './state/useSession';
@@ -14,13 +15,29 @@ import { useSessions } from './state/useSessions';
 
 ws.connect();
 
+const embed = page.embed;
+
 function readFilesOpen(): boolean {
+  if (embed) return false;
   try {
     return localStorage.getItem('filesOpen') !== '0';
   } catch {
     return true;
   }
 }
+
+// Embedded in Project Studio the page speaks to a precast engineer about one
+// project, not to a developer about a code base.
+const EMBED_COPY = {
+  kicker: 'Buildable · this project',
+  blurb:
+    'Describe what to build or change. The agent works through Buildable’s own doors and stops to ask you before it changes the project for real.',
+  suggestions: [
+    'Add four columns on pads at a 6 m grid, beams on top',
+    'Check this project and list what is wrong',
+    'Reinforce beam B1 to Eurocode 2',
+  ],
+};
 
 export default function App() {
   const [config, setConfig] = useState<ServerConfig | null>(null);
@@ -38,6 +55,30 @@ export default function App() {
   const session = useSession(selected.id, selected.nonce, onTurnEnd);
   const { state } = session;
   const { commands, models, loading: commandsLoading } = useEngineInfo(state.meta);
+  const autoPicked = useRef(false);
+
+  // Embedded on a project: open its latest conversation, so the engineer
+  // continues where they left off instead of starting blank every time.
+  useEffect(() => {
+    if (!embed || autoPicked.current || selected.id !== null || sessions.length === 0) return;
+    if (state.transcript.turns.length > 0 || state.status !== 'idle') return;
+    autoPicked.current = true;
+    const latest = sessions[0];
+    if (latest) setSelected((s) => ({ id: latest.sessionId, nonce: s.nonce + 1 }));
+  }, [sessions, selected.id, state.transcript.turns.length, state.status]);
+
+  // The page that embeds us wants two things: when the project changed for
+  // real (redraw), and whether the agent needs a human (badge the fold button).
+  useEffect(() => {
+    return ws.subscribe((m) => {
+      if (m.type === 'project_changed') {
+        tellParent({ type: 'project_changed', sessionId: m.sessionId, ...(m.project ? { project: m.project } : {}) });
+      }
+    });
+  }, []);
+  useEffect(() => {
+    tellParent({ type: 'status', status: state.status });
+  }, [state.status]);
 
   // The tab itself reports state: a dot on the icon and a title prefix.
   useEffect(() => {
@@ -123,6 +164,7 @@ export default function App() {
           meta={state.meta}
           models={models}
           filesOpen={filesOpen}
+          hideFiles={embed}
           onToggleFiles={toggleFiles}
           onModel={session.setModel}
           onMode={session.setPermissionMode}
@@ -136,6 +178,7 @@ export default function App() {
             setDraft(text);
             setFocusKey((k) => k + 1);
           }}
+          {...(embed ? EMBED_COPY : {})}
         />
         {pending && (
           <PermissionBanner
@@ -156,7 +199,7 @@ export default function App() {
           focusKey={focusKey}
         />
       </div>
-      {filesOpen && <FileTree onPick={(p) => insertText(p)} refreshKey={treeKey} />}
+      {filesOpen && !embed && <FileTree onPick={(p) => insertText(p)} refreshKey={treeKey} />}
     </div>
   );
 }

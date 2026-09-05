@@ -1,4 +1,5 @@
 import type { ClientMessage, ServerMessage } from '@shared/protocol';
+import { page } from '@/lib/page';
 
 export type ConnectionState = 'connecting' | 'open' | 'closed';
 
@@ -18,7 +19,8 @@ export class WsClient {
   connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     this.setState('connecting');
-    const ws = new WebSocket(`${proto}://${location.host}/ws`);
+    const query = page.token ? `?token=${encodeURIComponent(page.token)}` : '';
+    const ws = new WebSocket(`${proto}://${location.host}/ws${query}`);
     this.ws = ws;
     ws.onopen = () => {
       this.attempts = 0;

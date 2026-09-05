@@ -69,6 +69,8 @@ export type LiveSessionOptions = {
   env?: Record<string, string>;
   /** The app project this conversation is about. */
   project?: string;
+  /** Let "Always allow" write a rule to the folder's settings (default true; off on a shared server). */
+  persistAlways?: boolean;
 };
 
 export type Subscriber = (message: ServerMessage) => void;
@@ -93,11 +95,13 @@ export class LiveSession {
   private readonly onInfo: ((info: EngineInfo) => void) | undefined;
   /** tool_use ids of shell commands that write the app's project for real. */
   private readonly realApplies = new Set<string>();
+  private readonly persistAlways: boolean;
 
   constructor(opts: LiveSessionOptions) {
     this.sessionId = opts.resume ?? randomUUID();
     this.cwd = opts.cwd;
     this.project = opts.project;
+    this.persistAlways = opts.persistAlways ?? true;
     this.onInfo = opts.onInfo;
     this.meta.permissionMode = opts.permissionMode ?? 'default';
     if (opts.model) this.meta.model = opts.model;
@@ -172,7 +176,7 @@ export class LiveSession {
       p.resolve({
         behavior: 'allow',
         updatedInput: p.request.input,
-        ...(always && p.suggestions ? { updatedPermissions: p.suggestions } : {}),
+        ...(always && this.persistAlways && p.suggestions ? { updatedPermissions: p.suggestions } : {}),
       });
     } else {
       p.resolve({ behavior: 'deny', message: 'The user declined this action in the web UI.' });

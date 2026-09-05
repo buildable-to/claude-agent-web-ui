@@ -7,6 +7,7 @@ import type {
   SessionStatus,
 } from '@shared/protocol';
 import { api } from '@/lib/api';
+import { page } from '@/lib/page';
 import {
   addLocalUserTurn,
   addNote,
@@ -209,7 +210,14 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
     }
     if (activeId.current === null) awaitingNew.current = true;
     dispatch({ type: 'starting' });
-    ws.send({ type: 'start', sessionId: activeId.current, text, uuid, ...chosen.current });
+    ws.send({
+      type: 'start',
+      sessionId: activeId.current,
+      text,
+      uuid,
+      ...chosen.current,
+      ...(page.project ? { project: page.project } : {}),
+    });
   }, []);
 
   const answerPermission = useCallback(

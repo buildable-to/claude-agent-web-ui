@@ -1,9 +1,10 @@
 import type { DirectoryTree, EngineInfo, HistoryMessage, ServerConfig, SessionSummary } from '@shared/protocol';
+import { authHeaders } from '@/lib/page';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
-    headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
+    headers: { 'content-type': 'application/json', ...authHeaders(), ...(init?.headers ?? {}) },
   });
   if (!res.ok) {
     let detail = res.statusText;
@@ -20,7 +21,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   config: () => request<ServerConfig>('/api/config'),
-  sessions: () => request<SessionSummary[]>('/api/sessions'),
+  sessions: (project?: string | null) =>
+    request<SessionSummary[]>(project ? `/api/sessions?project=${encodeURIComponent(project)}` : '/api/sessions'),
   tree: () => request<DirectoryTree>('/api/tree'),
   engine: () => request<EngineInfo>('/api/engine'),
   history: (id: string) => request<HistoryMessage[]>(`/api/sessions/${id}/messages`),

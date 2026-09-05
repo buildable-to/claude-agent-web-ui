@@ -55,6 +55,8 @@ export class SessionManager {
       ...(sessionId ? { resume: sessionId } : {}),
       ...rest,
       ...(project ? { project } : {}),
+      // On a shared server one click must not rewrite a folder's rules for good.
+      persistAlways: !this.accountId,
       env: {
         ...(this.accountId ? { BUILDABLE_ACCOUNT: this.accountId } : {}),
         ...(project ? { BUILDABLE_PROJECT: project } : {}),
