@@ -2,6 +2,7 @@ import { PanelRight, Plus } from 'lucide-react';
 import type { ModelOption, PermissionMode, SessionMeta, SessionStatus, SessionSummary } from '@shared/protocol';
 import { money, shortPath, timeAgo } from '@/lib/format';
 import { BASE } from '@/lib/page';
+import { SessionControls } from './SessionControls';
 
 type Props = {
   projectName: string;
@@ -23,23 +24,6 @@ type Props = {
   onModel: (model: string | null) => void;
   onMode: (mode: PermissionMode) => void;
 };
-
-const MODES: Array<{ value: PermissionMode; label: string; hint: string }> = [
-  { value: 'default', label: 'Ask first', hint: 'Asks before edits and commands, like the terminal.' },
-  { value: 'acceptEdits', label: 'Auto-accept edits', hint: 'Scratch files go through; every command still asks (the live apply, the memory write).' },
-  { value: 'plan', label: 'Plan only', hint: 'Read-only. Claude plans but changes nothing.' },
-  { value: 'auto', label: 'Auto', hint: 'A classifier decides what to allow.' },
-  // No "Bypass all": on a shared server that would switch the gates off for
-  // everyone who can reach the page. The terminal keeps it for throwaway work.
-];
-
-/** "Default (recommended)" says nothing about which model runs; name it:
- *  "Default · Opus 5 with 1M context" (the engine's own description, first part). */
-function modelLabel(m: ModelOption): string {
-  if (m.value !== 'default' || !m.description) return m.label;
-  const what = m.description.split(' · ')[0]?.trim();
-  return what ? `Default · ${what}` : m.label;
-}
 
 function statusLabel(status: Props['status'], connection: Props['connection']) {
   if (connection === 'expired') return { text: 'Expired · reload', dot: 'bg-warn' };
@@ -76,49 +60,57 @@ export function TopBar({
   onMode,
 }: Props) {
   const s = statusLabel(status, connection);
-  const current = meta.model ?? '';
-  // The engine reports a resolved id; the menu lists aliases. Match either.
-  const match =
-    models.find((m) => m.value === current || m.resolved === current) ??
-    (current ? undefined : (models.find((m) => m.value === 'default') ?? models[0]));
-  const modelValue = match?.value ?? '';
   const locked = status === 'connecting';
+
+  // Embedded in Project Studio the page is a panel beside the 3D: the studio's
+  // own bar carries the brand, the project and the agent's state, so this row
+  // is only the thread — which conversation, and a way to start another. The
+  // model and mode pickers sit in the composer footer (App passes them there).
+  if (picker) {
+    return (
+      <header className="flex h-10 shrink-0 items-center gap-1 border-b border-line pr-2 pl-2.5">
+        <select
+          className="textsel min-w-0 max-w-[75%] truncate text-ink"
+          value={picker.activeId ?? ''}
+          onChange={(e) => picker.onSelect(e.target.value || null)}
+          title="This project's conversations"
+        >
+          <option value="">New conversation</option>
+          {picker.sessions.map((c) => (
+            <option key={c.sessionId} value={c.sessionId}>
+              {c.title.length > 48 ? `${c.title.slice(0, 47)}…` : c.title} · {timeAgo(c.lastModified)}
+            </option>
+          ))}
+        </select>
+        <span className="ml-auto flex items-center gap-2">
+          {(connection !== 'open' || status === 'closed') && (
+            <span className="font-mono text-[10.5px] text-ink-3" aria-live="polite">
+              {s.text}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => picker.onSelect(null)}
+            className="iconbtn"
+            title="Start a new conversation on this project"
+            aria-label="New conversation"
+          >
+            <Plus className="size-4" />
+          </button>
+        </span>
+      </header>
+    );
+  }
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-4">
       <img src={`${BASE}/mark.png`} alt="" className="h-6 w-auto opacity-90" />
-      {picker ? (
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <select
-            className="pill min-w-0 max-w-[60%] flex-1 truncate"
-            value={picker.activeId ?? ''}
-            onChange={(e) => picker.onSelect(e.target.value || null)}
-            title="This project's conversations"
-          >
-            <option value="">New conversation</option>
-            {picker.sessions.map((s) => (
-              <option key={s.sessionId} value={s.sessionId}>
-                {s.title.length > 48 ? `${s.title.slice(0, 47)}…` : s.title} · {timeAgo(s.lastModified)}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => picker.onSelect(null)}
-            className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-accent-dim active:translate-y-px"
-            title="Start a new conversation on this project"
-          >
-            <Plus className="size-3.5" /> New
-          </button>
+      <div className="min-w-0 flex-1">
+        <div className="font-display truncate text-[14px] font-semibold tracking-tight text-ink">{projectName}</div>
+        <div className="truncate font-mono text-[10.5px] text-ink-3" title={projectDir}>
+          {shortPath(projectDir, 64)}
         </div>
-      ) : (
-        <div className="min-w-0 flex-1">
-          <div className="font-display truncate text-[14px] font-semibold tracking-tight text-ink">{projectName}</div>
-          <div className="truncate font-mono text-[10.5px] text-ink-3" title={projectDir}>
-            {shortPath(projectDir, 64)}
-          </div>
-        </div>
-      )}
+      </div>
       <span className="pill" aria-live="polite">
         <span className={`size-2 rounded-full ${s.dot}`} />
         {s.text}
@@ -128,34 +120,7 @@ export function TopBar({
           {money(meta.totalCostUsd)}
         </span>
       )}
-      <select
-        className="pill"
-        value={modelValue}
-        onChange={(e) => onModel(e.target.value || null)}
-        disabled={locked}
-        title="Model"
-      >
-        {!match && <option value="">{current || 'Default model'}</option>}
-        {models.map((m) => (
-          <option key={m.value} value={m.value} title={m.description}>
-            {modelLabel(m)}
-          </option>
-        ))}
-      </select>
-      <select
-        className="pill"
-        value={meta.permissionMode ?? (picker ? 'acceptEdits' : 'default')}
-        onChange={(e) => onMode(e.target.value as PermissionMode)}
-        disabled={locked}
-        title={MODES.find((m) => m.value === meta.permissionMode)?.hint ?? 'Permission mode'}
-      >
-        {/* Embedded for engineers: the modes where every command still asks; "Auto" would let a classifier wave a live apply through. */}
-        {MODES.filter((m) => !picker || m.value !== 'auto').map((m) => (
-          <option key={m.value} value={m.value} title={m.hint}>
-            {m.label}
-          </option>
-        ))}
-      </select>
+      <SessionControls meta={meta} models={models} locked={locked} look="pill" onModel={onModel} onMode={onMode} />
       {!hideFiles && (
         <button
           type="button"

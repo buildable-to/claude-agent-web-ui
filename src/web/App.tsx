@@ -209,6 +209,17 @@ export default function App() {
           commandsLoading={commandsLoading}
           autoFocus
           focusKey={focusKey}
+          {...(embed
+            ? {
+                controls: {
+                  meta: state.meta,
+                  models,
+                  locked: state.status === 'connecting',
+                  onModel: session.setModel,
+                  onMode: session.setPermissionMode,
+                },
+              }
+            : {})}
         />
       </div>
       {filesOpen && !embed && <FileTree onPick={(p) => insertText(p)} refreshKey={treeKey} />}
