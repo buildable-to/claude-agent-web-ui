@@ -1,0 +1,31 @@
+# Deploy the agent service to the Buildable box on every push to main.
+# Runs on the self-hosted runner registered on that box (label web-ui); the
+# service lives at /home/agent/web-ui and runs as systemd buildable-agent
+# (see buildable-to/ezdxf-flask deploy/agent-host/). The app repo's own
+# deploy also pulls and builds this repo, so either push updates the box.
+name: Deploy agent service
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, web-ui]
+    steps:
+      - name: Pull main into the service checkout
+        run: |
+          sudo -iu agent git -C /home/agent/web-ui fetch -q origin
+          sudo -iu agent git -C /home/agent/web-ui checkout -q main
+          sudo -iu agent git -C /home/agent/web-ui reset -q --hard origin/main
+          sudo -iu agent git -C /home/agent/web-ui log -1 --format='%h %s'
+      - name: Build under /agent
+        run: |
+          sudo -iu agent bash -c 'cd /home/agent/web-ui && npm ci --no-audit --no-fund --silent && BASE_PATH=/agent/ npm run build'
+      - name: Restart the service and check
+        run: |
+          sudo systemctl restart buildable-agent
+          sleep 3
+          systemctl is-active buildable-agent
+          curl -sf -o /dev/null http://127.0.0.1:3456/agent/ && echo "agent page answers"

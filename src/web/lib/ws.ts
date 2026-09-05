@@ -1,6 +1,9 @@
 import type { ClientMessage, ServerMessage } from '@shared/protocol';
+import { authExpired } from '@/lib/api';
+import { authQuery, BASE } from '@/lib/page';
 
-export type ConnectionState = 'connecting' | 'open' | 'closed';
+/** `expired`: the page's token is no longer accepted; only a fresh page helps. */
+export type ConnectionState = 'connecting' | 'open' | 'closed' | 'expired';
 
 type Listener = (message: ServerMessage) => void;
 type StateListener = (state: ConnectionState) => void;
@@ -18,7 +21,8 @@ export class WsClient {
   connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     this.setState('connecting');
-    const ws = new WebSocket(`${proto}://${location.host}/ws`);
+    const q = authQuery();
+    const ws = new WebSocket(`${proto}://${location.host}${BASE}/ws${q ? `?${q}` : ''}`);
     this.ws = ws;
     ws.onopen = () => {
       this.attempts = 0;
@@ -39,7 +43,13 @@ export class WsClient {
       this.ws = null;
       this.setState('closed');
       const delay = Math.min(5000, 500 * 2 ** this.attempts++);
-      this.timer = window.setTimeout(() => this.connect(), delay);
+      this.timer = window.setTimeout(() => {
+        // a dead token would loop here forever; ask the API once before retrying
+        void authExpired().then((dead) => {
+          if (dead) this.setState('expired');
+          else this.connect();
+        });
+      }, delay);
     };
     ws.onerror = () => ws.close();
   }

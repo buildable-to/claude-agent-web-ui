@@ -65,6 +65,8 @@ export type ClientMessage =
       uuid?: string;
       model?: string;
       permissionMode?: PermissionMode;
+      /** The app project this conversation is about (a project session id). */
+      project?: string;
     }
   | { type: 'send'; sessionId: string; text: string; uuid?: string }
   | {
@@ -73,6 +75,8 @@ export type ClientMessage =
       requestId: string;
       behavior: 'allow' | 'deny';
       always?: boolean;
+      /** For AskUserQuestion: question text -> chosen label(s), comma-separated when several. */
+      answers?: Record<string, string>;
     }
   | { type: 'interrupt'; sessionId: string }
   | { type: 'set_permission_mode'; sessionId: string; mode: PermissionMode }
@@ -95,6 +99,8 @@ export type ServerMessage =
   | { type: 'permission_resolved'; sessionId: string; requestId: string }
   | { type: 'status'; sessionId: string; status: SessionStatus }
   | { type: 'meta'; sessionId: string; meta: SessionMeta }
+  /** The agent just changed the app's project for real (a `--real` apply finished). */
+  | { type: 'project_changed'; sessionId: string; project?: string }
   | { type: 'error'; sessionId?: string; message: string };
 
 /** One row in the session list. */
@@ -107,6 +113,11 @@ export type SessionSummary = {
   gitBranch?: string;
   live: boolean;
   status?: SessionStatus;
+  /** The app project this conversation was started on, if any. */
+  project?: string;
+  /** Running totals from the engine, when a turn has finished. */
+  costUsd?: number;
+  turns?: number;
 };
 
 /** Persisted transcript entry, as returned by GET /api/sessions/:id/messages. */
@@ -122,6 +133,10 @@ export type ServerConfig = {
   projectDir: string;
   projectName: string;
   version: string;
+  /** Present in multi-account mode: who this page speaks for. */
+  account?: { id: string; email?: string };
+  /** The project session the page was opened on, if the token named one. */
+  project?: string;
 };
 
 /** Project folder listing for the files panel. */

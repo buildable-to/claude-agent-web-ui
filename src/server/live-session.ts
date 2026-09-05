@@ -21,6 +21,18 @@ import type {
 } from '../shared/protocol.js';
 import { toCommandInfo, toModelOptions } from './commands.js';
 
+/** What an engine (and everything it runs) may see of the service's
+ *  environment. The service's own secrets never cross this line. */
+const ENV_ALLOW = /^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LANGUAGE|LC_[A-Z]+|TERM|TZ|TMPDIR|XDG_[A-Z_]+|NODE_OPTIONS|HTTPS?_PROXY|NO_PROXY|https?_proxy|no_proxy|PYTHONPATH|PYTHONUNBUFFERED|FREECAD_CMD|BUILDABLE_[A-Z_]+|AGENTS_ROOT|CLAUDE_[A-Z_]+|ANTHROPIC_[A-Z_]+)$/;
+
+export function engineEnv(extra: Record<string, string> = {}): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined && ENV_ALLOW.test(k)) out[k] = v;
+  }
+  return { ...out, ...extra };
+}
+
 /** Push-based async iterable that feeds user turns into the engine. */
 class InputQueue implements AsyncIterable<SDKUserMessage> {
   private items: SDKUserMessage[] = [];
@@ -61,10 +73,20 @@ export type LiveSessionOptions = {
   cwd: string;
   /** Called once the engine reports its slash commands, skills and models. */
   onInfo?: (info: EngineInfo) => void;
+  /** Called after every turn with the running totals, for the usage record. */
+  onResult?: (usage: { totalCostUsd: number; numTurns: number; at: number }) => void;
   /** Resume this persisted session. When omitted a fresh session is created. */
   resume?: string;
   model?: string;
   permissionMode?: PermissionMode;
+  /** Extra environment for the engine and everything it runs. */
+  env?: Record<string, string>;
+  /** The app project this conversation is about. */
+  project?: string;
+  /** Let "Always allow" write a rule to the folder's settings (default true; off on a shared server). */
+  persistAlways?: boolean;
+  /** Where the app shows the project, for the preface of the first message. */
+  projectUrl?: string;
 };
 
 export type Subscriber = (message: ServerMessage) => void;
@@ -72,6 +94,7 @@ export type Subscriber = (message: ServerMessage) => void;
 export class LiveSession {
   readonly sessionId: string;
   readonly cwd: string;
+  readonly project: string | undefined;
   status: SessionStatus = 'starting';
   meta: SessionMeta = {};
   lastActivity = Date.now();
@@ -86,11 +109,18 @@ export class LiveSession {
   private closed = false;
   private terminalOnlyCommands: string[] = [];
   private readonly onInfo: ((info: EngineInfo) => void) | undefined;
+  private readonly onResult: LiveSessionOptions['onResult'];
+  /** tool_use ids of shell commands that write the app's project for real. */
+  private readonly realApplies = new Set<string>();
+  private readonly persistAlways: boolean;
 
   constructor(opts: LiveSessionOptions) {
     this.sessionId = opts.resume ?? randomUUID();
     this.cwd = opts.cwd;
+    this.project = opts.project;
+    this.persistAlways = opts.persistAlways ?? true;
     this.onInfo = opts.onInfo;
+    this.onResult = opts.onResult;
     this.meta.permissionMode = opts.permissionMode ?? 'default';
     if (opts.model) this.meta.model = opts.model;
 
@@ -101,7 +131,19 @@ export class LiveSession {
         ...(opts.resume ? { resume: opts.resume } : { sessionId: this.sessionId }),
         ...(opts.model ? { model: opts.model } : {}),
         // Use Claude Code's real system prompt (cwd, env, git status), not the SDK's bare default.
-        systemPrompt: { type: 'preset', preset: 'claude_code' },
+        // A conversation about an app project carries that in the system prompt,
+        // where it neither breaks a leading slash command nor becomes the title.
+        systemPrompt: {
+          type: 'preset',
+          preset: 'claude_code',
+          ...(opts.project
+            ? {
+                append: `The engineer has project ${opts.project} open in Project Studio${
+                  opts.projectUrl ? ` (${opts.projectUrl})` : ''
+                }. Work in that project; do not create another one unless asked to in so many words.`,
+              }
+            : {}),
+        },
         permissionMode: opts.permissionMode ?? 'default',
         allowDangerouslySkipPermissions: opts.permissionMode === 'bypassPermissions',
         includePartialMessages: true,
@@ -110,7 +152,7 @@ export class LiveSession {
         settingSources: ['user', 'project', 'local'],
         canUseTool: this.canUseTool,
         abortController: this.abort,
-        env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: 'claude-agent-web-ui/0.1.0' },
+        env: engineEnv({ ...(opts.env ?? {}), CLAUDE_AGENT_SDK_CLIENT_APP: 'claude-agent-web-ui/0.1.0' }),
         stderr: (data) => {
           const line = data.trim();
           if (line) console.error(`[engine ${this.shortId}] ${line}`);
@@ -152,15 +194,21 @@ export class LiveSession {
     this.setStatus('running');
   }
 
-  answerPermission(requestId: string, behavior: 'allow' | 'deny', always = false): boolean {
+  answerPermission(
+    requestId: string,
+    behavior: 'allow' | 'deny',
+    always = false,
+    answers?: Record<string, string>,
+  ): boolean {
     const p = this.pending.get(requestId);
     if (!p) return false;
     this.pending.delete(requestId);
     if (behavior === 'allow') {
       p.resolve({
         behavior: 'allow',
-        updatedInput: p.request.input,
-        ...(always && p.suggestions ? { updatedPermissions: p.suggestions } : {}),
+        // AskUserQuestion is answered through its own input: the chosen labels ride along.
+        updatedInput: answers ? { ...p.request.input, answers } : p.request.input,
+        ...(always && this.persistAlways && p.suggestions ? { updatedPermissions: p.suggestions } : {}),
       });
     } else {
       p.resolve({ behavior: 'deny', message: 'The user declined this action in the web UI.' });
@@ -209,7 +257,8 @@ export class LiveSession {
       description: opts.description,
       decisionReason: opts.decisionReason,
       blockedPath: opts.blockedPath,
-      canAlwaysAllow: Boolean(opts.suggestions?.length),
+      // no button for a promise the server will not keep
+      canAlwaysAllow: this.persistAlways && Boolean(opts.suggestions?.length),
       createdAt: Date.now(),
     };
     return new Promise<PermissionResult>((resolve) => {
@@ -269,10 +318,41 @@ export class LiveSession {
       }
     } else if (message.type === 'result') {
       this.meta = { ...this.meta, totalCostUsd: message.total_cost_usd };
+      this.onResult?.({ totalCostUsd: message.total_cost_usd, numTurns: message.num_turns, at: Date.now() });
       if (this.pending.size === 0) this.setStatus('idle');
     }
     if (message.type !== 'stream_event') this.buffer.push(message);
     this.broadcast({ type: 'message', sessionId: this.sessionId, message });
+    this.watchRealApplies(message);
+  }
+
+  /** A `--real` apply is the one command that changes the app's project. When
+   *  its result comes back, tell the page so it can redraw. */
+  private watchRealApplies(message: SDKMessage) {
+    if (message.type === 'assistant') {
+      const content = message.message.content;
+      if (!Array.isArray(content)) return;
+      for (const block of content) {
+        if (block.type !== 'tool_use' || block.name !== 'Bash') continue;
+        const command = String((block.input as { command?: unknown }).command ?? '');
+        if (/\s--real\b/.test(command)) this.realApplies.add(block.id);
+      }
+    } else if (message.type === 'user') {
+      const content = message.message.content;
+      if (!Array.isArray(content)) return;
+      for (const block of content) {
+        if (typeof block !== 'object' || block === null || block.type !== 'tool_result') continue;
+        const id = String((block as { tool_use_id?: unknown }).tool_use_id ?? '');
+        if (!this.realApplies.delete(id)) continue;
+        // a denied or failed apply changed nothing
+        if ((block as { is_error?: unknown }).is_error === true) continue;
+        this.broadcast({
+          type: 'project_changed',
+          sessionId: this.sessionId,
+          ...(this.project ? { project: this.project } : {}),
+        });
+      }
+    }
   }
 
   private async loadInitDetails() {

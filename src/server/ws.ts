@@ -1,24 +1,41 @@
 import type { IncomingMessage, Server } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { ClientMessage, ServerMessage } from '../shared/protocol.js';
+import type { ClientMessage, PermissionMode, ServerMessage } from '../shared/protocol.js';
+import type { Account } from './accounts.js';
 import type { LiveSession } from './live-session.js';
 import type { SessionManager } from './session-manager.js';
 
 type Attachment = { unsubscribe: () => void };
 
-export function attachWebSocket(server: Server, sessions: SessionManager) {
+/** Turns a token (or a dev-mode account id) into the folder's session manager. */
+export type Resolver = (
+  token: string | undefined,
+  devAccount: string | undefined,
+) => { manager: SessionManager; dir: string; account?: Account };
+
+export function attachWebSocket(server: Server, resolveCtx: Resolver, path = '/ws') {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', (req: IncomingMessage, socket, head) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    if (url.pathname !== '/ws') {
+    if (url.pathname !== path) {
       socket.destroy();
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+    // One connection speaks for one account, decided at the handshake.
+    let ctx: ReturnType<Resolver>;
+    try {
+      ctx = resolveCtx(url.searchParams.get('token') ?? undefined, url.searchParams.get('account') ?? undefined);
+    } catch (err) {
+      socket.write(`HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n${err instanceof Error ? err.message : ''}`);
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req, ctx));
   });
 
-  wss.on('connection', (ws: WebSocket) => {
+  wss.on('connection', (ws: WebSocket, _req: IncomingMessage, ctx: ReturnType<Resolver>) => {
+    const sessions = ctx.manager;
     const attachments = new Map<string, Attachment>();
     const send = (message: ServerMessage) => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));
@@ -29,7 +46,12 @@ export function attachWebSocket(server: Server, sessions: SessionManager) {
     ws.on('message', async (raw) => {
       let msg: ClientMessage;
       try {
-        msg = JSON.parse(String(raw)) as ClientMessage;
+        const parsed: unknown = JSON.parse(String(raw));
+        if (typeof parsed !== 'object' || parsed === null || typeof (parsed as { type?: unknown }).type !== 'string') {
+          fail('Malformed message');
+          return;
+        }
+        msg = parsed as ClientMessage;
       } catch {
         fail('Malformed message');
         return;
@@ -59,9 +81,18 @@ export function attachWebSocket(server: Server, sessions: SessionManager) {
           return;
         }
         case 'start': {
+          refuseUnlessAsking(msg.permissionMode);
+          // The token's project is signed; the page's is not. A token that names
+          // a project pins it, otherwise the page may say which one.
+          const pinned = ctx.account?.project;
+          if (pinned && msg.project && msg.project !== pinned) {
+            throw new Error('This page was opened for a different project');
+          }
+          const project = pinned ?? msg.project;
           const session = await sessions.open(msg.sessionId, {
             ...(msg.model ? { model: msg.model } : {}),
             ...(msg.permissionMode ? { permissionMode: msg.permissionMode } : {}),
+            ...(project ? { project } : {}),
           });
           attach(session);
           const text = msg.text.trim();
@@ -82,7 +113,7 @@ export function attachWebSocket(server: Server, sessions: SessionManager) {
         }
         case 'permission': {
           const session = requireLive(msg.sessionId);
-          if (!session.answerPermission(msg.requestId, msg.behavior, msg.always)) {
+          if (!session.answerPermission(msg.requestId, msg.behavior, msg.always, msg.answers)) {
             fail('That permission request is no longer pending', msg.sessionId);
           }
           return;
@@ -92,6 +123,7 @@ export function attachWebSocket(server: Server, sessions: SessionManager) {
           return;
         }
         case 'set_permission_mode': {
+          refuseUnlessAsking(msg.mode);
           await requireLive(msg.sessionId).setPermissionMode(msg.mode);
           return;
         }
@@ -115,6 +147,12 @@ export function attachWebSocket(server: Server, sessions: SessionManager) {
         pending: session.pendingRequests,
         meta: session.meta,
       });
+    }
+
+    /** On a shared server the gates must reach a human: only the modes that ask. */
+    function refuseUnlessAsking(mode: PermissionMode | undefined) {
+      if (!ctx.account || !mode || mode === 'default' || mode === 'plan') return;
+      throw new Error(`Mode "${mode}" is not available on a shared server`);
     }
 
     function requireLive(sessionId: string) {

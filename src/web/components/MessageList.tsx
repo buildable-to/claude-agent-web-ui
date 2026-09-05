@@ -9,6 +9,10 @@ type Props = {
   loading: boolean;
   projectName: string;
   onSuggest: (text: string) => void;
+  /** Empty-state copy; the defaults suit a code project, Buildable passes its own. */
+  kicker?: string;
+  blurb?: string;
+  suggestions?: string[];
 };
 
 const SNAP_PX = 64;
@@ -43,7 +47,16 @@ function Dots() {
   );
 }
 
-export function MessageList({ turns, status, loading, projectName, onSuggest }: Props) {
+export function MessageList({
+  turns,
+  status,
+  loading,
+  projectName,
+  onSuggest,
+  kicker,
+  blurb,
+  suggestions = SUGGESTIONS,
+}: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -76,17 +89,17 @@ export function MessageList({ turns, status, loading, projectName, onSuggest }: 
           <div className="rise pt-16">
             <div className="rounded-2xl border border-line-2 bg-panel/90 px-8 py-10 text-center shadow-strong">
               <p className="text-[11px] font-semibold tracking-[0.3em] text-ink-3 uppercase">
-                Claude Code · {projectName}
+                {kicker ?? `Claude Agent · ${projectName}`}
               </p>
               <h2 className="font-display mt-3 text-[26px] leading-tight font-semibold text-ink text-balance">
                 What are we building?
               </h2>
               <p className="mx-auto mt-3 max-w-md text-[13px] leading-relaxed text-ink-2">
-                Claude can read and edit files and run commands in this project. It asks before
-                anything it isn’t already allowed to do.
+                {blurb ??
+                  'Claude can read and edit files and run commands in this project. It asks before anything it isn’t already allowed to do.'}
               </p>
               <div className="mt-6 flex flex-wrap justify-center gap-2">
-                {SUGGESTIONS.map((s) => (
+                {suggestions.map((s) => (
                   <button
                     key={s}
                     type="button"
