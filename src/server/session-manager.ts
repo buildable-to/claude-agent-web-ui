@@ -36,6 +36,8 @@ export class SessionManager {
     /** The app account this folder belongs to (multi-account mode). */
     readonly accountId?: string,
     shared?: SharedEngineInfo,
+    /** The folder carries its own skills link (a laptop): offer those, not the home's. */
+    private readonly folderSkillsOnly = false,
   ) {
     this.info = shared ?? { value: null, probe: null };
     this.projects = this.readJson<Record<string, string>>(PROJECTS_FILE);
@@ -103,11 +105,13 @@ export class SessionManager {
   }
 
   /** On the shared server the composer offers the skills installed for the
-   *  agent (Buildable's own), not Claude Code's commands; a laptop's single
-   *  folder keeps everything the engine knows. */
+   *  agent (Buildable's own), not Claude Code's commands: the agent user's
+   *  home plus the folder, or only the folder's link on a laptop (the home
+   *  there is the developer's, with their own skills in it). A laptop's
+   *  single folder keeps everything the engine knows. */
   private async offeredCommands(): Promise<Set<string> | null> {
     if (!this.accountId) return null;
-    return installedSkills([homedir(), this.projectDir]);
+    return installedSkills(this.folderSkillsOnly ? [this.projectDir] : [homedir(), this.projectDir]);
   }
 
   /** Commands, skills and models for this project, from a live engine or a one-off probe. */
