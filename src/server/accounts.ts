@@ -7,7 +7,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
-import { SessionManager } from './session-manager.js';
+import { SessionManager, type SharedEngineInfo } from './session-manager.js';
 
 export type Account = {
   /** Folder name and the app's user id. */
@@ -75,6 +75,7 @@ const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 export class Accounts {
   private readonly managers = new Map<string, SessionManager>();
+  private readonly engineInfo: SharedEngineInfo = { value: null, probe: null };
 
   constructor(readonly config: AccountsConfig) {
     mkdirSync(config.root, { recursive: true });
@@ -108,7 +109,7 @@ export class Accounts {
   manager(account: Account): SessionManager {
     let m = this.managers.get(account.dir);
     if (!m) {
-      m = new SessionManager(account.dir, account.id);
+      m = new SessionManager(account.dir, account.id, this.engineInfo);
       this.managers.set(account.dir, m);
     }
     return m;

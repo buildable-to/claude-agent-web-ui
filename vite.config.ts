@@ -20,8 +20,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': `http://localhost:${serverPort}`,
-      '/ws': { target: `ws://localhost:${serverPort}`, ws: true },
+      [`${base}api`]: `http://localhost:${serverPort}`,
+      [`${base}ws`]: { target: `ws://localhost:${serverPort}`, ws: true },
     },
   },
   build: {

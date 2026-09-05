@@ -16,17 +16,22 @@ const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 /** Which app project each conversation in this folder is about. */
 const PROJECTS_FILE = '.agent-projects.json';
 
+/** Commands/models are the same for every folder seeded from one template
+ *  under one home; probe the engine once per process, not once per account. */
+export type SharedEngineInfo = { value: EngineInfo | null; probe: Promise<EngineInfo> | null };
+
 export class SessionManager {
   private readonly live = new Map<string, LiveSession>();
-  private infoCache: EngineInfo | null = null;
-  private infoProbe: Promise<EngineInfo> | null = null;
+  private readonly info: SharedEngineInfo;
   private projects: Record<string, string>;
 
   constructor(
     readonly projectDir: string,
     /** The app account this folder belongs to (multi-account mode). */
     readonly accountId?: string,
+    shared?: SharedEngineInfo,
   ) {
+    this.info = shared ?? { value: null, probe: null };
     this.projects = this.readProjects();
     setInterval(() => this.reapIdle(), 5 * 60 * 1000).unref();
   }
@@ -70,7 +75,7 @@ export class SessionManager {
         ...(project ? { BUILDABLE_PROJECT: project } : {}),
       },
       onInfo: (info) => {
-        this.infoCache = info;
+        this.info.value = info;
       },
     });
     this.live.set(session.sessionId, session);
@@ -86,24 +91,34 @@ export class SessionManager {
 
   /** Commands, skills and models for this project, from a live engine or a one-off probe. */
   async engineInfo(): Promise<EngineInfo> {
-    if (this.infoCache) return this.infoCache;
-    if (!this.infoProbe) {
-      this.infoProbe = probeEngine(this.projectDir)
+    if (this.info.value) return this.info.value;
+    if (!this.info.probe) {
+      this.info.probe = probeEngine(this.projectDir)
         .then((info) => {
-          this.infoCache = info;
+          this.info.value = info;
           console.log(`[sessions] discovered ${info.commands.length} commands, ${info.models.length} models`);
           return info;
         })
         .finally(() => {
-          this.infoProbe = null;
+          this.info.probe = null;
         });
     }
-    return this.infoProbe;
+    return this.info.probe;
   }
 
-  /** Every conversation in this folder, or only those about one app project. */
+  /** Every conversation in this folder, or only those about one app project.
+   *  The project case reads just the tagged ids: no folder scan, no cap. */
   async list(project?: string): Promise<SessionSummary[]> {
-    const persisted = await listSessions({ dir: this.projectDir, limit: project ? 2000 : 200 });
+    let persisted;
+    if (project) {
+      const ids = Object.entries(this.projects)
+        .filter(([, p]) => p === project)
+        .map(([id]) => id);
+      const found = await Promise.all(ids.map((id) => getSessionInfo(id, { dir: this.projectDir })));
+      persisted = found.filter((s): s is NonNullable<typeof s> => Boolean(s));
+    } else {
+      persisted = await listSessions({ dir: this.projectDir, limit: 200 });
+    }
     const rows: SessionSummary[] = persisted.map((s) => {
       const live = this.get(s.sessionId);
       const tag = this.projects[s.sessionId];

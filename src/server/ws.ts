@@ -1,6 +1,6 @@
 import type { IncomingMessage, Server } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { ClientMessage, ServerMessage } from '../shared/protocol.js';
+import type { ClientMessage, PermissionMode, ServerMessage } from '../shared/protocol.js';
 import type { Account } from './accounts.js';
 import type { LiveSession } from './live-session.js';
 import type { SessionManager } from './session-manager.js';
@@ -81,9 +81,7 @@ export function attachWebSocket(server: Server, resolveCtx: Resolver, path = '/w
           return;
         }
         case 'start': {
-          if (ctx.account && msg.permissionMode === 'bypassPermissions') {
-            throw new Error('Bypass mode is not available on a shared server');
-          }
+          refuseUnlessAsking(msg.permissionMode);
           // The token's project is signed; the page's is not. A token that names
           // a project pins it, otherwise the page may say which one.
           const pinned = ctx.account?.project;
@@ -125,9 +123,7 @@ export function attachWebSocket(server: Server, resolveCtx: Resolver, path = '/w
           return;
         }
         case 'set_permission_mode': {
-          if (ctx.account && msg.mode === 'bypassPermissions') {
-            throw new Error('Bypass mode is not available on a shared server');
-          }
+          refuseUnlessAsking(msg.mode);
           await requireLive(msg.sessionId).setPermissionMode(msg.mode);
           return;
         }
@@ -151,6 +147,12 @@ export function attachWebSocket(server: Server, resolveCtx: Resolver, path = '/w
         pending: session.pendingRequests,
         meta: session.meta,
       });
+    }
+
+    /** On a shared server the gates must reach a human: only the modes that ask. */
+    function refuseUnlessAsking(mode: PermissionMode | undefined) {
+      if (!ctx.account || !mode || mode === 'default' || mode === 'plan') return;
+      throw new Error(`Mode "${mode}" is not available on a shared server`);
     }
 
     function requireLive(sessionId: string) {

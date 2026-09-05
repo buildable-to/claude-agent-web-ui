@@ -40,7 +40,6 @@ const resolveCtx: Resolver = (token, devAccount) => {
 };
 
 const app = express();
-app.use(express.json({ limit: '2mb' }));
 const base = config.basePath; // '' or '/agent'
 
 // Only the API needs the token; the page and its assets load without one and
@@ -56,6 +55,8 @@ app.use(`${base}/api`, (req, res, next) => {
     res.status(status).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
+// bodies are read only for callers who passed the token check
+app.use(`${base}/api`, express.json({ limit: '2mb' }));
 
 const ctxOf = (res: express.Response) => res.locals.ctx as Ctx;
 

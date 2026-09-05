@@ -141,7 +141,7 @@ export function TopBar({
         disabled={locked}
         title={MODES.find((m) => m.value === meta.permissionMode)?.hint ?? 'Permission mode'}
       >
-        {MODES.map((m) => (
+        {MODES.filter((m) => !picker || m.value === 'default' || m.value === 'plan').map((m) => (
           <option key={m.value} value={m.value} title={m.hint}>
             {m.label}
           </option>
