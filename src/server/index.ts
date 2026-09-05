@@ -45,6 +45,11 @@ const base = config.basePath; // '' or '/agent'
 // Only the API needs the token; the page and its assets load without one and
 // the browser then sends the token it was given on its URL.
 app.use(`${base}/api`, (req, res, next) => {
+  // the admin routes check their own (admin) token and must not make a folder for it
+  if (req.path.startsWith('/admin/')) {
+    next();
+    return;
+  }
   const auth = req.header('authorization');
   const token = auth?.startsWith('Bearer ') ? auth.slice(7) : firstString(req.query.token);
   try {
