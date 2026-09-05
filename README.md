@@ -65,6 +65,34 @@ and skills the engine knows for this project: built-ins, your `.claude`
 commands and skills, and plugin skills. The list comes from the engine itself
 (`GET /api/commands` spawns it briefly the first time, then caches).
 
+## Many accounts, one server (embedding in an app)
+
+Point the server at a root folder instead of one project and it serves one
+folder per account, chosen from a signed token the app hands the page:
+
+```bash
+AGENTS_ROOT=/srv/agents AGENT_AUTH_SECRET=<the app's secret> \
+ACCOUNT_SETTINGS_TEMPLATE=/path/to/settings.json \
+npm start -- --port 3456
+```
+
+- The token is an HS256 JWT (`{ sub: accountId, email?, sid?, exp }`, e.g. from
+  PyJWT) passed on the page URL as `?token=…`; the page sends it as
+  `Authorization: Bearer` on the API and as `?token=` on the WebSocket.
+- `?project=<id>` narrows the session list to one app project and tags new
+  conversations with it; `?embed=1` hides the file tree and speaks to an end
+  user rather than a developer. New folders get `.claude/settings.json` from
+  the template, a `scratch/`, and the trust flag in `~/.claude.json`
+  (`CLAUDE_JSON_PATH` to relocate).
+- Every engine gets `BUILDABLE_ACCOUNT` and `BUILDABLE_PROJECT` in its
+  environment. After a shell command carrying `--real` finishes, the server
+  sends `project_changed` and the page posts it to its parent window
+  (`{ source: 'buildable-agent', type: 'project_changed' }`), along with
+  `status` changes.
+- On a shared server the Bypass mode is refused and "Always allow" does not
+  write rules into the folder. Without `AGENT_AUTH_SECRET` the server runs in
+  dev mode and `?account=<id>` picks the folder; never expose that.
+
 ## Security
 
 This is a shell with a web page in front of it. The server binds to
