@@ -70,6 +70,8 @@ export class SessionManager {
     const session = new LiveSession({
       cwd: this.projectDir,
       ...(sessionId ? { resume: sessionId } : {}),
+      // Engineers' default: scratch files go through, every command still asks.
+      ...(this.accountId ? { permissionMode: 'acceptEdits' as const } : {}),
       ...rest,
       ...(project ? { project } : {}),
       ...(only ? { onlyCommands: only } : {}),

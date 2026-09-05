@@ -164,9 +164,11 @@ export function attachWebSocket(
       });
     }
 
-    /** On a shared server the gates must reach a human: only the modes that ask. */
+    /** On a shared server the gates must reach a human: only the modes where
+     *  every command asks. Auto-accepting edits is fine (scratch files); a
+     *  classifier approving commands is not. */
     function refuseUnlessAsking(mode: PermissionMode | undefined) {
-      if (!ctx.account || !mode || mode === 'default' || mode === 'plan') return;
+      if (!ctx.account || !mode || mode === 'default' || mode === 'acceptEdits' || mode === 'plan') return;
       throw new Error(`Mode "${mode}" is not available on a shared server`);
     }
 

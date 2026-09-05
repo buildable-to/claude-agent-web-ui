@@ -55,8 +55,11 @@ as an amber banner with **Approve**, **Deny** and, where the engine offers it,
 **Always allow** (the same as "don't ask again" in the terminal). Reads are
 allowed without asking, like in the terminal.
 
-The permission mode can be changed per session from the top bar. "Bypass all"
-never asks; use it only for throwaway work.
+The permission mode can be changed per session from the top bar. Embedded for
+Buildable's engineers the choice is Ask first, Auto-accept edits (the default:
+scratch files go through, every command still asks) and Plan only; "Auto" and
+"Bypass all" are not offered there, since a mode that approves commands would
+skip the live-apply and memory cards.
 
 ## What the page shows
 

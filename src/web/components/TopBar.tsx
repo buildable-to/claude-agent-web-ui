@@ -26,7 +26,7 @@ type Props = {
 
 const MODES: Array<{ value: PermissionMode; label: string; hint: string }> = [
   { value: 'default', label: 'Ask first', hint: 'Asks before edits and commands, like the terminal.' },
-  { value: 'acceptEdits', label: 'Auto-accept edits', hint: 'File edits go through; commands still ask.' },
+  { value: 'acceptEdits', label: 'Auto-accept edits', hint: 'Scratch files go through; every command still asks (the live apply, the memory write).' },
   { value: 'plan', label: 'Plan only', hint: 'Read-only. Claude plans but changes nothing.' },
   { value: 'auto', label: 'Auto', hint: 'A classifier decides what to allow.' },
   // No "Bypass all": on a shared server that would switch the gates off for
@@ -136,12 +136,13 @@ export function TopBar({
       </select>
       <select
         className="pill"
-        value={meta.permissionMode ?? 'default'}
+        value={meta.permissionMode ?? (picker ? 'acceptEdits' : 'default')}
         onChange={(e) => onMode(e.target.value as PermissionMode)}
         disabled={locked}
         title={MODES.find((m) => m.value === meta.permissionMode)?.hint ?? 'Permission mode'}
       >
-        {MODES.filter((m) => !picker || m.value === 'default' || m.value === 'plan').map((m) => (
+        {/* Embedded for engineers: the modes where every command still asks; "Auto" would let a classifier wave a live apply through. */}
+        {MODES.filter((m) => !picker || m.value !== 'auto').map((m) => (
           <option key={m.value} value={m.value} title={m.hint}>
             {m.label}
           </option>
