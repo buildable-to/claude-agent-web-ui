@@ -71,6 +71,8 @@ export type LiveSessionOptions = {
   project?: string;
   /** Let "Always allow" write a rule to the folder's settings (default true; off on a shared server). */
   persistAlways?: boolean;
+  /** Where the app shows the project, for the preface of the first message. */
+  projectUrl?: string;
 };
 
 export type Subscriber = (message: ServerMessage) => void;
@@ -96,12 +98,16 @@ export class LiveSession {
   /** tool_use ids of shell commands that write the app's project for real. */
   private readonly realApplies = new Set<string>();
   private readonly persistAlways: boolean;
+  private readonly projectUrl: string | undefined;
+  private introduced = false;
 
   constructor(opts: LiveSessionOptions) {
     this.sessionId = opts.resume ?? randomUUID();
     this.cwd = opts.cwd;
     this.project = opts.project;
     this.persistAlways = opts.persistAlways ?? true;
+    this.projectUrl = opts.projectUrl;
+    this.introduced = Boolean(opts.resume);
     this.onInfo = opts.onInfo;
     this.meta.permissionMode = opts.permissionMode ?? 'default';
     if (opts.model) this.meta.model = opts.model;
@@ -155,9 +161,18 @@ export class LiveSession {
 
   send(text: string, uuid?: string) {
     if (this.closed) throw new Error('Session is closed');
+    // The first message of a conversation about an app project carries the
+    // project, so the agent builds into the one the engineer is looking at
+    // instead of making another. Said once; the transcript keeps it.
+    let content = text;
+    if (!this.introduced && this.project) {
+      const where = this.projectUrl ? ` (${this.projectUrl})` : '';
+      content = `[Project Studio] The engineer has project ${this.project} open${where}. Work in that project; do not create another one unless asked to.\n\n${text}`;
+    }
+    this.introduced = true;
     const message: SDKUserMessage = {
       type: 'user',
-      message: { role: 'user', content: text },
+      message: { role: 'user', content },
       parent_tool_use_id: null,
       session_id: this.sessionId,
       uuid: (uuid ?? randomUUID()) as SDKUserMessage['uuid'],

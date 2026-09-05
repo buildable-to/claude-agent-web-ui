@@ -55,6 +55,9 @@ export class SessionManager {
       ...(sessionId ? { resume: sessionId } : {}),
       ...rest,
       ...(project ? { project } : {}),
+      ...(project && process.env.BUILDABLE_URL
+        ? { projectUrl: `${process.env.BUILDABLE_URL.replace(/\/$/, '')}/project-v4/sessions/${project}` }
+        : {}),
       // On a shared server one click must not rewrite a folder's rules for good.
       persistAlways: !this.accountId,
       env: {
