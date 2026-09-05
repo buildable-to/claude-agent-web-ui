@@ -46,7 +46,12 @@ export function attachWebSocket(server: Server, resolveCtx: Resolver, path = '/w
     ws.on('message', async (raw) => {
       let msg: ClientMessage;
       try {
-        msg = JSON.parse(String(raw)) as ClientMessage;
+        const parsed: unknown = JSON.parse(String(raw));
+        if (typeof parsed !== 'object' || parsed === null || typeof (parsed as { type?: unknown }).type !== 'string') {
+          fail('Malformed message');
+          return;
+        }
+        msg = parsed as ClientMessage;
       } catch {
         fail('Malformed message');
         return;
@@ -79,7 +84,13 @@ export function attachWebSocket(server: Server, resolveCtx: Resolver, path = '/w
           if (ctx.account && msg.permissionMode === 'bypassPermissions') {
             throw new Error('Bypass mode is not available on a shared server');
           }
-          const project = msg.project ?? ctx.account?.project;
+          // The token's project is signed; the page's is not. A token that names
+          // a project pins it, otherwise the page may say which one.
+          const pinned = ctx.account?.project;
+          if (pinned && msg.project && msg.project !== pinned) {
+            throw new Error('This page was opened for a different project');
+          }
+          const project = pinned ?? msg.project;
           const session = await sessions.open(msg.sessionId, {
             ...(msg.model ? { model: msg.model } : {}),
             ...(msg.permissionMode ? { permissionMode: msg.permissionMode } : {}),

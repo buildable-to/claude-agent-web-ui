@@ -14,6 +14,8 @@ export type Config = {
   accountTemplate?: string;
   /** Path prefix the page and API live under ('' or e.g. '/agent'); must match the build's BASE_PATH. */
   basePath: string;
+  /** Explicit opt-in to the unauthenticated dev mode (?account=) with AGENTS_ROOT. */
+  devAuth: boolean;
 };
 
 function readArg(name: string): string | undefined {
@@ -42,6 +44,7 @@ export function loadConfig(): Config {
     authSecret: readArg('auth-secret') ?? process.env.AGENT_AUTH_SECRET ?? '',
     ...(accountTemplate ? { accountTemplate: resolve(accountTemplate) } : {}),
     basePath: (readArg('base-path') ?? process.env.BASE_PATH ?? '').replace(/\/+$/, ''),
+    devAuth: process.argv.includes('--dev-auth') || process.env.AGENT_DEV_AUTH === '1',
   };
 }
 

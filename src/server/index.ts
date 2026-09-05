@@ -15,6 +15,11 @@ const config = loadConfig();
 
 // Two modes. Single: one --dir, no auth (the laptop case). Accounts: one
 // folder per account under --agents-root, picked from the app's token.
+if (config.agentsRoot && !config.authSecret && !config.devAuth) {
+  console.error('AGENTS_ROOT is set but AGENT_AUTH_SECRET is empty. Refusing to serve every account to anyone.');
+  console.error('Set the secret, or pass --dev-auth to run the unauthenticated dev mode on a laptop.');
+  process.exit(2);
+}
 const accounts = config.agentsRoot
   ? new Accounts({
       root: config.agentsRoot,

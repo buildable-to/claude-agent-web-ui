@@ -21,6 +21,18 @@ import type {
 } from '../shared/protocol.js';
 import { toCommandInfo, toModelOptions } from './commands.js';
 
+/** What an engine (and everything it runs) may see of the service's
+ *  environment. The service's own secrets never cross this line. */
+const ENV_ALLOW = /^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LANGUAGE|LC_[A-Z]+|TERM|TZ|TMPDIR|XDG_[A-Z_]+|NODE_OPTIONS|HTTPS?_PROXY|NO_PROXY|https?_proxy|no_proxy|PYTHONPATH|PYTHONUNBUFFERED|FREECAD_CMD|BUILDABLE_[A-Z_]+|AGENTS_ROOT|CLAUDE_[A-Z_]+|ANTHROPIC_[A-Z_]+)$/;
+
+export function engineEnv(extra: Record<string, string> = {}): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined && ENV_ALLOW.test(k)) out[k] = v;
+  }
+  return { ...out, ...extra };
+}
+
 /** Push-based async iterable that feeds user turns into the engine. */
 class InputQueue implements AsyncIterable<SDKUserMessage> {
   private items: SDKUserMessage[] = [];
@@ -98,16 +110,12 @@ export class LiveSession {
   /** tool_use ids of shell commands that write the app's project for real. */
   private readonly realApplies = new Set<string>();
   private readonly persistAlways: boolean;
-  private readonly projectUrl: string | undefined;
-  private introduced = false;
 
   constructor(opts: LiveSessionOptions) {
     this.sessionId = opts.resume ?? randomUUID();
     this.cwd = opts.cwd;
     this.project = opts.project;
     this.persistAlways = opts.persistAlways ?? true;
-    this.projectUrl = opts.projectUrl;
-    this.introduced = Boolean(opts.resume);
     this.onInfo = opts.onInfo;
     this.meta.permissionMode = opts.permissionMode ?? 'default';
     if (opts.model) this.meta.model = opts.model;
@@ -119,7 +127,19 @@ export class LiveSession {
         ...(opts.resume ? { resume: opts.resume } : { sessionId: this.sessionId }),
         ...(opts.model ? { model: opts.model } : {}),
         // Use Claude Code's real system prompt (cwd, env, git status), not the SDK's bare default.
-        systemPrompt: { type: 'preset', preset: 'claude_code' },
+        // A conversation about an app project carries that in the system prompt,
+        // where it neither breaks a leading slash command nor becomes the title.
+        systemPrompt: {
+          type: 'preset',
+          preset: 'claude_code',
+          ...(opts.project
+            ? {
+                append: `The engineer has project ${opts.project} open in Project Studio${
+                  opts.projectUrl ? ` (${opts.projectUrl})` : ''
+                }. Work in that project; do not create another one unless asked to in so many words.`,
+              }
+            : {}),
+        },
         permissionMode: opts.permissionMode ?? 'default',
         allowDangerouslySkipPermissions: opts.permissionMode === 'bypassPermissions',
         includePartialMessages: true,
@@ -128,11 +148,7 @@ export class LiveSession {
         settingSources: ['user', 'project', 'local'],
         canUseTool: this.canUseTool,
         abortController: this.abort,
-        env: {
-          ...process.env,
-          ...(opts.env ?? {}),
-          CLAUDE_AGENT_SDK_CLIENT_APP: 'claude-agent-web-ui/0.1.0',
-        },
+        env: engineEnv({ ...(opts.env ?? {}), CLAUDE_AGENT_SDK_CLIENT_APP: 'claude-agent-web-ui/0.1.0' }),
         stderr: (data) => {
           const line = data.trim();
           if (line) console.error(`[engine ${this.shortId}] ${line}`);
@@ -161,18 +177,9 @@ export class LiveSession {
 
   send(text: string, uuid?: string) {
     if (this.closed) throw new Error('Session is closed');
-    // The first message of a conversation about an app project carries the
-    // project, so the agent builds into the one the engineer is looking at
-    // instead of making another. Said once; the transcript keeps it.
-    let content = text;
-    if (!this.introduced && this.project) {
-      const where = this.projectUrl ? ` (${this.projectUrl})` : '';
-      content = `[Project Studio] The engineer has project ${this.project} open${where}. Work in that project; do not create another one unless asked to.\n\n${text}`;
-    }
-    this.introduced = true;
     const message: SDKUserMessage = {
       type: 'user',
-      message: { role: 'user', content },
+      message: { role: 'user', content: text },
       parent_tool_use_id: null,
       session_id: this.sessionId,
       uuid: (uuid ?? randomUUID()) as SDKUserMessage['uuid'],
@@ -246,7 +253,8 @@ export class LiveSession {
       description: opts.description,
       decisionReason: opts.decisionReason,
       blockedPath: opts.blockedPath,
-      canAlwaysAllow: Boolean(opts.suggestions?.length),
+      // no button for a promise the server will not keep
+      canAlwaysAllow: this.persistAlways && Boolean(opts.suggestions?.length),
       createdAt: Date.now(),
     };
     return new Promise<PermissionResult>((resolve) => {
@@ -322,7 +330,7 @@ export class LiveSession {
       for (const block of content) {
         if (block.type !== 'tool_use' || block.name !== 'Bash') continue;
         const command = String((block.input as { command?: unknown }).command ?? '');
-        if (/\s--real(\s|$)/.test(command)) this.realApplies.add(block.id);
+        if (/\s--real\b/.test(command)) this.realApplies.add(block.id);
       }
     } else if (message.type === 'user') {
       const content = message.message.content;
@@ -331,6 +339,8 @@ export class LiveSession {
         if (typeof block !== 'object' || block === null || block.type !== 'tool_result') continue;
         const id = String((block as { tool_use_id?: unknown }).tool_use_id ?? '');
         if (!this.realApplies.delete(id)) continue;
+        // a denied or failed apply changed nothing
+        if ((block as { is_error?: unknown }).is_error === true) continue;
         this.broadcast({
           type: 'project_changed',
           sessionId: this.sessionId,

@@ -1,11 +1,12 @@
 import {
   deleteSession,
+  getSessionInfo,
   getSessionMessages,
   listSessions,
   renameSession,
   type PermissionMode,
 } from '@anthropic-ai/claude-agent-sdk';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineInfo, HistoryMessage, SessionSummary } from '../shared/protocol.js';
 import { probeEngine } from './commands.js';
@@ -47,6 +48,10 @@ export class SessionManager {
     if (sessionId) {
       const existing = this.get(sessionId);
       if (existing) return existing;
+      // Only this folder's own conversations resume here. The engine would
+      // otherwise find the id in ANY folder under the shared home.
+      const info = await getSessionInfo(sessionId, { dir: this.projectDir });
+      if (!info) throw new Error('No such conversation in this account');
     }
     const project = opts.project ?? (sessionId ? this.projects[sessionId] : undefined);
     const { project: _p, ...rest } = opts;
@@ -98,7 +103,7 @@ export class SessionManager {
 
   /** Every conversation in this folder, or only those about one app project. */
   async list(project?: string): Promise<SessionSummary[]> {
-    const persisted = await listSessions({ dir: this.projectDir, limit: 200 });
+    const persisted = await listSessions({ dir: this.projectDir, limit: project ? 2000 : 200 });
     const rows: SessionSummary[] = persisted.map((s) => {
       const live = this.get(s.sessionId);
       const tag = this.projects[s.sessionId];
@@ -162,16 +167,27 @@ export class SessionManager {
 
   private readProjects(): Record<string, string> {
     const path = join(this.projectDir, PROJECTS_FILE);
+    if (!existsSync(path)) return {};
     try {
-      return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as Record<string, string>) : {};
-    } catch {
+      return JSON.parse(readFileSync(path, 'utf8')) as Record<string, string>;
+    } catch (err) {
+      // keep the corrupt file for a human instead of silently wiping every tag
+      try {
+        renameSync(path, `${path}.corrupt-${Date.now()}`);
+      } catch {
+        // ignore
+      }
+      console.error(`[sessions] ${PROJECTS_FILE} unreadable, set aside: ${String(err)}`);
       return {};
     }
   }
 
   private writeProjects() {
+    const path = join(this.projectDir, PROJECTS_FILE);
     try {
-      writeFileSync(join(this.projectDir, PROJECTS_FILE), JSON.stringify(this.projects, null, 2) + '\n');
+      const tmp = `${path}.${process.pid}.tmp`;
+      writeFileSync(tmp, JSON.stringify(this.projects, null, 2) + '\n');
+      renameSync(tmp, path);
     } catch (err) {
       console.error(`[sessions] could not write ${PROJECTS_FILE}: ${String(err)}`);
     }
