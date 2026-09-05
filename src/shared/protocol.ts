@@ -115,6 +115,9 @@ export type SessionSummary = {
   status?: SessionStatus;
   /** The app project this conversation was started on, if any. */
   project?: string;
+  /** Running totals from the engine, when a turn has finished. */
+  costUsd?: number;
+  turns?: number;
 };
 
 /** Persisted transcript entry, as returned by GET /api/sessions/:id/messages. */

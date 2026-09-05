@@ -73,6 +73,8 @@ export type LiveSessionOptions = {
   cwd: string;
   /** Called once the engine reports its slash commands, skills and models. */
   onInfo?: (info: EngineInfo) => void;
+  /** Called after every turn with the running totals, for the usage record. */
+  onResult?: (usage: { totalCostUsd: number; numTurns: number; at: number }) => void;
   /** Resume this persisted session. When omitted a fresh session is created. */
   resume?: string;
   model?: string;
@@ -107,6 +109,7 @@ export class LiveSession {
   private closed = false;
   private terminalOnlyCommands: string[] = [];
   private readonly onInfo: ((info: EngineInfo) => void) | undefined;
+  private readonly onResult: LiveSessionOptions['onResult'];
   /** tool_use ids of shell commands that write the app's project for real. */
   private readonly realApplies = new Set<string>();
   private readonly persistAlways: boolean;
@@ -117,6 +120,7 @@ export class LiveSession {
     this.project = opts.project;
     this.persistAlways = opts.persistAlways ?? true;
     this.onInfo = opts.onInfo;
+    this.onResult = opts.onResult;
     this.meta.permissionMode = opts.permissionMode ?? 'default';
     if (opts.model) this.meta.model = opts.model;
 
@@ -314,6 +318,7 @@ export class LiveSession {
       }
     } else if (message.type === 'result') {
       this.meta = { ...this.meta, totalCostUsd: message.total_cost_usd };
+      this.onResult?.({ totalCostUsd: message.total_cost_usd, numTurns: message.num_turns, at: Date.now() });
       if (this.pending.size === 0) this.setStatus('idle');
     }
     if (message.type !== 'stream_event') this.buffer.push(message);

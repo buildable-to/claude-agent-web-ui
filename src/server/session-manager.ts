@@ -15,6 +15,10 @@ import { LiveSession } from './live-session.js';
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 /** Which app project each conversation in this folder is about. */
 const PROJECTS_FILE = '.agent-projects.json';
+/** What each conversation has cost so far (the engine's running totals). */
+const USAGE_FILE = '.agent-usage.json';
+
+export type Usage = { totalCostUsd: number; numTurns: number; at: number };
 
 /** Commands/models are the same for every folder seeded from one template
  *  under one home; probe the engine once per process, not once per account. */
@@ -24,6 +28,7 @@ export class SessionManager {
   private readonly live = new Map<string, LiveSession>();
   private readonly info: SharedEngineInfo;
   private projects: Record<string, string>;
+  private usage: Record<string, Usage>;
 
   constructor(
     readonly projectDir: string,
@@ -32,7 +37,8 @@ export class SessionManager {
     shared?: SharedEngineInfo,
   ) {
     this.info = shared ?? { value: null, probe: null };
-    this.projects = this.readProjects();
+    this.projects = this.readJson<Record<string, string>>(PROJECTS_FILE);
+    this.usage = this.readJson<Record<string, Usage>>(USAGE_FILE);
     setInterval(() => this.reapIdle(), 5 * 60 * 1000).unref();
   }
 
@@ -77,11 +83,15 @@ export class SessionManager {
       onInfo: (info) => {
         this.info.value = info;
       },
+      onResult: (u) => {
+        this.usage[session.sessionId] = u;
+        this.writeJson(USAGE_FILE, this.usage);
+      },
     });
     this.live.set(session.sessionId, session);
     if (project && this.projects[session.sessionId] !== project) {
       this.projects[session.sessionId] = project;
-      this.writeProjects();
+      this.writeJson(PROJECTS_FILE, this.projects);
     }
     console.log(
       `[sessions] ${sessionId ? 'resumed' : 'started'} ${session.shortId} in ${this.projectDir}`,
@@ -122,6 +132,7 @@ export class SessionManager {
     const rows: SessionSummary[] = persisted.map((s) => {
       const live = this.get(s.sessionId);
       const tag = this.projects[s.sessionId];
+      const u = this.usage[s.sessionId];
       return {
         sessionId: s.sessionId,
         title: s.customTitle || s.summary || s.firstPrompt || 'Untitled session',
@@ -132,6 +143,7 @@ export class SessionManager {
         live: Boolean(live),
         status: live?.status,
         ...(tag ? { project: tag } : {}),
+        ...(u ? { costUsd: u.totalCostUsd, turns: u.numTurns } : {}),
       };
     });
     // A brand-new live session has nothing on disk until its first turn finishes.
@@ -176,35 +188,50 @@ export class SessionManager {
     await deleteSession(sessionId, { dir: this.projectDir });
     if (sessionId in this.projects) {
       delete this.projects[sessionId];
-      this.writeProjects();
+      this.writeJson(PROJECTS_FILE, this.projects);
     }
   }
 
-  private readProjects(): Record<string, string> {
-    const path = join(this.projectDir, PROJECTS_FILE);
-    if (!existsSync(path)) return {};
+  /** Every live engine in this folder (for the usage view). */
+  liveSessions(): LiveSession[] {
+    return [...this.live.values()].filter((s) => s.status !== 'closed');
+  }
+
+  /** Stop one conversation's engine: deny what it is waiting on, interrupt, close. */
+  async stop(sessionId: string): Promise<boolean> {
+    const s = this.get(sessionId);
+    if (!s) return false;
+    await s.interrupt().catch(() => undefined);
+    s.close();
+    this.live.delete(sessionId);
+    return true;
+  }
+
+  private readJson<T extends object>(name: string): T {
+    const path = join(this.projectDir, name);
+    if (!existsSync(path)) return {} as T;
     try {
-      return JSON.parse(readFileSync(path, 'utf8')) as Record<string, string>;
+      return JSON.parse(readFileSync(path, 'utf8')) as T;
     } catch (err) {
-      // keep the corrupt file for a human instead of silently wiping every tag
+      // keep the corrupt file for a human instead of silently wiping it
       try {
         renameSync(path, `${path}.corrupt-${Date.now()}`);
       } catch {
         // ignore
       }
-      console.error(`[sessions] ${PROJECTS_FILE} unreadable, set aside: ${String(err)}`);
-      return {};
+      console.error(`[sessions] ${name} unreadable, set aside: ${String(err)}`);
+      return {} as T;
     }
   }
 
-  private writeProjects() {
-    const path = join(this.projectDir, PROJECTS_FILE);
+  private writeJson(name: string, value: object) {
+    const path = join(this.projectDir, name);
     try {
       const tmp = `${path}.${process.pid}.tmp`;
-      writeFileSync(tmp, JSON.stringify(this.projects, null, 2) + '\n');
+      writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n');
       renameSync(tmp, path);
     } catch (err) {
-      console.error(`[sessions] could not write ${PROJECTS_FILE}: ${String(err)}`);
+      console.error(`[sessions] could not write ${name}: ${String(err)}`);
     }
   }
 

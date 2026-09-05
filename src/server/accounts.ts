@@ -4,7 +4,7 @@
 // Without AGENTS_ROOT the server runs exactly as before: one --dir, no auth.
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { SessionManager, type SharedEngineInfo } from './session-manager.js';
@@ -36,7 +36,7 @@ function fromB64url(s: string): Buffer {
   return Buffer.from(s, 'base64url');
 }
 
-export type TokenClaims = { sub: string; email?: string; sid?: string; exp?: number };
+export type TokenClaims = { sub: string; email?: string; sid?: string; exp?: number; role?: string };
 
 /** Verify an HS256 JWT and return its claims. Throws on any defect. */
 export function verifyToken(token: string, secret: string): TokenClaims {
@@ -98,12 +98,38 @@ export class Accounts {
     if (!SAFE_ID.test(claims.sub)) throw new AuthError('bad account id');
     const dir = resolve(this.config.root, claims.sub);
     this.ensureDir(dir);
+    if (claims.email) this.remember(dir, claims.sub, claims.email);
     return {
       id: claims.sub,
       ...(claims.email ? { email: claims.email } : {}),
       ...(claims.sid ? { project: claims.sid } : {}),
       dir,
     };
+  }
+
+  /** An admin token (role: 'admin', minted by the app for its admins) opens the usage view. */
+  verifyAdmin(token: string | undefined): TokenClaims {
+    if (!this.config.authSecret) throw new AuthError('no admin access in dev mode');
+    if (!token) throw new AuthError('missing token');
+    const claims = verifyToken(token, this.config.authSecret);
+    if (claims.role !== 'admin') throw new AuthError('not an admin token');
+    return claims;
+  }
+
+  /** Every account folder under the root, with what we know of the account. */
+  listAccounts(): Account[] {
+    return readdirSync(this.config.root, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && SAFE_ID.test(d.name))
+      .map((d) => {
+        const dir = resolve(this.config.root, d.name);
+        let email: string | undefined;
+        try {
+          email = (JSON.parse(readFileSync(join(dir, '.account.json'), 'utf8')) as { email?: string }).email;
+        } catch {
+          // no record yet
+        }
+        return { id: d.name, ...(email ? { email } : {}), dir };
+      });
   }
 
   manager(account: Account): SessionManager {
@@ -120,6 +146,19 @@ export class Accounts {
   }
 
   private readonly trusted = new Set<string>();
+  private readonly remembered = new Set<string>();
+
+  /** Keep the account's email beside its folder, for the usage view. */
+  private remember(dir: string, id: string, email: string) {
+    const key = `${dir}:${email}`;
+    if (this.remembered.has(key)) return;
+    try {
+      writeFileSync(join(dir, '.account.json'), JSON.stringify({ id, email }, null, 2) + '\n');
+      this.remembered.add(key);
+    } catch {
+      // cosmetic
+    }
+  }
 
   /** Make the folder on first use: `.claude/settings.json` from the template,
    *  `scratch/`, and the trust flag Claude Code needs before it honours the

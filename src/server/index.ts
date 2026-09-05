@@ -128,6 +128,44 @@ app.delete(`${base}/api/sessions/:id`, async (req, res, next) => {
   }
 });
 
+// --- the usage view (admin token only): every account's conversations, and Stop
+app.get(`${base}/api/admin/overview`, async (req, res) => {
+  try {
+    if (!accounts) throw new AuthError('no accounts mode');
+    const auth = req.header('authorization');
+    accounts.verifyAdmin(auth?.startsWith('Bearer ') ? auth.slice(7) : undefined);
+    const out = [];
+    for (const account of accounts.listAccounts()) {
+      const manager = accounts.manager(account);
+      const sessions = await manager.list();
+      const live = manager.liveSessions().length;
+      const costUsd = sessions.reduce((sum, s) => sum + (s.costUsd ?? 0), 0);
+      out.push({ id: account.id, email: account.email, live, costUsd, sessions });
+    }
+    res.json({ accounts: out, generatedAt: Date.now() });
+  } catch (err) {
+    res.status(err instanceof AuthError ? 401 : 500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+app.post(`${base}/api/admin/sessions/:id/stop`, async (req, res) => {
+  try {
+    if (!accounts) throw new AuthError('no accounts mode');
+    const auth = req.header('authorization');
+    accounts.verifyAdmin(auth?.startsWith('Bearer ') ? auth.slice(7) : undefined);
+    const id = String(req.params.id);
+    for (const account of accounts.listAccounts()) {
+      if (await accounts.manager(account).stop(id)) {
+        res.json({ ok: true, account: account.id });
+        return;
+      }
+    }
+    res.status(404).json({ error: 'not running' });
+  } catch (err) {
+    res.status(err instanceof AuthError ? 401 : 500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const message = err instanceof Error ? err.message : String(err);
   console.error('[api]', message);
