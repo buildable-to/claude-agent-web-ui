@@ -143,6 +143,45 @@ body::before {
 .pill:disabled {
   opacity: 0.55;
 }
+/* A select that reads as a word with a caret — the composer footer's model
+   and mode pickers, the embedded thread row's conversation picker. */
+.textsel {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 1.75rem;
+  padding: 0 1.15rem 0 0.45rem;
+  border: 0;
+  border-radius: 6px;
+  background-color: transparent;
+  color: var(--ink-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%),
+    linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+  background-position: calc(100% - 9px) 55%, calc(100% - 5px) 55%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+.textsel:hover:not(:disabled) {
+  background-color: var(--panel-2);
+  color: var(--ink);
+}
+.textsel:disabled {
+  opacity: 0.55;
+}
+.iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 6px;
+  color: var(--ink-2);
+}
+.iconbtn:hover {
+  background: var(--panel-2);
+  color: var(--ink);
+}
 select.pill {
   appearance: none;
   -webkit-appearance: none;

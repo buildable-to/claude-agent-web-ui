@@ -1,7 +1,9 @@
 import { ArrowUp, SlashSquare, Square } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { CommandInfo, SessionStatus } from '@shared/protocol';
+import { money } from '@/lib/format';
 import { CommandPicker, matchCommands } from './CommandPicker';
+import { SessionControls, type ControlsProps } from './SessionControls';
 
 type Props = {
   value: string;
@@ -14,6 +16,9 @@ type Props = {
   autoFocus?: boolean;
   /** Bumped by the parent when it wants the textarea focused (e.g. after inserting a path). */
   focusKey?: number;
+  /** Embedded: the model and mode pickers live here, beside Skills, as quiet
+   *  text menus — machinery next to the composer, not in a second title bar. */
+  controls?: Omit<ControlsProps, 'look' | 'embedded'>;
 };
 
 /** The picker is open while the draft is a lone "/word" with no space yet. */
@@ -33,6 +38,7 @@ export function ChatInput({
   commandsLoading,
   autoFocus,
   focusKey,
+  controls,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
@@ -129,6 +135,7 @@ export function ChatInput({
           placeholder={placeholder}
           disabled={disabled}
           rows={1}
+          title={controls ? 'Enter to send · Shift+Enter for a new line' : undefined}
           aria-autocomplete="list"
           aria-expanded={pickerOpen}
           className="block w-full resize-none bg-transparent px-4 pt-3 pb-1.5 text-[13.5px] leading-relaxed text-ink outline-none placeholder:text-ink-3 disabled:opacity-60"
@@ -148,9 +155,18 @@ export function ChatInput({
               <SlashSquare className="size-3.5" /> Skills
               {commands.length > 0 && <span className="text-ink-3">{commands.length}</span>}
             </button>
-            <span className="text-[11px] text-ink-3">Enter to send · Shift+Enter for a new line</span>
+            {controls ? (
+              <SessionControls {...controls} look="text" embedded />
+            ) : (
+              <span className="text-[11px] text-ink-3">Enter to send · Shift+Enter for a new line</span>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            {controls && controls.meta.totalCostUsd !== undefined && (
+              <span className="font-mono text-[11px] text-ink-3" title="Estimated cost of this conversation">
+                {money(controls.meta.totalCostUsd)}
+              </span>
+            )}
             {busy && (
               <button
                 type="button"
