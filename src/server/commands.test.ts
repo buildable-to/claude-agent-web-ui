@@ -5,14 +5,14 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { installedSkills, toCommandInfo } from './commands.js';
 
-test('installed skills come from <dir>/.claude/skills, the frontmatter name first', async () => {
+test('installed skills come from <claude dir>/skills, the frontmatter name first', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'skills-'));
   await mkdir(join(dir, '.claude/skills/compose'), { recursive: true });
   await writeFile(join(dir, '.claude/skills/compose/SKILL.md'), '---\nname: compose-project\ndescription: x\n---\nbody');
   await mkdir(join(dir, '.claude/skills/edit-drawing'), { recursive: true });
   await writeFile(join(dir, '.claude/skills/edit-drawing/SKILL.md'), 'no frontmatter');
   await mkdir(join(dir, '.claude/skills/not-a-skill'), { recursive: true });
-  const names = await installedSkills([dir, join(dir, 'missing')]);
+  const names = await installedSkills([join(dir, '.claude'), join(dir, 'missing')]);
   assert.deepEqual([...names].sort(), ['compose-project', 'edit-drawing']);
 });
 

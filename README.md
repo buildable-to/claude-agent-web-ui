@@ -78,9 +78,10 @@ Type `/` in the composer (or click **Skills**) to pick a skill. The list comes
 from the engine itself (`GET /api/engine` spawns it briefly the first time,
 then caches). In single mode that is everything the engine knows: built-ins,
 your `.claude` commands and skills, plugin skills. In accounts mode (Buildable's
-server) it is only the skills installed for the agent — `~/.claude/skills`
-and `<account folder>/.claude/skills`, named by the frontmatter `name:` or the
-folder — so an engineer is not offered `/usage` or `/compact`.
+server, or a laptop running its desk) it is only the skills installed for the
+agent — the Claude home's `skills` and `<account folder>/.claude/skills`, named
+by the frontmatter `name:` or the folder — so an engineer is not offered
+`/usage` or `/compact`.
 
 ## How Buildable uses this (the contract)
 
@@ -116,11 +117,12 @@ project and tags new conversations with it (kept in the folder's
 the file tree and the sidebar, shows a conversation picker and end-user copy.
 
 **The folder.** Made on first use: `.claude/settings.json` from
-`ACCOUNT_SETTINGS_TEMPLATE`, `scratch/`, the trust flag in Claude Code's
-config file (`CLAUDE_JSON_PATH`, default `~/.claude.json`), and, when
-`ACCOUNT_SKILLS_DIR` is set, `.claude/skills` as a link to that dir (a laptop,
-where the engine has no shared home with the skills in it; unset on the
-server, whose agent user carries the skills in its own home). Sessions and
+`ACCOUNT_SETTINGS_TEMPLATE`, `scratch/`, and the trust flag in Claude Code's
+config file (`CLAUDE_JSON_PATH`, default `.claude.json` beside the Claude
+home). **The Claude home** is `CLAUDE_CONFIG_DIR` when set (a laptop's agent
+home, assembled by the app repo's `scripts/agent-dev.sh`) and `~/.claude`
+otherwise (the agent user's, on the server); the service reads the skills
+list and the trust file there, and the engines inherit it. Sessions and
 memory land under Claude Code's home keyed by the folder, so they are per
 account by construction; resume only accepts ids from this folder.
 

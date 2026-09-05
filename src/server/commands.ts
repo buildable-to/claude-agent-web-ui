@@ -7,6 +7,7 @@ import {
   type SlashCommand,
 } from '@anthropic-ai/claude-agent-sdk';
 import { readdir, readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { CommandInfo, EngineInfo, ModelOption } from '../shared/protocol.js';
 
@@ -48,15 +49,21 @@ export function toCommandInfo(
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Claude Code's home for the engines this service starts: CLAUDE_CONFIG_DIR
+ *  (a laptop's agent home) or ~/.claude (the agent user's, on the server). */
+export function claudeConfigDir(): string {
+  return process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');
+}
+
 /**
- * Names of the skills installed under each dir: `<dir>/.claude/skills/<folder>/SKILL.md`,
+ * Names of the skills installed under each Claude dir: `<dir>/skills/<folder>/SKILL.md`,
  * named by the frontmatter `name:` when there is one, else the folder (as Claude Code does).
  * Dirs without skills are skipped.
  */
 export async function installedSkills(dirs: string[]): Promise<Set<string>> {
   const names = new Set<string>();
   for (const dir of dirs) {
-    const root = join(dir, '.claude', 'skills');
+    const root = join(dir, 'skills');
     let folders: string[];
     try {
       folders = await readdir(root);

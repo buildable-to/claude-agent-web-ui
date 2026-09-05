@@ -25,7 +25,6 @@ const accounts = config.agentsRoot
       root: config.agentsRoot,
       authSecret: config.authSecret,
       ...(config.accountTemplate ? { settingsTemplate: config.accountTemplate } : {}),
-      ...(config.accountSkills ? { skillsDir: config.accountSkills } : {}),
       claudeConfigPath: defaultClaudeConfigPath(),
     })
   : null;
