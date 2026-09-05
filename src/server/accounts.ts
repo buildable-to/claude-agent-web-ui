@@ -97,7 +97,7 @@ export class Accounts {
   manager(account: Account): SessionManager {
     let m = this.managers.get(account.dir);
     if (!m) {
-      m = new SessionManager(account.dir);
+      m = new SessionManager(account.dir, account.id);
       this.managers.set(account.dir, m);
     }
     return m;

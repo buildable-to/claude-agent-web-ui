@@ -5,18 +5,28 @@ import {
   renameSession,
   type PermissionMode,
 } from '@anthropic-ai/claude-agent-sdk';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { EngineInfo, HistoryMessage, SessionSummary } from '../shared/protocol.js';
 import { probeEngine } from './commands.js';
 import { LiveSession } from './live-session.js';
 
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
+/** Which app project each conversation in this folder is about. */
+const PROJECTS_FILE = '.agent-projects.json';
 
 export class SessionManager {
   private readonly live = new Map<string, LiveSession>();
   private infoCache: EngineInfo | null = null;
   private infoProbe: Promise<EngineInfo> | null = null;
+  private projects: Record<string, string>;
 
-  constructor(readonly projectDir: string) {
+  constructor(
+    readonly projectDir: string,
+    /** The app account this folder belongs to (multi-account mode). */
+    readonly accountId?: string,
+  ) {
+    this.projects = this.readProjects();
     setInterval(() => this.reapIdle(), 5 * 60 * 1000).unref();
   }
 
@@ -32,21 +42,32 @@ export class SessionManager {
   /** Attach to a live session, resume a persisted one, or start fresh. */
   async open(
     sessionId: string | null,
-    opts: { model?: string; permissionMode?: PermissionMode } = {},
+    opts: { model?: string; permissionMode?: PermissionMode; project?: string } = {},
   ): Promise<LiveSession> {
     if (sessionId) {
       const existing = this.get(sessionId);
       if (existing) return existing;
     }
+    const project = opts.project ?? (sessionId ? this.projects[sessionId] : undefined);
+    const { project: _p, ...rest } = opts;
     const session = new LiveSession({
       cwd: this.projectDir,
       ...(sessionId ? { resume: sessionId } : {}),
-      ...opts,
+      ...rest,
+      ...(project ? { project } : {}),
+      env: {
+        ...(this.accountId ? { BUILDABLE_ACCOUNT: this.accountId } : {}),
+        ...(project ? { BUILDABLE_PROJECT: project } : {}),
+      },
       onInfo: (info) => {
         this.infoCache = info;
       },
     });
     this.live.set(session.sessionId, session);
+    if (project && this.projects[session.sessionId] !== project) {
+      this.projects[session.sessionId] = project;
+      this.writeProjects();
+    }
     console.log(
       `[sessions] ${sessionId ? 'resumed' : 'started'} ${session.shortId} in ${this.projectDir}`,
     );
@@ -70,10 +91,12 @@ export class SessionManager {
     return this.infoProbe;
   }
 
-  async list(_project?: string): Promise<SessionSummary[]> {
+  /** Every conversation in this folder, or only those about one app project. */
+  async list(project?: string): Promise<SessionSummary[]> {
     const persisted = await listSessions({ dir: this.projectDir, limit: 200 });
     const rows: SessionSummary[] = persisted.map((s) => {
       const live = this.get(s.sessionId);
+      const tag = this.projects[s.sessionId];
       return {
         sessionId: s.sessionId,
         title: s.customTitle || s.summary || s.firstPrompt || 'Untitled session',
@@ -83,6 +106,7 @@ export class SessionManager {
         gitBranch: s.gitBranch,
         live: Boolean(live),
         status: live?.status,
+        ...(tag ? { project: tag } : {}),
       };
     });
     // A brand-new live session has nothing on disk until its first turn finishes.
@@ -96,10 +120,11 @@ export class SessionManager {
         cwd: s.cwd,
         live: true,
         status: s.status,
+        ...(s.project ? { project: s.project } : {}),
       });
     }
     rows.sort((a, b) => b.lastModified - a.lastModified);
-    return rows;
+    return project ? rows.filter((r) => r.project === project) : rows;
   }
 
   async history(sessionId: string): Promise<HistoryMessage[]> {
@@ -124,6 +149,27 @@ export class SessionManager {
     this.get(sessionId)?.close();
     this.live.delete(sessionId);
     await deleteSession(sessionId, { dir: this.projectDir });
+    if (sessionId in this.projects) {
+      delete this.projects[sessionId];
+      this.writeProjects();
+    }
+  }
+
+  private readProjects(): Record<string, string> {
+    const path = join(this.projectDir, PROJECTS_FILE);
+    try {
+      return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as Record<string, string>) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private writeProjects() {
+    try {
+      writeFileSync(join(this.projectDir, PROJECTS_FILE), JSON.stringify(this.projects, null, 2) + '\n');
+    } catch (err) {
+      console.error(`[sessions] could not write ${PROJECTS_FILE}: ${String(err)}`);
+    }
   }
 
   closeAll() {

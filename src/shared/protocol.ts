@@ -65,6 +65,8 @@ export type ClientMessage =
       uuid?: string;
       model?: string;
       permissionMode?: PermissionMode;
+      /** The app project this conversation is about (a project session id). */
+      project?: string;
     }
   | { type: 'send'; sessionId: string; text: string; uuid?: string }
   | {
@@ -95,6 +97,8 @@ export type ServerMessage =
   | { type: 'permission_resolved'; sessionId: string; requestId: string }
   | { type: 'status'; sessionId: string; status: SessionStatus }
   | { type: 'meta'; sessionId: string; meta: SessionMeta }
+  /** The agent just changed the app's project for real (a `--real` apply finished). */
+  | { type: 'project_changed'; sessionId: string; project?: string }
   | { type: 'error'; sessionId?: string; message: string };
 
 /** One row in the session list. */
@@ -107,6 +111,8 @@ export type SessionSummary = {
   gitBranch?: string;
   live: boolean;
   status?: SessionStatus;
+  /** The app project this conversation was started on, if any. */
+  project?: string;
 };
 
 /** Persisted transcript entry, as returned by GET /api/sessions/:id/messages. */

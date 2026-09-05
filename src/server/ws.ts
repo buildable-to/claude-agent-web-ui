@@ -76,9 +76,11 @@ export function attachWebSocket(server: Server, resolveCtx: Resolver) {
           return;
         }
         case 'start': {
+          const project = msg.project ?? ctx.account?.project;
           const session = await sessions.open(msg.sessionId, {
             ...(msg.model ? { model: msg.model } : {}),
             ...(msg.permissionMode ? { permissionMode: msg.permissionMode } : {}),
+            ...(project ? { project } : {}),
           });
           attach(session);
           const text = msg.text.trim();

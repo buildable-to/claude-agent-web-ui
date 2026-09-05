@@ -65,6 +65,10 @@ export type LiveSessionOptions = {
   resume?: string;
   model?: string;
   permissionMode?: PermissionMode;
+  /** Extra environment for the engine and everything it runs. */
+  env?: Record<string, string>;
+  /** The app project this conversation is about. */
+  project?: string;
 };
 
 export type Subscriber = (message: ServerMessage) => void;
@@ -72,6 +76,7 @@ export type Subscriber = (message: ServerMessage) => void;
 export class LiveSession {
   readonly sessionId: string;
   readonly cwd: string;
+  readonly project: string | undefined;
   status: SessionStatus = 'starting';
   meta: SessionMeta = {};
   lastActivity = Date.now();
@@ -86,10 +91,13 @@ export class LiveSession {
   private closed = false;
   private terminalOnlyCommands: string[] = [];
   private readonly onInfo: ((info: EngineInfo) => void) | undefined;
+  /** tool_use ids of shell commands that write the app's project for real. */
+  private readonly realApplies = new Set<string>();
 
   constructor(opts: LiveSessionOptions) {
     this.sessionId = opts.resume ?? randomUUID();
     this.cwd = opts.cwd;
+    this.project = opts.project;
     this.onInfo = opts.onInfo;
     this.meta.permissionMode = opts.permissionMode ?? 'default';
     if (opts.model) this.meta.model = opts.model;
@@ -110,7 +118,11 @@ export class LiveSession {
         settingSources: ['user', 'project', 'local'],
         canUseTool: this.canUseTool,
         abortController: this.abort,
-        env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: 'claude-agent-web-ui/0.1.0' },
+        env: {
+          ...process.env,
+          ...(opts.env ?? {}),
+          CLAUDE_AGENT_SDK_CLIENT_APP: 'claude-agent-web-ui/0.1.0',
+        },
         stderr: (data) => {
           const line = data.trim();
           if (line) console.error(`[engine ${this.shortId}] ${line}`);
@@ -273,6 +285,34 @@ export class LiveSession {
     }
     if (message.type !== 'stream_event') this.buffer.push(message);
     this.broadcast({ type: 'message', sessionId: this.sessionId, message });
+    this.watchRealApplies(message);
+  }
+
+  /** A `--real` apply is the one command that changes the app's project. When
+   *  its result comes back, tell the page so it can redraw. */
+  private watchRealApplies(message: SDKMessage) {
+    if (message.type === 'assistant') {
+      const content = message.message.content;
+      if (!Array.isArray(content)) return;
+      for (const block of content) {
+        if (block.type !== 'tool_use' || block.name !== 'Bash') continue;
+        const command = String((block.input as { command?: unknown }).command ?? '');
+        if (/\s--real(\s|$)/.test(command)) this.realApplies.add(block.id);
+      }
+    } else if (message.type === 'user') {
+      const content = message.message.content;
+      if (!Array.isArray(content)) return;
+      for (const block of content) {
+        if (typeof block !== 'object' || block === null || block.type !== 'tool_result') continue;
+        const id = String((block as { tool_use_id?: unknown }).tool_use_id ?? '');
+        if (!this.realApplies.delete(id)) continue;
+        this.broadcast({
+          type: 'project_changed',
+          sessionId: this.sessionId,
+          ...(this.project ? { project: this.project } : {}),
+        });
+      }
+    }
   }
 
   private async loadInitDetails() {
