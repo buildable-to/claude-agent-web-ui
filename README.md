@@ -127,6 +127,13 @@ run the app with `AGENT_UI_URL=http://localhost:3456` and open a project.
 
 **Tests:** `npm test` (the token contract, account folders, the engine env).
 
+**Changing the contract.** Everything above is what the Buildable app relies
+on. Add rather than rename; deploy this side first when it offers something
+new, and the app first when the app stops using something; test both
+branches together on a laptop before merging. A deploy of this service
+restarts it and cuts running conversations (they resume on the next
+message), so push when nobody is mid-build.
+
 ## Security
 
 This is a shell with a web page in front of it. The server binds to
