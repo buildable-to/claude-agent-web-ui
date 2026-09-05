@@ -65,33 +65,67 @@ and skills the engine knows for this project: built-ins, your `.claude`
 commands and skills, and plugin skills. The list comes from the engine itself
 (`GET /api/commands` spawns it briefly the first time, then caches).
 
-## Many accounts, one server (embedding in an app)
+## How Buildable uses this (the contract)
 
-Point the server at a root folder instead of one project and it serves one
-folder per account, chosen from a signed token the app hands the page:
+This repo is the **screen** of Buildable's agent; the **brain** is Claude Code
+itself, unchanged, and everything it knows about Buildable (skills, doors,
+rules, memory) lives in the Buildable repo. This server starts Claude Code in
+the right folder for the right account and shows the conversation. It never
+decides anything on its own: no prompt of its own, no rules of its own — the
+day it does, it has become the in-app agent Buildable deleted.
 
-```bash
-AGENTS_ROOT=/srv/agents AGENT_AUTH_SECRET=<the app's secret> \
-ACCOUNT_SETTINGS_TEMPLATE=/path/to/settings.json \
-npm start -- --port 3456
+```
+Project Studio (Buildable app)            this server (one process, all accounts)
+  mints a token, embeds the page  ──▶  /agent/?embed=1&project=<sid>&token=<jwt>
+                                        token → account folder → Claude Code session
+  redraws on `project_changed`   ◀──  postMessage from the page
 ```
 
-- The token is an HS256 JWT (`{ sub: accountId, email?, sid?, exp }`, e.g. from
-  PyJWT) passed on the page URL as `?token=…`; the page sends it as
-  `Authorization: Bearer` on the API and as `?token=` on the WebSocket.
-- `?project=<id>` narrows the session list to one app project and tags new
-  conversations with it; `?embed=1` hides the file tree and speaks to an end
-  user rather than a developer. New folders get `.claude/settings.json` from
-  the template, a `scratch/`, and the trust flag in `~/.claude.json`
-  (`CLAUDE_JSON_PATH` to relocate).
-- Every engine gets `BUILDABLE_ACCOUNT` and `BUILDABLE_PROJECT` in its
-  environment. After a shell command carrying `--real` finishes, the server
-  sends `project_changed` and the page posts it to its parent window
-  (`{ source: 'buildable-agent', type: 'project_changed' }`), along with
-  `status` changes.
-- On a shared server the Bypass mode is refused and "Always allow" does not
-  write rules into the folder. Without `AGENT_AUTH_SECRET` the server runs in
-  dev mode and `?account=<id>` picks the folder; never expose that.
+**Modes.** Single (`--dir`): one folder, no auth, the laptop case. Accounts
+(`AGENTS_ROOT`): one folder per account under the root, chosen from the token;
+`AGENT_AUTH_SECRET` is required (or `--dev-auth` for the unauthenticated
+laptop dev mode, `?account=<id>`).
+
+**The token.** An HS256 JWT signed with the app's secret (PyJWT on the app
+side, verified here): `{ sub: <account id = folder name>, email?, sid?
+(project), exp (required), aud? (ignored here; the app uses it to keep the
+token out of its own API) }`. It arrives on the page URL as `?token=`, then as
+`Authorization: Bearer` on `/api/*` and `?token=` on the WebSocket handshake.
+Every defect answers 401. One connection speaks for one account.
+
+**The page URL.** `?project=<id>` narrows the conversation list to that
+project and tags new conversations with it (kept in the folder's
+`.agent-projects.json`); a token that names a `sid` pins it. `?embed=1` hides
+the file tree and the sidebar, shows a conversation picker and end-user copy.
+
+**The folder.** Made on first use: `.claude/settings.json` from
+`ACCOUNT_SETTINGS_TEMPLATE`, `scratch/`, and the trust flag in Claude Code's
+config file (`CLAUDE_JSON_PATH`, default `~/.claude.json`). Sessions and
+memory land under Claude Code's home keyed by the folder, so they are per
+account by construction; resume only accepts ids from this folder.
+
+**The engine.** Real Claude Code via the Agent SDK, cwd = the folder,
+settings from user + project + local, the `claude_code` system prompt plus
+one appended line naming the open project. Its environment is an allowlist
+(`PATH`, `HOME`, locale, `PYTHONPATH`, `FREECAD_CMD`, `BUILDABLE_*`,
+`CLAUDE_*`, proxies) plus `BUILDABLE_ACCOUNT` and `BUILDABLE_PROJECT`; the
+service's own secrets never reach it. On a shared server only the modes that
+ask (`default`, `plan`) exist, and "Always allow" does not persist.
+
+**Messages to the parent page** (`window.parent.postMessage`, `source:
+'buildable-agent'`): `project_changed` after a shell command carrying
+`--real` finished without error; `status` on every status change; `expired`
+when the token is no longer accepted (the studio should reload).
+
+**Serving under a path.** `BASE_PATH=/agent` at build and at run time mounts
+the page, the API and the WebSocket under it, so a reverse proxy can route one
+path here.
+
+**Run it for Buildable on a laptop:** the Buildable repo's
+`scripts/agent-dev.sh` sets all of the above and starts this server on :3456;
+run the app with `AGENT_UI_URL=http://localhost:3456` and open a project.
+
+**Tests:** `npm test` (the token contract, account folders, the engine env).
 
 ## Security
 
