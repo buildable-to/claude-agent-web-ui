@@ -1,10 +1,10 @@
 import type { ModelOption, PermissionMode, SessionMeta } from '@shared/protocol';
 
 export const MODES: Array<{ value: PermissionMode; label: string; hint: string }> = [
-  { value: 'default', label: 'Ask first', hint: 'Asks before edits and commands, like the terminal.' },
+  { value: 'auto', label: 'Auto', hint: 'A classifier approves the routine commands; the live apply and the memory write still ask.' },
   { value: 'acceptEdits', label: 'Auto-accept edits', hint: 'Scratch files go through; every command still asks (the live apply, the memory write).' },
+  { value: 'default', label: 'Ask first', hint: 'Asks before edits and commands, like the terminal.' },
   { value: 'plan', label: 'Plan only', hint: 'Read-only. Claude plans but changes nothing.' },
-  { value: 'auto', label: 'Auto', hint: 'A classifier decides what to allow.' },
   // No "Bypass all": on a shared server that would switch the gates off for
   // everyone who can reach the page. The terminal keeps it for throwaway work.
 ];
@@ -50,7 +50,7 @@ export function SessionControls({ meta, models, locked, embedded = false, look, 
   const modelValue = match?.value ?? '';
   const current = meta.model ?? '';
   const cls = look === 'pill' ? 'pill' : 'textsel';
-  const mode = meta.permissionMode ?? (embedded ? 'acceptEdits' : 'default');
+  const mode = meta.permissionMode ?? (embedded ? 'auto' : 'default');
   return (
     <>
       <select className={cls} value={modelValue} onChange={(e) => onModel(e.target.value || null)} disabled={locked} title="Model">
@@ -68,7 +68,7 @@ export function SessionControls({ meta, models, locked, embedded = false, look, 
         disabled={locked}
         title={MODES.find((m) => m.value === mode)?.hint ?? 'Permission mode'}
       >
-        {MODES.filter((m) => !embedded || m.value !== 'auto').map((m) => (
+        {MODES.map((m) => (
           <option key={m.value} value={m.value} title={m.hint}>
             {m.label}
           </option>

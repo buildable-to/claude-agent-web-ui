@@ -164,11 +164,13 @@ export function attachWebSocket(
       });
     }
 
-    /** On a shared server the gates must reach a human: only the modes where
-     *  every command asks. Auto-accepting edits is fine (scratch files); a
-     *  classifier approving commands is not. */
+    /** On a shared server the two gates must reach a human. They do in every
+     *  mode but Bypass: the ask rules (--real, --remember) still ask in Auto
+     *  mode, where a classifier judges the rest (proven 2026-09-06,
+     *  buildable-to/ezdxf-flask#391). Bypass would switch the gates off for
+     *  everyone who can reach the page, so it never runs here. */
     function refuseUnlessAsking(mode: PermissionMode | undefined) {
-      if (!ctx.account || !mode || mode === 'default' || mode === 'acceptEdits' || mode === 'plan') return;
+      if (!ctx.account || !mode || mode === 'default' || mode === 'acceptEdits' || mode === 'plan' || mode === 'auto') return;
       throw new Error(`Mode "${mode}" is not available on a shared server`);
     }
 
