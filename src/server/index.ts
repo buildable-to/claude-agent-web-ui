@@ -42,6 +42,22 @@ const resolveCtx: Resolver = (token, devAccount) => {
 const app = express();
 const base = config.basePath; // '' or '/agent'
 
+// Who may frame the page: itself (nginx serves the studio and /agent from one
+// host) and the studio named by BUILDABLE_URL (a laptop, where the app is on
+// another port). Anyone else framing it would receive what the engineer
+// types, through the parent messages.
+const studioOrigin = (() => {
+  try {
+    return process.env.BUILDABLE_URL ? new URL(process.env.BUILDABLE_URL).origin : '';
+  } catch {
+    return '';
+  }
+})();
+app.use((_req, res, next) => {
+  res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${studioOrigin}`.trim());
+  next();
+});
+
 // Only the API needs the token; the page and its assets load without one and
 // the browser then sends the token it was given on its URL.
 app.use(`${base}/api`, (req, res, next) => {

@@ -52,6 +52,7 @@ export function SessionControls({ meta, models, locked, embedded = false, look, 
   const current = meta.model ?? '';
   const mode = meta.permissionMode ?? (embedded ? 'auto' : 'default');
   const direction = look === 'text' ? 'up' : 'down';   // the composer footer sits at the bottom
+  const align = look === 'pill' ? 'right' : 'left';     // pills hug the bar's right edge
   const modelItems = [
     ...(!match ? [{ value: '', label: current || 'Default model' }] : []),
     ...models.map((m) => ({ value: m.value, label: modelLabel(m, look === 'text'), hint: m.description })),
@@ -61,6 +62,7 @@ export function SessionControls({ meta, models, locked, embedded = false, look, 
       <Menu
         look={look}
         direction={direction}
+        align={align}
         wide
         head="Model"
         title="Model"
@@ -74,6 +76,7 @@ export function SessionControls({ meta, models, locked, embedded = false, look, 
       <Menu
         look={look}
         direction={direction}
+        align={align}
         wide
         head="Before it acts"
         title={MODES.find((m) => m.value === mode)?.hint ?? 'Permission mode'}

@@ -5,6 +5,7 @@
 // Enter and Escape as expected.
 import { Check, ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type React from 'react';
 
 export type MenuItem = {
   value: string;
@@ -54,35 +55,45 @@ export function Menu({
   const root = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
 
+  const trigger = useRef<HTMLButtonElement>(null);
+  const close = (backToTrigger = true) => {
+    setOpen(false);
+    if (backToTrigger) trigger.current?.focus();
+  };
+
+  // Opening: start on the chosen item, take the keyboard. Once — every later
+  // arrow or hover moves `active` and must not snap it back.
   useEffect(() => {
     if (!open) return;
     setActive(Math.max(0, items.findIndex((i) => i.value === value)));
+    list.current?.focus();
     const onDown = (e: PointerEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); setOpen(false); return; }
-      if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => (i + 1) % items.length); }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => (i - 1 + items.length) % items.length); }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        const it = items[active];
-        if (it) { onPick(it.value); setOpen(false); }
-      }
+      if (!root.current?.contains(e.target as Node)) close(false);
     };
     document.addEventListener('pointerdown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open, items, value, active, onPick]);
+    return () => document.removeEventListener('pointerdown', onDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     const el = list.current?.querySelector<HTMLElement>(`[data-i="${active}"]`);
     el?.scrollIntoView({ block: 'nearest' });
   }, [open, active]);
+
+  // Keys are handled on the popover itself, which has focus while it is open,
+  // so the composer's own Enter never fires at the same time.
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => (items.length ? (i + 1) % items.length : 0)); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => (items.length ? (i - 1 + items.length) % items.length : 0)); }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault(); e.stopPropagation();
+      const it = items[active];
+      if (it) { onPick(it.value); close(); }
+    }
+    if (e.key === 'Tab') close(false);
+  };
 
   const pos =
     (direction === 'up' ? 'bottom-full mb-1.5 ' : 'top-full mt-1.5 ') +
@@ -91,12 +102,13 @@ export function Menu({
   return (
     <div ref={root} className="relative inline-block max-w-full">
       <button
+        ref={trigger}
         type="button"
         disabled={disabled}
         title={title}
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? close() : setOpen(true))}
         className={`${look === 'pill' ? 'pill' : 'menu-btn'} ${open ? 'is-open' : ''} ${className}`}
       >
         <span className="min-w-0 truncate">{children}</span>
@@ -106,7 +118,9 @@ export function Menu({
         <div
           ref={list}
           role="listbox"
-          className={`menu-pop rise absolute z-30 ${pos} ${wide ? 'w-[22rem]' : 'min-w-[13rem]'} max-w-[min(26rem,90vw)]`}
+          tabIndex={-1}
+          onKeyDown={onKey}
+          className={`menu-pop rise absolute z-30 outline-none ${pos} ${wide ? 'w-[22rem]' : 'min-w-[13rem]'} max-w-[min(26rem,90vw)]`}
         >
           {head && <div className="menu-head">{head}</div>}
           {items.map((it, i) => {
@@ -121,7 +135,7 @@ export function Menu({
                 data-i={i}
                 onMouseEnter={() => setActive(i)}
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => { onPick(it.value); setOpen(false); }}
+                onClick={() => { onPick(it.value); close(); }}
                 className={`menu-item ${on ? 'on' : ''}`}
               >
                 <span className="menu-check">{chosen && <Check className="size-3.5" strokeWidth={2.5} />}</span>

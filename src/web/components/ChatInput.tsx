@@ -138,30 +138,30 @@ export function ChatInput({
           title={controls ? 'Enter to send · Shift+Enter for a new line' : undefined}
           aria-autocomplete="list"
           aria-expanded={pickerOpen}
-          className="block w-full resize-none bg-transparent py-[11px] pr-12 pl-4 text-[13.5px] leading-relaxed text-ink outline-none placeholder:text-ink-3 disabled:opacity-60"
+          className={`block w-full resize-none bg-transparent py-[11px] ${busy ? 'pr-[5.25rem]' : 'pr-12'} pl-4 text-[13.5px] leading-relaxed text-ink outline-none placeholder:text-ink-3 disabled:opacity-60`}
         />
-        <div className="absolute right-[7px] bottom-[7px]">
-          {busy ? (
+        <div className="absolute right-[7px] bottom-[7px] flex items-center gap-1.5">
+          {busy && (
             <button
               type="button"
               onClick={onStop}
               title="Stop the current turn"
+              aria-label="Stop"
               className="sendbtn bg-panel-3 text-ink hover:bg-danger hover:text-white"
             >
               <Square className="size-3" fill="currentColor" />
             </button>
-          ) : (
-            <button
-              type="button"
-              onClick={submit}
-              disabled={disabled || !value.trim()}
-              title="Send"
-              aria-label="Send"
-              className="sendbtn active:translate-y-px"
-            >
-              <ArrowUp className="size-4" strokeWidth={2.5} />
-            </button>
           )}
+          <button
+            type="button"
+            onClick={submit}
+            disabled={disabled || !value.trim()}
+            title={busy ? 'Send a follow-up — it runs after the current step' : 'Send'}
+            aria-label="Send"
+            className="sendbtn active:translate-y-px"
+          >
+            <ArrowUp className="size-4" strokeWidth={2.5} />
+          </button>
         </div>
       </div>
       <div className="mt-1.5 flex items-center justify-between gap-3 px-2">

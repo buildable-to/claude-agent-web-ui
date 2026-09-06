@@ -39,7 +39,7 @@ export function CommandPicker({ commands, query, activeIndex, loading, onHover, 
         <span>Skills</span>
         <span className="font-normal">↑↓ · Enter · Esc</span>
       </div>
-      <div ref={listRef} className="max-h-72 overflow-y-auto" role="listbox">
+      <div ref={listRef} role="listbox">
         {loading && matches.length === 0 && (
           <div className="px-3 py-3 text-[12.5px] text-ink-3">Asking the engine what it knows…</div>
         )}
