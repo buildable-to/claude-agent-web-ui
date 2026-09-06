@@ -86,7 +86,6 @@ export type LiveSessionOptions = {
   /** Let "Always allow" write a rule to the folder's settings (default true; off on a shared server). */
   persistAlways?: boolean;
   /** Where the app shows the project, for the preface of the first message. */
-  projectUrl?: string;
   /** Offer only these slash commands in the composer (the installed skills on a shared server). */
   onlyCommands?: ReadonlySet<string>;
 };
@@ -142,9 +141,15 @@ export class LiveSession {
           preset: 'claude_code',
           ...(opts.project
             ? {
-                append: `The engineer has project ${opts.project} open in Project Studio${
-                  opts.projectUrl ? ` (${opts.projectUrl})` : ''
-                }. Work in that project; do not create another one unless asked to in so many words.`,
+                // Context, not a brain: who reads the panel and how they talk.
+                // No URL here: the agent used to paste it back at the engineer
+                // who was already looking at the page.
+                append:
+                  `The engineer has project ${opts.project} open in Project Studio. ` +
+                  'Work in that project; do not create another one unless asked to in so many words. ' +
+                  'You are talking to a structural engineer inside their studio: call pieces by their marks and element names, not ids; ' +
+                  'name sheets by title; no revs, flags, command or tool names; never paste a link to the page they are on. ' +
+                  'End with what changed, what to look at, what to decide.',
               }
             : {}),
         },
