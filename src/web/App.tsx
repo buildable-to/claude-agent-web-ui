@@ -203,7 +203,12 @@ export default function App() {
           value={draft}
           onChange={setDraft}
           status={state.status}
-          onSend={session.send}
+          onSend={(text) => {
+            // the page that embeds us keeps the first thing the engineer says
+            // on an empty project as its brief (Buildable issue #405)
+            tellParent({ type: 'user_message', text });
+            session.send(text);
+          }}
           onStop={session.interrupt}
           commands={commands}
           commandsLoading={commandsLoading}

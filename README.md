@@ -140,7 +140,9 @@ ask (`default`, `plan`) exist, and "Always allow" does not persist.
 **Messages to the parent page** (`window.parent.postMessage`, `source:
 'buildable-agent'`): `project_changed` after a shell command carrying
 `--real` finished without error; `status` on every status change; `expired`
-when the token is no longer accepted (the studio should reload).
+when the token is no longer accepted (the studio should reload);
+`user_message` with `text` every time the engineer sends something (the
+studio keeps the first one on an empty project as the brief).
 
 **Serving under a path.** `BASE_PATH=/agent` at build and at run time mounts
 the page, the API and the WebSocket under it, so a reverse proxy can route one
