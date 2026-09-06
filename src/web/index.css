@@ -311,6 +311,76 @@ select.pill {
   font-size: 10.5px;
   color: var(--ink-3);
 }
+/* a picture opened big over everything */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 40px;
+  background: rgba(8, 9, 12, 0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.lightbox-fig {
+  margin: 0;
+  max-width: 100%;
+  max-height: 100%;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+.lightbox-fig img {
+  max-width: 92vw;
+  max-height: calc(92vh - 40px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6);
+  background: #111;
+}
+.lightbox-fig figcaption {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+.lightbox-count {
+  color: var(--ink-3);
+}
+.lightbox-x,
+.lightbox-nav {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: background 0.15s ease;
+}
+.lightbox-x:hover,
+.lightbox-nav:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.lightbox-x {
+  top: 16px;
+  right: 16px;
+}
+.lightbox-nav {
+  top: 50%;
+  transform: translateY(-50%);
+}
+.lightbox-nav.left {
+  left: 16px;
+}
+.lightbox-nav.right {
+  right: 16px;
+}
 /* the mac send button lives inside the field */
 .sendbtn {
   display: inline-flex;

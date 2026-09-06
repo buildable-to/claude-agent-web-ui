@@ -6,6 +6,7 @@ import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { baseName } from '@/lib/format';
 import type { ToolBlock, ToolImage } from '@/lib/transcript';
+import { Lightbox, type LightboxPicture } from './Lightbox';
 import { ToolCard } from './tools/cards';
 import { toolDetail, toolVerb } from './tools/config';
 
@@ -28,20 +29,19 @@ function pictureCaption(tool: ToolBlock): string | undefined {
   return typeof p === 'string' ? baseName(p) : undefined;
 }
 
-function Picture({ image, caption }: { image: ToolImage; caption?: string }) {
-  const [big, setBig] = useState(false);
+function Picture({ image, caption, onOpen }: { image: ToolImage; caption?: string; onOpen: () => void }) {
   return (
-    <figure className={big ? 'w-full' : 'max-w-full'} title={caption}>
+    <figure className="max-w-full" title={caption}>
       <button
         type="button"
-        onClick={() => setBig((b) => !b)}
-        title={big ? 'Smaller' : caption ? `${caption} — larger` : 'Larger'}
-        className="block overflow-hidden rounded-xl border border-white/10 bg-paper shadow-[0_8px_24px_rgba(0,0,0,.35)]"
+        onClick={onOpen}
+        title={caption ? `${caption} — open` : 'Open'}
+        className="block overflow-hidden rounded-xl border border-white/10 bg-paper shadow-[0_8px_24px_rgba(0,0,0,.35)] transition hover:border-white/25"
       >
         <img
           src={`data:${image.mediaType};base64,${image.data}`}
           alt={caption ?? 'picture'}
-          className={big ? 'block w-full' : 'block max-h-56 w-auto'}
+          className="block max-h-56 w-auto"
         />
       </button>
     </figure>
@@ -50,6 +50,7 @@ function Picture({ image, caption }: { image: ToolImage; caption?: string }) {
 
 export function Steps({ blocks, live }: Props) {
   const [open, setOpen] = useState(false);
+  const [shown, setShown] = useState<number | null>(null);   // which picture is open big
   const current = live ? blocks.find((b) => b.result === undefined) : undefined;
   const n = blocks.length;
   const failed = blocks.filter((b) => b.isError).length;
@@ -92,10 +93,17 @@ export function Steps({ blocks, live }: Props) {
       )}
       {pictures.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {pictures.map((p) => (
-            <Picture key={p.key} image={p.image} caption={p.caption} />
+          {pictures.map((p, i) => (
+            <Picture key={p.key} image={p.image} caption={p.caption} onOpen={() => setShown(i)} />
           ))}
         </div>
+      )}
+      {shown !== null && (
+        <Lightbox
+          pictures={pictures as LightboxPicture[]}
+          index={shown}
+          onClose={() => setShown(null)}
+        />
       )}
     </div>
   );
