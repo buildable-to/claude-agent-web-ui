@@ -115,8 +115,8 @@ export function ChatInput({
         : 'Ask for a change, a plan, or a diagnosis… or type / for skills';
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 pt-3 pb-4">
-      <div className="focus-glow relative rounded-lg border border-line-2 bg-panel shadow-strong transition">
+    <div className="mx-auto w-full max-w-3xl px-5 pt-2 pb-3">
+      <div className="focus-glow relative rounded-[22px] border border-line-2 bg-panel shadow-strong transition">
         {pickerOpen && (
           <CommandPicker
             commands={commands}
@@ -138,10 +138,34 @@ export function ChatInput({
           title={controls ? 'Enter to send · Shift+Enter for a new line' : undefined}
           aria-autocomplete="list"
           aria-expanded={pickerOpen}
-          className="block w-full resize-none bg-transparent px-4 pt-3 pb-1.5 text-[13.5px] leading-relaxed text-ink outline-none placeholder:text-ink-3 disabled:opacity-60"
+          className="block w-full resize-none bg-transparent py-[11px] pr-12 pl-4 text-[13.5px] leading-relaxed text-ink outline-none placeholder:text-ink-3 disabled:opacity-60"
         />
-        <div className="flex items-center justify-between gap-3 px-2.5 pb-2.5">
-          <div className="flex items-center gap-2">
+        <div className="absolute right-[7px] bottom-[7px]">
+          {busy ? (
+            <button
+              type="button"
+              onClick={onStop}
+              title="Stop the current turn"
+              className="sendbtn bg-panel-3 text-ink hover:bg-danger hover:text-white"
+            >
+              <Square className="size-3" fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={submit}
+              disabled={disabled || !value.trim()}
+              title="Send"
+              aria-label="Send"
+              className="sendbtn active:translate-y-px"
+            >
+              <ArrowUp className="size-4" strokeWidth={2.5} />
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="mt-1.5 flex items-center justify-between gap-3 px-2">
+        <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => {
@@ -161,33 +185,11 @@ export function ChatInput({
               <span className="text-[11px] text-ink-3">Enter to send · Shift+Enter for a new line</span>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            {controls && controls.meta.totalCostUsd !== undefined && (
-              <span className="font-mono text-[11px] text-ink-3" title="Estimated cost of this conversation">
-                {money(controls.meta.totalCostUsd)}
-              </span>
-            )}
-            {busy && (
-              <button
-                type="button"
-                onClick={onStop}
-                title="Stop the current turn"
-                className="flex h-7.5 items-center gap-1.5 rounded-md border border-line-2 px-3 text-[12px] font-medium text-ink hover:border-danger hover:text-danger"
-              >
-                <Square className="size-3" fill="currentColor" /> Stop
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={submit}
-              disabled={disabled || !value.trim()}
-              title="Send"
-              className="flex h-7.5 items-center gap-1.5 rounded-md pr-2.5 pl-3 text-[12px] font-semibold transition active:translate-y-px enabled:bg-accent enabled:text-white enabled:hover:bg-accent-dim disabled:cursor-default disabled:border disabled:border-line-2 disabled:bg-panel-2 disabled:text-ink-3"
-            >
-              Send <ArrowUp className="size-3.5" />
-            </button>
-          </div>
-        </div>
+        {controls && controls.meta.totalCostUsd !== undefined && (
+          <span className="font-mono text-[10.5px] text-ink-3" title="Estimated cost of this conversation">
+            {money(controls.meta.totalCostUsd)}
+          </span>
+        )}
       </div>
     </div>
   );

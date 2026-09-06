@@ -68,9 +68,9 @@ export function TopBar({
   // model and mode pickers sit in the composer footer (App passes them there).
   if (picker) {
     return (
-      <header className="flex h-10 shrink-0 items-center gap-1 border-b border-line pr-2 pl-2.5">
+      <header className="relative flex h-11 shrink-0 items-center justify-center border-b border-white/[.06] px-12">
         <select
-          className="textsel min-w-0 max-w-[75%] truncate text-ink"
+          className="textsel min-w-0 max-w-full truncate text-center text-[12.5px] font-medium text-ink"
           value={picker.activeId ?? ''}
           onChange={(e) => picker.onSelect(e.target.value || null)}
           title="This project's conversations"
@@ -82,7 +82,7 @@ export function TopBar({
             </option>
           ))}
         </select>
-        <span className="ml-auto flex items-center gap-2">
+        <span className="absolute right-2 flex items-center gap-2">
           {(connection !== 'open' || status === 'closed') && (
             <span className="font-mono text-[10.5px] text-ink-3" aria-live="polite">
               {s.text}
@@ -91,7 +91,7 @@ export function TopBar({
           <button
             type="button"
             onClick={() => picker.onSelect(null)}
-            className="iconbtn"
+            className="iconbtn rounded-full"
             title="Start a new conversation on this project"
             aria-label="New conversation"
           >

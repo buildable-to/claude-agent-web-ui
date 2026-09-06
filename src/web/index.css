@@ -17,6 +17,7 @@
   --line-2: #2e2f3a; /* border-default */
   --line-3: #3a3b48; /* border-strong */
   --accent: #4f8ff7;
+  --bubble: #2f6fed; /* the engineer's words, Messages blue */
   --accent-dim: #3a6fd8;
   --accent-soft: rgba(79, 143, 247, 0.15);
   --accent-glow: rgba(79, 143, 247, 0.3);
@@ -45,6 +46,7 @@
   --color-line: var(--line);
   --color-line-2: var(--line-2);
   --color-accent: var(--accent);
+  --color-bubble: var(--bubble);
   --color-accent-soft: var(--accent-soft);
   --color-sea: var(--sea);
   --color-sea-soft: var(--sea-soft);
@@ -66,7 +68,7 @@
   --color-ok: var(--sea);
   --color-ok-soft: var(--sea-soft);
   --font-display: 'Archivo', 'DM Sans', system-ui, sans-serif;
-  --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'DM Sans', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', ui-monospace, monospace;
   --radius-md: 6px;
   --radius-lg: 8px;
@@ -101,7 +103,7 @@ body::before {
     linear-gradient(var(--line) 1px, transparent 1px),
     linear-gradient(90deg, var(--line) 1px, transparent 1px);
   background-size: 60px 60px;
-  opacity: 0.35;
+  opacity: 0.22;
   z-index: 0;
 }
 #root {
@@ -233,6 +235,33 @@ select.pill {
 }
 .prose > :last-child {
   margin-bottom: 0;
+}
+.prose p {
+  margin-top: 0.55em;
+  margin-bottom: 0.55em;
+  line-height: 1.6;
+}
+.prose strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+/* the mac send button lives inside the field */
+.sendbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--bubble);
+  color: #fff;
+  transition: background 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+}
+.sendbtn:hover:not(:disabled) {
+  background: #3b7bff;
+}
+.sendbtn:disabled {
+  opacity: 0.35;
 }
 
 * {

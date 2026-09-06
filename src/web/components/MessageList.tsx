@@ -86,8 +86,8 @@ export function MessageList({
         {loading && <Skeleton />}
 
         {!loading && turns.length === 0 && (
-          <div className="rise pt-16">
-            <div className="rounded-2xl border border-line-2 bg-panel/90 px-8 py-10 text-center shadow-strong">
+          <div className="rise pt-20">
+            <div className="px-6 py-6 text-center">
               <p className="text-[11px] font-semibold tracking-[0.3em] text-ink-3 uppercase">
                 {kicker ?? `Claude Agent · ${projectName}`}
               </p>

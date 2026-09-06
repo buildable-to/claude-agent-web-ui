@@ -35,11 +35,11 @@ function groupBlocks(blocks: Block[]): Piece[] {
 export const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
   if (turn.kind === 'user') {
     return (
-      <div className="rise flex justify-end">
-        <div className="max-w-[min(40rem,85%)] rounded-xl rounded-br-sm border border-accent/25 bg-accent-soft px-4 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap break-words text-ink">
+      <div className="rise flex justify-end pl-10">
+        <div className="max-w-[min(34rem,78%)] rounded-[18px] rounded-br-[5px] bg-bubble px-3.5 py-2 text-[13.5px] leading-[1.5] whitespace-pre-wrap break-words text-white shadow-[0_1px_2px_rgba(0,0,0,.25)]">
           {turn.text}
           {turn.images > 0 && (
-            <div className="mt-1 text-[12px] text-ink-2">
+            <div className="mt-1 text-[12px] text-white/70">
               {turn.images} image{turn.images === 1 ? '' : 's'} attached
             </div>
           )}
@@ -64,22 +64,34 @@ export const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
 
   const pieces = groupBlocks(turn.blocks);
 
+  // The agent speaks without a box: its mark at the left, its words as text,
+  // the stretches of work as one quiet line between them.
   return (
-    <div className="space-y-3">
-      {pieces.map((piece, i) => {
-        if (piece.kind === 'text') {
-          const streamingText = turn.open && i === pieces.length - 1;
-          return (
-            <div key={i} className="rise rounded-xl border border-line bg-panel/80 px-4 py-3 text-[13.5px] leading-relaxed text-ink">
-              <Markdown>{piece.text}</Markdown>
-              {streamingText && (
-                <span className="ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[3px] bg-accent breathe" aria-hidden />
-              )}
-            </div>
-          );
-        }
-        return <Steps key={i} blocks={piece.blocks} live={turn.open} />;
-      })}
+    <div className="flex gap-3 pr-6">
+      <span
+        className="mt-[3px] grid size-5 shrink-0 place-items-center rounded-full bg-panel-2 text-accent"
+        aria-hidden
+      >
+        <svg viewBox="0 0 24 24" className="size-3" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round">
+          <path d="M12 3l1.9 5.6 5.6 1.9-5.6 1.9L12 18l-1.9-5.6L4.5 10.5l5.6-1.9z" />
+        </svg>
+      </span>
+      <div className="min-w-0 flex-1 space-y-2.5">
+        {pieces.map((piece, i) => {
+          if (piece.kind === 'text') {
+            const streamingText = turn.open && i === pieces.length - 1;
+            return (
+              <div key={i} className="rise text-[13.5px] leading-[1.6] text-ink">
+                <Markdown>{piece.text}</Markdown>
+                {streamingText && (
+                  <span className="ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[3px] bg-accent breathe" aria-hidden />
+                )}
+              </div>
+            );
+          }
+          return <Steps key={i} blocks={piece.blocks} live={turn.open} />;
+        })}
+      </div>
     </div>
   );
 });
