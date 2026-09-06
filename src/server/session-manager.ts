@@ -70,8 +70,10 @@ export class SessionManager {
     const session = new LiveSession({
       cwd: this.projectDir,
       ...(sessionId ? { resume: sessionId } : {}),
-      // Engineers' default: scratch files go through, every command still asks.
-      ...(this.accountId ? { permissionMode: 'acceptEdits' as const } : {}),
+      // Engineers' default on the internal stage (ezdxf-flask#391): a
+      // classifier judges the routine commands; the live apply and the memory
+      // write still ask, the deny rules still deny.
+      ...(this.accountId ? { permissionMode: 'auto' as const } : {}),
       ...rest,
       ...(project ? { project } : {}),
       ...(only ? { onlyCommands: only } : {}),
