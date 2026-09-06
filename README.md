@@ -142,7 +142,10 @@ ask (`default`, `plan`) exist, and "Always allow" does not persist.
 `--real` finished without error; `status` on every status change; `expired`
 when the token is no longer accepted (the studio should reload);
 `user_message` with `text` every time the engineer sends something (the
-studio keeps the first one on an empty project as the brief).
+studio keeps the first one on an empty project as the brief). They go only to
+the page that framed us (the referrer's origin), and the server allows framing
+only by itself and by the origin of `BUILDABLE_URL`
+(`Content-Security-Policy: frame-ancestors`).
 
 **Serving under a path.** `BASE_PATH=/agent` at build and at run time mounts
 the page, the API and the WebSocket under it, so a reverse proxy can route one
