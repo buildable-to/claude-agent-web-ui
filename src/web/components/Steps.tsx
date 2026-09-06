@@ -5,6 +5,7 @@
 import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { baseName } from '@/lib/format';
+import { page, tellParent } from '@/lib/page';
 import type { ToolBlock, ToolImage } from '@/lib/transcript';
 import { Lightbox, type LightboxPicture } from './Lightbox';
 import { ToolCard } from './tools/cards';
@@ -51,6 +52,21 @@ function Picture({ image, caption, onOpen }: { image: ToolImage; caption?: strin
 export function Steps({ blocks, live }: Props) {
   const [open, setOpen] = useState(false);
   const [shown, setShown] = useState<number | null>(null);   // which picture is open big
+  // Framed by Project Studio, our own overlay would only cover the chat
+  // column: the page paints the picture over the whole window instead.
+  const embedded = page.embed && window.parent !== window;
+  const show = (i: number) => {
+    if (embedded) {
+      tellParent({
+        type: 'picture',
+        index: i,
+        pictures: pictures.map((p) => ({
+          src: `data:${p.image.mediaType};base64,${p.image.data}`,
+          ...(p.caption ? { caption: p.caption } : {}),
+        })),
+      });
+    } else setShown(i);
+  };
   const current = live ? blocks.find((b) => b.result === undefined) : undefined;
   const n = blocks.length;
   const failed = blocks.filter((b) => b.isError).length;
@@ -94,11 +110,11 @@ export function Steps({ blocks, live }: Props) {
       {pictures.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {pictures.map((p, i) => (
-            <Picture key={p.key} image={p.image} caption={p.caption} onOpen={() => setShown(i)} />
+            <Picture key={p.key} image={p.image} caption={p.caption} onOpen={() => show(i)} />
           ))}
         </div>
       )}
-      {shown !== null && (
+      {shown !== null && !embedded && (
         <Lightbox
           pictures={pictures as LightboxPicture[]}
           index={shown}

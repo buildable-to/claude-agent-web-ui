@@ -142,7 +142,11 @@ ask (`default`, `plan`) exist, and "Always allow" does not persist.
 `--real` finished without error; `status` on every status change; `expired`
 when the token is no longer accepted (the studio should reload);
 `user_message` with `text` every time the engineer sends something (the
-studio keeps the first one on an empty project as the brief). They go only to
+studio keeps the first one on an empty project as the brief); `picture` when
+the engineer opens a picture the agent looked at, with `pictures` (`{src:
+data URL, caption?}` for every picture of that step) and `index` — the studio
+shows it over the whole window, since our own overlay could only cover the
+chat column. They go only to
 the page that framed us (the referrer's origin), and the server allows framing
 only by itself and by the origin of `BUILDABLE_URL`
 (`Content-Security-Policy: frame-ancestors`).
