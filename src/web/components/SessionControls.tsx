@@ -1,4 +1,5 @@
 import type { ModelOption, PermissionMode, SessionMeta } from '@shared/protocol';
+import { Menu } from './Menu';
 
 export const MODES: Array<{ value: PermissionMode; label: string; hint: string }> = [
   { value: 'auto', label: 'Auto', hint: 'A classifier approves the routine commands; the live apply and the memory write still ask.' },
@@ -49,31 +50,43 @@ export function SessionControls({ meta, models, locked, embedded = false, look, 
   const match = currentModel(meta, models);
   const modelValue = match?.value ?? '';
   const current = meta.model ?? '';
-  const cls = look === 'pill' ? 'pill' : 'textsel';
   const mode = meta.permissionMode ?? (embedded ? 'auto' : 'default');
+  const direction = look === 'text' ? 'up' : 'down';   // the composer footer sits at the bottom
+  const align = look === 'pill' ? 'right' : 'left';     // pills hug the bar's right edge
+  const modelItems = [
+    ...(!match ? [{ value: '', label: current || 'Default model' }] : []),
+    ...models.map((m) => ({ value: m.value, label: modelLabel(m, look === 'text'), hint: m.description })),
+  ];
   return (
     <>
-      <select className={cls} value={modelValue} onChange={(e) => onModel(e.target.value || null)} disabled={locked} title="Model">
-        {!match && <option value="">{current || 'Default model'}</option>}
-        {models.map((m) => (
-          <option key={m.value} value={m.value} title={m.description}>
-            {modelLabel(m, look === 'text')}
-          </option>
-        ))}
-      </select>
-      <select
-        className={cls}
-        value={mode}
-        onChange={(e) => onMode(e.target.value as PermissionMode)}
+      <Menu
+        look={look}
+        direction={direction}
+        align={align}
+        wide
+        head="Model"
+        title="Model"
+        value={modelValue}
+        onPick={(v) => onModel(v || null)}
         disabled={locked}
-        title={MODES.find((m) => m.value === mode)?.hint ?? 'Permission mode'}
+        items={modelItems}
       >
-        {MODES.map((m) => (
-          <option key={m.value} value={m.value} title={m.hint}>
-            {m.label}
-          </option>
-        ))}
-      </select>
+        {match ? modelLabel(match, look === 'text') : current || 'Default model'}
+      </Menu>
+      <Menu
+        look={look}
+        direction={direction}
+        align={align}
+        wide
+        head="Before it acts"
+        title={MODES.find((m) => m.value === mode)?.hint ?? 'Permission mode'}
+        value={mode}
+        onPick={(v) => onMode(v as PermissionMode)}
+        disabled={locked}
+        items={MODES.map((m) => ({ value: m.value, label: m.label, hint: m.hint }))}
+      >
+        {MODES.find((m) => m.value === mode)?.label ?? mode}
+      </Menu>
     </>
   );
 }

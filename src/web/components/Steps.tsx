@@ -31,20 +31,19 @@ function pictureCaption(tool: ToolBlock): string | undefined {
 function Picture({ image, caption }: { image: ToolImage; caption?: string }) {
   const [big, setBig] = useState(false);
   return (
-    <figure className={big ? 'w-full' : 'max-w-full'}>
+    <figure className={big ? 'w-full' : 'max-w-full'} title={caption}>
       <button
         type="button"
         onClick={() => setBig((b) => !b)}
-        title={big ? 'Smaller' : 'Larger'}
-        className="block overflow-hidden rounded-lg border border-line bg-paper"
+        title={big ? 'Smaller' : caption ? `${caption} — larger` : 'Larger'}
+        className="block overflow-hidden rounded-xl border border-white/10 bg-paper shadow-[0_8px_24px_rgba(0,0,0,.35)]"
       >
         <img
           src={`data:${image.mediaType};base64,${image.data}`}
           alt={caption ?? 'picture'}
-          className={big ? 'block w-full' : 'block max-h-64 w-auto'}
+          className={big ? 'block w-full' : 'block max-h-56 w-auto'}
         />
       </button>
-      {caption && <figcaption className="mt-1 text-[11px] text-ink-3">{caption}</figcaption>}
     </figure>
   );
 }
@@ -65,7 +64,7 @@ export function Steps({ blocks, live }: Props) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex max-w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-[12.5px] text-ink-2 hover:bg-panel-2 hover:text-ink"
+        className="inline-flex h-6.5 max-w-full items-center gap-1.5 rounded-full bg-panel-2/80 pr-2 pl-2 text-left text-[11.5px] font-medium text-ink-2 hover:bg-panel-3 hover:text-ink"
       >
         {current ? (
           <span className="size-2 shrink-0 rounded-full bg-accent breathe" aria-hidden />
@@ -85,7 +84,7 @@ export function Steps({ blocks, live }: Props) {
         )}
       </button>
       {open && (
-        <div className="rise ml-2 space-y-1.5 border-l-2 border-line-2 pl-3">
+        <div className="rise ml-1 space-y-1.5 border-l border-line-2 pl-3">
           {blocks.map((b) => (
             <ToolCard key={b.id} tool={b} live={live} />
           ))}
