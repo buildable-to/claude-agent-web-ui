@@ -1,4 +1,5 @@
 import { PanelRight, Plus } from 'lucide-react';
+import { Menu } from './Menu';
 import type { ModelOption, PermissionMode, SessionMeta, SessionStatus, SessionSummary } from '@shared/protocol';
 import { money, shortPath, timeAgo } from '@/lib/format';
 import { BASE } from '@/lib/page';
@@ -69,19 +70,27 @@ export function TopBar({
   if (picker) {
     return (
       <header className="relative flex h-11 shrink-0 items-center justify-center border-b border-white/[.06] px-12">
-        <select
-          className="textsel min-w-0 max-w-full truncate text-center text-[12.5px] font-medium text-ink"
-          value={picker.activeId ?? ''}
-          onChange={(e) => picker.onSelect(e.target.value || null)}
+        <Menu
+          align="center"
+          wide
+          head="This project's conversations"
           title="This project's conversations"
+          className="text-[12.5px] text-ink"
+          value={picker.activeId ?? ''}
+          onPick={(v) => picker.onSelect(v || null)}
+          items={[
+            { value: '', label: 'New conversation', hint: 'Start fresh on this project' },
+            ...picker.sessions.map((c) => ({
+              value: c.sessionId,
+              label: c.title,
+              right: timeAgo(c.lastModified),
+            })),
+          ]}
         >
-          <option value="">New conversation</option>
-          {picker.sessions.map((c) => (
-            <option key={c.sessionId} value={c.sessionId}>
-              {c.title.length > 48 ? `${c.title.slice(0, 47)}…` : c.title} · {timeAgo(c.lastModified)}
-            </option>
-          ))}
-        </select>
+          {picker.activeId
+            ? (picker.sessions.find((c) => c.sessionId === picker.activeId)?.title ?? 'Conversation')
+            : 'New conversation'}
+        </Menu>
         <span className="absolute right-2 flex items-center gap-2">
           {(connection !== 'open' || status === 'closed') && (
             <span className="font-mono text-[10.5px] text-ink-3" aria-live="polite">

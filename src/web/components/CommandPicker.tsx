@@ -34,12 +34,12 @@ export function CommandPicker({ commands, query, activeIndex, loading, onHover, 
   }, [activeIndex]);
 
   return (
-    <div className="rise absolute right-0 bottom-full left-0 z-20 mb-2 overflow-hidden rounded-lg border border-line-2 bg-panel shadow-strong">
-      <div className="flex items-center justify-between border-b border-line px-3 py-1.5 text-[11px] text-ink-3">
-        <span className="font-semibold tracking-[0.14em] uppercase">Skills</span>
-        <span>↑↓ to move · Enter to pick · Esc to close</span>
+    <div className="menu-pop rise absolute right-0 bottom-full left-0 z-20 mb-2">
+      <div className="menu-head flex items-center justify-between">
+        <span>Skills</span>
+        <span className="font-normal">↑↓ · Enter · Esc</span>
       </div>
-      <div ref={listRef} className="max-h-72 overflow-y-auto py-1" role="listbox">
+      <div ref={listRef} className="max-h-72 overflow-y-auto" role="listbox">
         {loading && matches.length === 0 && (
           <div className="px-3 py-3 text-[12.5px] text-ink-3">Asking the engine what it knows…</div>
         )}
@@ -55,15 +55,15 @@ export function CommandPicker({ commands, query, activeIndex, loading, onHover, 
             onMouseEnter={() => onHover(i)}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => onPick(c)}
-            className={`flex w-full items-baseline gap-3 px-3 py-1.5 text-left ${
-              i === activeIndex ? 'bg-accent-soft' : 'hover:bg-panel-2'
-            }`}
+            className={`menu-item ${i === activeIndex ? 'on' : ''}`}
           >
-            <span className="shrink-0 font-mono text-[12.5px] font-medium text-accent">/{c.name}</span>
-            {c.argumentHint && (
-              <span className="shrink-0 font-mono text-[11px] text-ink-3">{c.argumentHint}</span>
-            )}
-            <span className="min-w-0 flex-1 truncate text-[12px] text-ink-2">{c.description}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate">
+                <span className={`font-mono text-[12.5px] font-medium ${i === activeIndex ? 'text-white' : 'text-accent'}`}>/{c.name}</span>
+                {c.argumentHint && <span className="ml-2 font-mono text-[11px] opacity-70">{c.argumentHint}</span>}
+              </span>
+              <span className="menu-hint one" title={c.description}>{c.description.split(/(?<=\.)\s/)[0]}</span>
+            </span>
           </button>
         ))}
       </div>
