@@ -9,7 +9,7 @@ import { page, tellParent } from '@/lib/page';
 import type { ToolBlock, ToolImage } from '@/lib/transcript';
 import { Lightbox, type LightboxPicture } from './Lightbox';
 import { ToolCard } from './tools/cards';
-import { toolDetail, toolVerb } from './tools/config';
+import { stepWords } from './tools/config';
 
 type Props = {
   blocks: ToolBlock[];
@@ -17,13 +17,6 @@ type Props = {
   live: boolean;
 };
 
-/** "Perceive project session d8344502", "Looked at 3d_iso.png". */
-export function stepWords(tool: ToolBlock): string {
-  const verb = toolVerb(tool);
-  if (tool.name === 'Bash') return verb; // the agent's own description of the command
-  const detail = toolDetail(tool);
-  return detail ? `${verb} ${detail}` : verb;
-}
 
 function pictureCaption(tool: ToolBlock): string | undefined {
   const p = tool.input.file_path;
