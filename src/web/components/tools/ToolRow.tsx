@@ -15,7 +15,7 @@ export function ToolRow({ tool, live, children, defaultOpen = false }: Props) {
   const [open, setOpen] = useState(defaultOpen);
   const look = toolLook(tool.name);
   const detail = toolDetail(tool);
-  const running = tool.result === undefined && live;
+  const running = tool.task ? tool.task.status === 'running' : tool.result === undefined && live;
   const expandable = Boolean(children);
 
   return (
@@ -41,7 +41,7 @@ export function ToolRow({ tool, live, children, defaultOpen = false }: Props) {
               <span className="size-2 rounded-full bg-accent breathe" />
               running
             </span>
-          ) : tool.isError ? (
+          ) : tool.isError || (tool.task && tool.task.status !== 'completed') ? (
             <X className="size-3.5 text-danger" />
           ) : tool.result !== undefined ? (
             <Check className="size-3.5 text-sea" />

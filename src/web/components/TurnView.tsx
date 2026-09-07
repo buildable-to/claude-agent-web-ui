@@ -2,9 +2,11 @@ import { AlertTriangle, Info } from 'lucide-react';
 import { memo } from 'react';
 import { splitMentions } from '@/lib/mentions';
 import { useMentions } from '@/lib/mentionsLive';
-import { NO_RESPONSE, type Block, type ToolBlock, type Turn } from '@/lib/transcript';
+import { isInFlight, NO_RESPONSE, type Block, type ToolBlock, type Turn } from '@/lib/transcript';
 import Markdown from './Markdown';
 import { Mention } from './Mention';
+import { FanOut } from './AgentBoard';
+import { isFanOut } from '@/lib/agents';
 import { Steps } from './Steps';
 
 /** Plumbing the engineer has no use for: a skill loading is not a step, nor
@@ -98,7 +100,7 @@ export const TurnView = memo(function TurnView({ turn, live = false }: TurnProps
   const thinking =
     live &&
     turn.open &&
-    (!last || (last.kind === 'steps' && last.blocks.every((b) => b.result !== undefined)));
+    (!last || (last.kind === 'steps' && !last.blocks.some(isInFlight)));
 
   // The agent speaks without a box: its mark at the left, its words as text,
   // the stretches of work as one quiet line between them.
@@ -125,6 +127,7 @@ export const TurnView = memo(function TurnView({ turn, live = false }: TurnProps
               </div>
             );
           }
+          if (isFanOut(piece.blocks)) return <FanOut key={i} blocks={piece.blocks} live={turn.open} />;
           return <Steps key={i} blocks={piece.blocks} live={turn.open} />;
         })}
         {thinking && (

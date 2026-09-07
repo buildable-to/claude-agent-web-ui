@@ -1,5 +1,7 @@
 // Per-tool card bodies. Adapted from ninehills/claude-agent-ui (MIT).
 import { CheckCircle2, ChevronRight, Circle } from 'lucide-react';
+import { useState } from 'react';
+import { agentType, finding } from '@/lib/agents';
 import type { ToolBlock } from '@/lib/transcript';
 import { FilePath, Label, Pre, Tag } from './pieces';
 import { ToolRow } from './ToolRow';
@@ -114,17 +116,40 @@ export function WebCard({ tool, live }: CardProps) {
 }
 
 export function TaskCard({ tool, live }: CardProps) {
-  const prompt = str(tool.input.prompt);
   return (
-    <ToolRow tool={tool} live={live} defaultOpen={live && tool.result === undefined}>
-      <div className="flex flex-wrap gap-1.5">
-        {tool.input.subagent_type ? <Tag>{String(tool.input.subagent_type)}</Tag> : null}
+    <ToolRow tool={tool} live={live}>
+      <TaskBody tool={tool} live={live} />
+    </ToolRow>
+  );
+}
+
+/** What a sub-agent did and found — the card without its header row, so a
+ *  board lane can open straight onto it. */
+export function TaskBody({ tool, live }: CardProps) {
+  const prompt = str(tool.input.prompt);
+  const [brief, setBrief] = useState(false);
+  const type = agentType(tool);
+  const found = finding(tool);
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {type ? <Tag>{type}</Tag> : null}
         {tool.input.model ? <Tag>{String(tool.input.model)}</Tag> : null}
+        {prompt ? (
+          <button
+            type="button"
+            onClick={() => setBrief((b) => !b)}
+            aria-expanded={brief}
+            className="rounded-full bg-panel-2/80 px-2 py-0.5 text-[11px] text-ink-2 hover:bg-panel-3 hover:text-ink"
+          >
+            {brief ? 'Hide brief' : 'Brief'}
+          </button>
+        ) : null}
       </div>
-      {prompt ? <Pre>{prompt}</Pre> : null}
+      {brief && prompt ? <Pre>{prompt}</Pre> : null}
       {tool.children.length > 0 && (
         <div className="space-y-1">
-          <Label>Sub-agent tool calls</Label>
+          <Label>Steps</Label>
           <div className="space-y-1">
             {tool.children.map((child) => (
               <ToolCard key={child.id} tool={child} live={live && child.result === undefined} />
@@ -132,8 +157,15 @@ export function TaskCard({ tool, live }: CardProps) {
           </div>
         </div>
       )}
-      <Result tool={tool} />
-    </ToolRow>
+      {found !== undefined ? (
+        <div className="space-y-1">
+          <Label>{tool.task && tool.task.status !== 'completed' ? tool.task.status : 'Finding'}</Label>
+          <Pre tone={tool.isError || (tool.task && tool.task.status !== 'completed') ? 'error' : 'plain'}>{found}</Pre>
+        </div>
+      ) : tool.task?.status === 'running' ? null : (
+        <Result tool={tool} />
+      )}
+    </>
   );
 }
 

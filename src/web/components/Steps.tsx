@@ -6,10 +6,10 @@ import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { baseName } from '@/lib/format';
 import { page, tellParent } from '@/lib/page';
-import type { ToolBlock, ToolImage } from '@/lib/transcript';
+import { isInFlight, type ToolBlock, type ToolImage } from '@/lib/transcript';
 import { Lightbox, type LightboxPicture } from './Lightbox';
 import { ToolCard } from './tools/cards';
-import { toolDetail, toolVerb } from './tools/config';
+import { stepWords } from './tools/config';
 
 type Props = {
   blocks: ToolBlock[];
@@ -17,13 +17,6 @@ type Props = {
   live: boolean;
 };
 
-/** "Perceive project session d8344502", "Looked at 3d_iso.png". */
-export function stepWords(tool: ToolBlock): string {
-  const verb = toolVerb(tool);
-  if (tool.name === 'Bash') return verb; // the agent's own description of the command
-  const detail = toolDetail(tool);
-  return detail ? `${verb} ${detail}` : verb;
-}
 
 function pictureCaption(tool: ToolBlock): string | undefined {
   const p = tool.input.file_path;
@@ -67,7 +60,9 @@ export function Steps({ blocks, live }: Props) {
       });
     } else setShown(i);
   };
-  const current = live ? blocks.find((b) => b.result === undefined) : undefined;
+  // A step is still going while it has no result, or while the engine says
+  // the sub-agent behind it is still running (even after the turn ended).
+  const current = blocks.find((b) => isInFlight(b) && (live || b.task !== undefined));
   const n = blocks.length;
   const failed = blocks.filter((b) => b.isError).length;
   const label = current ? `Working · ${stepWords(current)}` : `${n} step${n === 1 ? '' : 's'}`;

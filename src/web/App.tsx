@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ServerConfig } from '@shared/protocol';
 import { ChatInput } from './components/ChatInput';
 import { FileTree } from './components/FileTree';
+import { finishedFileSteps, runningAgents } from '@/lib/transcript';
 import { MessageList } from './components/MessageList';
 import { PermissionBanner } from './components/PermissionBanner';
 import { Sidebar } from './components/Sidebar';
@@ -56,6 +57,13 @@ export default function App() {
   }, [refresh]);
   const session = useSession(selected.id, selected.nonce, onTurnEnd);
   const { state } = session;
+  // A step that may have written a file finished (a sub-agent's too):
+  // reload the files panel now, not only when the whole turn ends.
+  const fileSteps = finishedFileSteps(state.transcript);
+  const agentsRunning = runningAgents(state.transcript);
+  useEffect(() => {
+    if (fileSteps > 0) setTreeKey((k) => k + 1);
+  }, [fileSteps]);
   const { commands, models, loading: commandsLoading } = useEngineInfo(state.meta);
   const autoPicked = useRef(false);
   // the project's marks and elements for "@", posted in by the studio
@@ -171,6 +179,7 @@ export default function App() {
           projectName={projectName}
           projectDir={projectDir}
           status={state.status}
+          agentsRunning={agentsRunning}
           connection={connection}
           meta={state.meta}
           models={models}
