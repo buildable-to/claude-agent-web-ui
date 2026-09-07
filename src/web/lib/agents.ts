@@ -1,7 +1,7 @@
 // Sub-agents as the page reads them: a Task/Agent tool block whose children
 // are the calls the sub-agent made and whose result is its finding. Pure
 // helpers; the board and the card both lean on them.
-import type { ToolBlock } from './transcript';
+import { ASYNC_PLACEHOLDER, isInFlight, type ToolBlock } from './transcript';
 
 export const DEFAULT_AGENT_TYPE = 'general-purpose';
 
@@ -29,8 +29,38 @@ export function agentType(block: ToolBlock): string | undefined {
 export type LaneState = 'running' | 'done' | 'failed';
 
 export function laneState(block: ToolBlock, live: boolean): LaneState {
+  if (block.task) {
+    if (block.task.status === 'running') return 'running';
+    return block.task.status === 'completed' ? 'done' : 'failed';
+  }
   if (block.result === undefined) return live ? 'running' : 'done';
   return block.isError ? 'failed' : 'done';
+}
+
+/** The sub-agent came back with something to read. */
+export function hasFinding(block: ToolBlock): boolean {
+  return finding(block) !== undefined;
+}
+
+/** What the sub-agent found: the engine's summary once it settled, else its
+ *  tool result — unless that is the backgrounded placeholder. */
+export function finding(block: ToolBlock): string | undefined {
+  if (block.task) {
+    return block.task.status === 'running' ? undefined : block.task.summary || undefined;
+  }
+  if (block.result === undefined || ASYNC_PLACEHOLDER.test(block.result)) return undefined;
+  return block.result;
+}
+
+/** One line for a lane: what it is doing now, or the first line of its finding. */
+export function laneLine(block: ToolBlock, latestStep?: string): string | undefined {
+  if (isInFlight(block)) return block.task?.summary ?? latestStep ?? block.task?.lastTool;
+  return findingLine(finding(block));
+}
+
+/** Steps the sub-agent took: the engine's count when it has one, else the calls we saw. */
+export function laneSteps(block: ToolBlock): number {
+  return block.task?.toolUses ?? block.children.length;
 }
 
 /** The first line of a finding, plain enough for one row. */
@@ -60,16 +90,19 @@ export function noteLaneTime(block: ToolBlock, now = Date.now()): { start: numbe
   if (!t) {
     // First seen already finished: it came from history or a replay, and
     // its time is not ours to guess.
-    if (block.result !== undefined) return undefined;
+    if (!isInFlight(block)) return undefined;
     t = { start: now };
     clock.set(block.id, t);
   }
-  if (block.result !== undefined && t.end === undefined) t.end = now;
+  if (!isInFlight(block) && t.end === undefined) t.end = now;
   return t;
 }
 
 /** Elapsed for a lane the page watched from the start; undefined after a reload. */
 export function laneElapsed(block: ToolBlock, now = Date.now()): number | undefined {
+  if (block.task && block.task.status !== 'running' && block.task.durationMs !== undefined) {
+    return block.task.durationMs;
+  }
   const t = clock.get(block.id);
   if (!t) return undefined;
   return (t.end ?? now) - t.start;

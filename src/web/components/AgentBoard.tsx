@@ -10,6 +10,7 @@ import {
   isSubAgent,
   laneElapsed,
   laneState,
+  laneSteps,
   noteLaneTime,
 } from '@/lib/agents';
 import type { ToolBlock } from '@/lib/transcript';
@@ -159,9 +160,9 @@ type LaneProps = {
 
 function Lane({ agent, live, now, open, onToggle }: LaneProps) {
   const state = laneState(agent, live);
-  const back = agent.result !== undefined;
+  const back = state !== 'running';
   const detail = toolDetail(agent) ?? (state === 'running' ? 'Working' : undefined);
-  const steps = agent.children.length;
+  const steps = laneSteps(agent);
   const elapsed = laneElapsed(agent, now);
   const tail = back
     ? [steps ? `${steps} step${steps === 1 ? '' : 's'}` : null, elapsed !== undefined ? fmtElapsed(elapsed) : null]

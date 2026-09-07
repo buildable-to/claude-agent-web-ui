@@ -16,7 +16,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { agentType, findingLine } from '@/lib/agents';
+import { agentType, laneLine } from '@/lib/agents';
 import type { ToolBlock } from '@/lib/transcript';
 import { baseName } from '@/lib/format';
 
@@ -132,9 +132,8 @@ export function toolDetail(tool: ToolBlock): string | undefined {
     case 'Task':
     case 'Agent': {
       // What the sub-agent is doing now, or the first line of what it found.
-      if (tool.result !== undefined) return findingLine(tool.result);
       const last = tool.children[tool.children.length - 1];
-      return last ? stepWords(last) : agentType(tool);
+      return laneLine(tool, last ? stepWords(last) : undefined) ?? agentType(tool);
     }
     case 'Skill':
       return str(i.skill) ?? str(i.command);

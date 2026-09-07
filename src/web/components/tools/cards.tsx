@@ -1,7 +1,7 @@
 // Per-tool card bodies. Adapted from ninehills/claude-agent-ui (MIT).
 import { CheckCircle2, ChevronRight, Circle } from 'lucide-react';
 import { useState } from 'react';
-import { agentType } from '@/lib/agents';
+import { agentType, finding } from '@/lib/agents';
 import type { ToolBlock } from '@/lib/transcript';
 import { FilePath, Label, Pre, Tag } from './pieces';
 import { ToolRow } from './ToolRow';
@@ -119,6 +119,7 @@ export function TaskCard({ tool, live }: CardProps) {
   const prompt = str(tool.input.prompt);
   const [brief, setBrief] = useState(false);
   const type = agentType(tool);
+  const found = finding(tool);
   return (
     <ToolRow tool={tool} live={live}>
       <div className="flex flex-wrap items-center gap-1.5">
@@ -146,7 +147,14 @@ export function TaskCard({ tool, live }: CardProps) {
           </div>
         </div>
       )}
-      <Result tool={tool} />
+      {found !== undefined ? (
+        <div className="space-y-1">
+          <Label>{tool.task && tool.task.status !== 'completed' ? tool.task.status : 'Finding'}</Label>
+          <Pre tone={tool.isError || (tool.task && tool.task.status !== 'completed') ? 'error' : 'plain'}>{found}</Pre>
+        </div>
+      ) : tool.task?.status === 'running' ? null : (
+        <Result tool={tool} />
+      )}
     </ToolRow>
   );
 }

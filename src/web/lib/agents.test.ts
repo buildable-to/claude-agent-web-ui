@@ -69,3 +69,88 @@ test('lane time comes from the browser clock, never from the transcript', () => 
   assert.equal(fmtElapsed(41000), '41s');
   assert.equal(fmtElapsed(102000), '1m 42s');
 });
+
+test('a backgrounded sub-agent runs until the engine says it settled; its finding is the summary', async () => {
+  const { applyMessage, emptyTranscript, isInFlight, runningAgents } = await import('./transcript');
+  const { finding, laneState, laneLine } = await import('./agents');
+  const sys = (subtype: string, extra: Record<string, unknown>) =>
+    ({ type: 'system', subtype, uuid: `${subtype}-${Math.random()}`, session_id: 's', tool_use_id: 't1', ...extra }) as never;
+  let t = applyMessage(emptyTranscript(), {
+    type: 'assistant',
+    uuid: 'a1',
+    session_id: 's',
+    parent_tool_use_id: null,
+    message: {
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: 't1', name: 'Agent', input: { description: 'Beams note', subagent_type: 'general-purpose' } }],
+    },
+  } as never);
+  t = applyMessage(t, sys('task_started', { task_id: 'k1', description: 'Beams note' }));
+  // The placeholder result lands: still running.
+  t = applyMessage(t, {
+    type: 'user',
+    uuid: 'u1',
+    session_id: 's',
+    parent_tool_use_id: null,
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'Async agent launched successfully. (internal)' }] },
+  } as never);
+  const block = () => {
+    const turn = t.turns[0];
+    if (turn?.kind !== 'assistant') throw new Error('no turn');
+    const b = turn.blocks[0];
+    if (b?.type !== 'tool_use') throw new Error('no block');
+    return b;
+  };
+  assert.equal(isInFlight(block()), true);
+  assert.equal(laneState(block(), false), 'running');
+  assert.equal(finding(block()), undefined);
+  assert.equal(runningAgents(t), 1);
+
+  t = applyMessage(t, sys('task_progress', { task_id: 'k1', description: 'Beams note', usage: { total_tokens: 900, tool_uses: 2, duration_ms: 4000 }, last_tool_name: 'Bash', summary: 'Writing the note' }));
+  assert.equal(laneLine(block()), 'Writing the note');
+
+  t = applyMessage(t, sys('task_notification', { task_id: 'k1', status: 'completed', output_file: '/x', summary: 'beams: 16 pieces', usage: { total_tokens: 1200, tool_uses: 3, duration_ms: 21000 } }));
+  assert.equal(isInFlight(block()), false);
+  assert.equal(laneState(block(), false), 'done');
+  assert.equal(finding(block()), 'beams: 16 pieces');
+  assert.equal(block().task?.durationMs, 21000);
+  assert.equal(runningAgents(t), 0);
+
+  // Housekeeping tasks the engine hides never touch a lane.
+  const before = t;
+  t = applyMessage(t, sys('task_started', { task_id: 'k2', description: 'watch', ambient: true }));
+  assert.deepEqual(t.turns, before.turns);
+});
+
+test('the recorded <task-notification> is the lane’s finding after a reload, not the engineer’s words', async () => {
+  const { applyHistory, emptyTranscript } = await import('./transcript');
+  const { finding, laneState } = await import('./agents');
+  const hist = (type: 'user' | 'assistant', uuid: string, message: unknown) =>
+    ({ type, uuid, session_id: 's', message, parent_tool_use_id: null }) as never;
+  const t = applyHistory(emptyTranscript(), [
+    hist('user', 'u1', { role: 'user', content: 'fan out' }),
+    hist('assistant', 'a1', {
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: 't1', name: 'Agent', input: { description: 'Beams note', subagent_type: 'general-purpose' } }],
+    }),
+    hist('user', 'u2', { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'Async agent launched successfully. (internal)' }] }),
+    hist('assistant', 'a2', { role: 'assistant', content: [{ type: 'text', text: 'Waiting.' }] }),
+    hist('user', 'u3', {
+      role: 'user',
+      content:
+        '<task-notification>\n<task-id>k1</task-id>\n<tool-use-id>t1</tool-use-id>\n<status>completed</status>\n<summary>Agent "Beams note" finished</summary>\n<result>beams: 37 pieces</result>\n<usage><subagent_tokens>12363</subagent_tokens><tool_uses>3</tool_uses><duration_ms>89480</duration_ms></usage>\n</task-notification>',
+    }),
+    hist('assistant', 'a3', { role: 'assistant', content: [{ type: 'text', text: 'Beams is done.' }] }),
+  ]);
+  assert.deepEqual(
+    t.turns.map((x) => x.kind),
+    ['user', 'assistant', 'assistant'],
+  );
+  const turn = t.turns[1];
+  if (turn?.kind !== 'assistant' || turn.blocks[0]?.type !== 'tool_use') throw new Error('shape');
+  const b = turn.blocks[0];
+  assert.equal(laneState(b, false), 'done');
+  assert.equal(finding(b), 'beams: 37 pieces');
+  assert.equal(b.task?.durationMs, 89480);
+  assert.equal(b.task?.toolUses, 3);
+});
