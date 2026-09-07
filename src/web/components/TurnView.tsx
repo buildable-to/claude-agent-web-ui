@@ -5,6 +5,8 @@ import { useMentions } from '@/lib/mentionsLive';
 import { NO_RESPONSE, type Block, type ToolBlock, type Turn } from '@/lib/transcript';
 import Markdown from './Markdown';
 import { Mention } from './Mention';
+import { FanOut } from './AgentBoard';
+import { isFanOut } from '@/lib/agents';
 import { Steps } from './Steps';
 
 /** Plumbing the engineer has no use for: a skill loading is not a step, nor
@@ -125,6 +127,7 @@ export const TurnView = memo(function TurnView({ turn, live = false }: TurnProps
               </div>
             );
           }
+          if (isFanOut(piece.blocks)) return <FanOut key={i} blocks={piece.blocks} live={turn.open} />;
           return <Steps key={i} blocks={piece.blocks} live={turn.open} />;
         })}
         {thinking && (

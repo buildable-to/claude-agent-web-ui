@@ -55,9 +55,12 @@ export function fmtElapsed(ms: number): string {
  *  beside it for as long as the page does. */
 const clock = new Map<string, { start: number; end?: number }>();
 
-export function noteLaneTime(block: ToolBlock, now = Date.now()): { start: number; end?: number } {
+export function noteLaneTime(block: ToolBlock, now = Date.now()): { start: number; end?: number } | undefined {
   let t = clock.get(block.id);
   if (!t) {
+    // First seen already finished: it came from history or a replay, and
+    // its time is not ours to guess.
+    if (block.result !== undefined) return undefined;
     t = { start: now };
     clock.set(block.id, t);
   }

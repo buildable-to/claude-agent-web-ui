@@ -62,6 +62,10 @@ test('lane time comes from the browser clock, never from the transcript', () => 
   assert.equal(laneElapsed(a, 4000), 3000);
   noteLaneTime({ ...a, result: 'found' }, 6000);
   assert.equal(laneElapsed(a, 9000), 5000);
+  // A lane first seen already finished (history, replay) gets no time.
+  const late = task('late', { result: 'found' });
+  assert.equal(noteLaneTime(late, 1000), undefined);
+  assert.equal(laneElapsed(late, 2000), undefined);
   assert.equal(fmtElapsed(41000), '41s');
   assert.equal(fmtElapsed(102000), '1m 42s');
 });
