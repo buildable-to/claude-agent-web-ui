@@ -116,12 +116,22 @@ export function WebCard({ tool, live }: CardProps) {
 }
 
 export function TaskCard({ tool, live }: CardProps) {
+  return (
+    <ToolRow tool={tool} live={live}>
+      <TaskBody tool={tool} live={live} />
+    </ToolRow>
+  );
+}
+
+/** What a sub-agent did and found — the card without its header row, so a
+ *  board lane can open straight onto it. */
+export function TaskBody({ tool, live }: CardProps) {
   const prompt = str(tool.input.prompt);
   const [brief, setBrief] = useState(false);
   const type = agentType(tool);
   const found = finding(tool);
   return (
-    <ToolRow tool={tool} live={live}>
+    <>
       <div className="flex flex-wrap items-center gap-1.5">
         {type ? <Tag>{type}</Tag> : null}
         {tool.input.model ? <Tag>{String(tool.input.model)}</Tag> : null}
@@ -155,7 +165,7 @@ export function TaskCard({ tool, live }: CardProps) {
       ) : tool.task?.status === 'running' ? null : (
         <Result tool={tool} />
       )}
-    </ToolRow>
+    </>
   );
 }
 

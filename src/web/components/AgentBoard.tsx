@@ -15,7 +15,7 @@ import {
 } from '@/lib/agents';
 import type { ToolBlock } from '@/lib/transcript';
 import { Steps } from './Steps';
-import { TaskCard } from './tools/cards';
+import { TaskBody } from './tools/cards';
 import { toolDetail } from './tools/config';
 
 /** Lanes shown in full while agents run; the rest of the finished ones fold. */
@@ -205,8 +205,8 @@ function Lane({ agent, live, now, open, onToggle }: LaneProps) {
         )}
       </button>
       {open && (
-        <div className="rise mb-1.5 ml-5">
-          <TaskCard tool={agent} live={live && !back} />
+        <div className="rise mb-1.5 ml-5 space-y-2 rounded-lg border border-line bg-panel/80 px-3 py-2.5">
+          <TaskBody tool={agent} live={live && !back} />
         </div>
       )}
     </div>
