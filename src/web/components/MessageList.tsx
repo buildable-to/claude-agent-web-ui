@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { SessionStatus } from '@shared/protocol';
 import type { Turn } from '@/lib/transcript';
-import { TurnView } from './TurnView';
+import { Dots, TurnView } from './TurnView';
 
 type Props = {
   turns: Turn[];
@@ -30,20 +30,6 @@ function Skeleton() {
       <div className="h-24 w-4/5 rounded-xl bg-panel-2 breathe" />
       <div className="h-8 w-1/2 rounded-xl bg-panel-2 breathe" />
     </div>
-  );
-}
-
-function Dots() {
-  return (
-    <span className="inline-flex gap-1" aria-hidden>
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="size-1.5 rounded-full bg-accent breathe"
-          style={{ animationDelay: `${i * 200}ms` }}
-        />
-      ))}
-    </span>
   );
 }
 
@@ -77,8 +63,10 @@ export function MessageList({
 
   const last = turns[turns.length - 1];
   const starting = status === 'starting';
-  const waiting =
-    status === 'running' && (!last || last.kind !== 'assistant' || last.blocks.length === 0);
+  // Before the agent's turn exists. Once it does, the turn itself says
+  // whether the agent is busy (see TurnView).
+  const running = status === 'running';
+  const waiting = running && (!last || last.kind !== 'assistant');
 
   return (
     <div ref={ref} className="min-h-0 flex-1 overflow-y-auto">
@@ -123,7 +111,7 @@ export function MessageList({
         )}
 
         {turns.map((turn) => (
-          <TurnView key={turn.id} turn={turn} />
+          <TurnView key={turn.id} turn={turn} live={running} />
         ))}
 
         {starting && (

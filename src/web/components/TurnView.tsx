@@ -35,7 +35,28 @@ function groupBlocks(blocks: Block[]): Piece[] {
   return pieces;
 }
 
-export const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
+/** Three breathing dots: the agent is at work with nothing to show yet. */
+export function Dots() {
+  return (
+    <span className="inline-flex gap-1" aria-hidden>
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="size-1.5 rounded-full bg-accent breathe"
+          style={{ animationDelay: `${i * 200}ms` }}
+        />
+      ))}
+    </span>
+  );
+}
+
+type TurnProps = {
+  turn: Turn;
+  /** The engine is running a turn right now. */
+  live?: boolean;
+};
+
+export const TurnView = memo(function TurnView({ turn, live = false }: TurnProps) {
   const mentions = useMentions();
   const marks = mentions.marks.map((m) => m.mark);
   if (turn.kind === 'user') {
@@ -70,6 +91,14 @@ export const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
   }
 
   const pieces = groupBlocks(turn.blocks);
+  // Nothing on screen says the agent is busy: no visible step yet (a skill
+  // loading, a long think), or every step has answered and it is deciding
+  // what comes next. Say so, or the engineer cannot tell waiting from done.
+  const last = pieces[pieces.length - 1];
+  const thinking =
+    live &&
+    turn.open &&
+    (!last || (last.kind === 'steps' && last.blocks.every((b) => b.result !== undefined)));
 
   // The agent speaks without a box: its mark at the left, its words as text,
   // the stretches of work as one quiet line between them.
@@ -98,6 +127,12 @@ export const TurnView = memo(function TurnView({ turn }: { turn: Turn }) {
           }
           return <Steps key={i} blocks={piece.blocks} live={turn.open} />;
         })}
+        {thinking && (
+          <div className="rise flex items-center gap-2.5 text-[13px] text-ink-2">
+            <Dots />
+            Working…
+          </div>
+        )}
       </div>
     </div>
   );
