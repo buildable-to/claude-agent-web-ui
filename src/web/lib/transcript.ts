@@ -243,6 +243,18 @@ export function markCut(t: Transcript, id: string): Transcript {
   return addNote(closeOpenTurn(t), id, 'info', CUT_TEXT);
 }
 
+/** The engine is still working on the newest turn (a second tab attached
+ *  mid-turn, or the page came back): history closed it, so open it again for
+ *  what the engine sends next. A turn ending in the engineer's own words is
+ *  left alone: their words close a turn, the engine's next message opens one. */
+export function reopenLastTurn(t: Transcript): Transcript {
+  let i = t.turns.length - 1;
+  while (i >= 0 && t.turns[i]!.kind === 'note') i--;
+  const turn = t.turns[i];
+  if (!turn || turn.kind !== 'assistant' || turn.open) return t;
+  return { ...withTurn(t, i, { ...turn, open: true }), stream: null };
+}
+
 export function closeOpenTurn(t: Transcript): Transcript {
   const idx = lastAssistant(t);
   if (idx === -1) return { ...t, stream: null };
