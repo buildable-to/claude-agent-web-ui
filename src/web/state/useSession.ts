@@ -15,6 +15,7 @@ import {
   applyMessage,
   emptyTranscript,
   markCut,
+  reopenLastTurn,
   type Transcript,
 } from '@/lib/transcript';
 import { ws } from '@/lib/ws';
@@ -81,7 +82,9 @@ function reducer(state: SessionState, action: Action): SessionState {
       const m = action.message;
       switch (m.type) {
         case 'attached': {
-          let transcript = state.transcript;
+          // History closes every turn; if the engine is mid-turn, its next
+          // messages belong to the last one, not to a new one.
+          let transcript = m.status === 'running' ? reopenLastTurn(state.transcript) : state.transcript;
           for (const msg of m.replay) transcript = applyMessage(transcript, msg);
           return {
             ...state,
