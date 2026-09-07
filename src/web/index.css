@@ -491,3 +491,30 @@ select.pill {
 .mention.light:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.3);
 }
+
+/* The composer's mirror: the same text as the textarea, drawn behind it, so a
+   "@mark" can wear a colour while you type. No padding or margin on the pill
+   — the glyphs must sit exactly where the textarea's (transparent) ones do. */
+.composer-mirror {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  color: var(--ink);
+}
+.composer-clear {
+  color: transparent;
+  caret-color: var(--ink);
+}
+.composer-clear::selection {
+  color: transparent;
+}
+.mention-in {
+  border-radius: 6px;
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px rgba(79, 143, 247, 0.35);
+  color: var(--accent);
+  font-weight: 500;
+}

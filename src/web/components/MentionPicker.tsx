@@ -40,7 +40,7 @@ export function MentionPicker({ items, query, activeIndex, onHover, onPick }: Pr
             <span className="min-w-0 flex-1">
               <span className="block truncate">
                 <span className={`font-mono text-[12.5px] font-medium ${i === activeIndex ? 'text-white' : 'text-accent'}`}>
-                  {it.kind === 'mark' ? it.label : `@${it.label}`}
+                  {it.label}
                 </span>
               </span>
               <span className="menu-hint one">{it.hint}</span>

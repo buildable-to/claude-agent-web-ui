@@ -13,6 +13,7 @@ import {
 } from '@/lib/mentions';
 import { CommandPicker, matchCommands } from './CommandPicker';
 import { MentionPicker } from './MentionPicker';
+import { splitMentions } from '@/lib/mentions';
 import { SessionControls, type ControlsProps } from './SessionControls';
 
 type Props = {
@@ -54,6 +55,7 @@ export function ChatInput({
   mentions = EMPTY_MENTIONS,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const mirror = useRef<HTMLDivElement>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [active, setActive] = useState(0);
   const [caret, setCaret] = useState(0);
@@ -174,6 +176,10 @@ export function ChatInput({
     }
   };
 
+  // one set of metrics for the textarea and its mirror
+  const field = `py-[11px] ${busy ? 'pr-[5.25rem]' : 'pr-12'} pl-4 text-[13.5px] leading-relaxed`;
+  const hasMentions = /(^|\s)@[^\s@]+/.test(value);
+
   const placeholder =
     status === 'closed'
       ? 'The engine stopped. Send a message to start it again.'
@@ -197,6 +203,25 @@ export function ChatInput({
         {atOpen && at && (
           <MentionPicker items={atMatches} query={at.query} activeIndex={active} onHover={setActive} onPick={pickMention} />
         )}
+        {/* A chosen mark should look chosen while you type, not only after
+            sending. A textarea cannot colour a word, so a mirror behind it
+            paints the same text with every "@mark" as a pill; the textarea's
+            own text is transparent, its caret and selection are not. The two
+            share one set of metrics (see `field`) so the glyphs line up. */}
+        {hasMentions && (
+          <div ref={mirror} aria-hidden className={`composer-mirror ${field}`}>
+            {splitMentions(value).map((part, i) =>
+              typeof part === 'string' ? (
+                part
+              ) : (
+                <span key={i} className="mention-in">
+                  @{part.mention}
+                </span>
+              ),
+            )}
+            {'\u200b'}
+          </div>
+        )}
         <textarea
           ref={ref}
           value={value}
@@ -208,13 +233,16 @@ export function ChatInput({
           onKeyUp={trackCaret}
           onClick={trackCaret}
           onSelect={trackCaret}
+          onScroll={(e) => {
+            if (mirror.current) mirror.current.scrollTop = e.currentTarget.scrollTop;
+          }}
           placeholder={placeholder}
           disabled={disabled}
           rows={1}
           title={controls ? 'Enter to send · Shift+Enter for a new line' : undefined}
           aria-autocomplete="list"
           aria-expanded={pickerOpen}
-          className={`block w-full resize-none bg-transparent py-[11px] ${busy ? 'pr-[5.25rem]' : 'pr-12'} pl-4 text-[13.5px] leading-relaxed text-ink outline-none placeholder:text-ink-3 disabled:opacity-60`}
+          className={`relative block w-full resize-none bg-transparent outline-none placeholder:text-ink-3 disabled:opacity-60 ${field} ${hasMentions ? 'composer-clear' : 'text-ink'}`}
         />
         <div className="absolute right-[7px] bottom-[7px] flex items-center gap-1.5">
           {busy && (
