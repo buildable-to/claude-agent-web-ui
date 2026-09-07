@@ -1,7 +1,10 @@
 import { AlertTriangle, Info } from 'lucide-react';
 import { memo } from 'react';
+import { splitMentions } from '@/lib/mentions';
+import { useMentions } from '@/lib/mentionsLive';
 import { NO_RESPONSE, type Block, type ToolBlock, type Turn } from '@/lib/transcript';
 import Markdown from './Markdown';
+import { Mention } from './Mention';
 import { Steps } from './Steps';
 
 /** Plumbing the engineer has no use for: a skill loading is not a step, nor
@@ -54,11 +57,15 @@ type TurnProps = {
 };
 
 export const TurnView = memo(function TurnView({ turn, live = false }: TurnProps) {
+  const mentions = useMentions();
+  const marks = mentions.marks.map((m) => m.mark);
   if (turn.kind === 'user') {
     return (
       <div className="rise flex justify-end pl-10">
         <div className="max-w-[min(34rem,78%)] rounded-[18px] rounded-br-[5px] bg-bubble px-3.5 py-2 text-[13.5px] leading-[1.5] whitespace-pre-wrap break-words text-white shadow-[0_1px_2px_rgba(0,0,0,.25)]">
-          {turn.text}
+          {splitMentions(turn.text).map((part, i) =>
+            typeof part === 'string' ? part : <Mention key={i} token={part.mention} light />,
+          )}
           {turn.images > 0 && (
             <div className="mt-1 text-[12px] text-white/70">
               {turn.images} image{turn.images === 1 ? '' : 's'} attached
@@ -111,7 +118,7 @@ export const TurnView = memo(function TurnView({ turn, live = false }: TurnProps
             const streamingText = turn.open && i === pieces.length - 1;
             return (
               <div key={i} className="rise text-[13.5px] leading-[1.6] text-ink">
-                <Markdown>{piece.text}</Markdown>
+                <Markdown marks={marks}>{piece.text}</Markdown>
                 {streamingText && (
                   <span className="ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[3px] bg-accent breathe" aria-hidden />
                 )}
