@@ -315,7 +315,11 @@ export class LiveSession {
         slashCommands: message.slash_commands,
       };
       this.terminalOnlyCommands = message.terminal_slash_commands ?? [];
-      this.setStatus('idle');
+      // The SDK sends an init at the start of EVERY turn, not only when the
+      // engine comes up. Only the first one means "ready": on the others the
+      // turn is running, and saying idle here told the page the agent was
+      // done a tenth of a second after it started (seen 2026-09-07).
+      if (this.status === 'starting') this.setStatus('idle');
       this.broadcast({ type: 'meta', sessionId: this.sessionId, meta: this.meta });
       void this.loadInitDetails();
     } else if (message.type === 'system' && message.subtype === 'session_state_changed') {
