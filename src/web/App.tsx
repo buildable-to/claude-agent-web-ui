@@ -7,6 +7,8 @@ import { PermissionBanner } from './components/PermissionBanner';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { api } from './lib/api';
+import { EMPTY_MENTIONS, type Mentions } from './lib/mentions';
+import { listenForMentions, MentionsProvider } from './lib/mentionsLive';
 import { BASE, page, tellParent } from './lib/page';
 import { ws, type ConnectionState } from './lib/ws';
 import { useEngineInfo } from './state/useEngineInfo';
@@ -56,6 +58,9 @@ export default function App() {
   const { state } = session;
   const { commands, models, loading: commandsLoading } = useEngineInfo(state.meta);
   const autoPicked = useRef(false);
+  // the project's marks and elements for "@", posted in by the studio
+  const [mentions, setMentions] = useState<Mentions>(EMPTY_MENTIONS);
+  useEffect(() => (embed ? listenForMentions(setMentions) : undefined), []);
 
   // Embedded on a project: open its latest conversation, so the engineer
   // continues where they left off instead of starting blank every time.
@@ -149,6 +154,7 @@ export default function App() {
   const pending = state.pending[0];
 
   return (
+    <MentionsProvider value={mentions}>
     <div className="flex h-full">
       {!embed && (
         <Sidebar
@@ -214,6 +220,7 @@ export default function App() {
           commandsLoading={commandsLoading}
           autoFocus
           focusKey={focusKey}
+          mentions={mentions}
           {...(embed
             ? {
                 controls: {
@@ -229,5 +236,6 @@ export default function App() {
       </div>
       {filesOpen && !embed && <FileTree onPick={(p) => insertText(p)} refreshKey={treeKey} />}
     </div>
+    </MentionsProvider>
   );
 }

@@ -146,10 +146,20 @@ studio keeps the first one on an empty project as the brief); `picture` when
 the engineer opens a picture the agent looked at, with `pictures` (`{src:
 data URL, caption?}` for every picture of that step) and `index` — the studio
 shows it over the whole window, since our own overlay could only cover the
-chat column. They go only to
+chat column; `highlight` with `mark` when the engineer clicks a mark's pill in
+the chat — the studio lights that mark's pieces up. They go only to
 the page that framed us (the referrer's origin), and the server allows framing
 only by itself and by the origin of `BUILDABLE_URL`
 (`Content-Security-Policy: frame-ancestors`).
+
+**Messages from the parent page** (heard only from the referrer's origin,
+`source: 'buildable-studio'`): `mentions` with `project`, `marks` (`{mark,
+element: {id, name, kind}, count, ids}` per piece mark) and `library`
+(`{id, name, kind}` per element not placed) — what the composer offers on
+`@`. The studio posts it when the panel loads and after every change; the
+panel never asks the app for it. A pick lands in the sentence as `@C1` (a
+mark) or `@<element id>`; the text the agent receives is exactly that, and
+its standing note says how a tagged mark is read.
 
 **Serving under a path.** `BASE_PATH=/agent` at build and at run time mounts
 the page, the API and the WebSocket under it, so a reverse proxy can route one

@@ -460,3 +460,34 @@ select.pill {
   border-color: var(--accent-dim);
   box-shadow: 0 0 0 2px var(--accent-glow);
 }
+
+/* A mark in a sentence — @C1 — as a pill. Click: the studio lights it up. */
+.mention {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: baseline;
+  margin: 0 0.05em;
+  padding: 0 0.5em;
+  border-radius: 999px;
+  border: 1px solid rgba(79, 143, 247, 0.35);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: 500 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.mention:hover:not(:disabled) {
+  background: var(--accent-glow);
+}
+.mention:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+.mention.light {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+.mention.light:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.3);
+}

@@ -1,8 +1,18 @@
-import { ArrowUp, SlashSquare, Square } from 'lucide-react';
+import { ArrowUp, AtSign, SlashSquare, Square } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { CommandInfo, SessionStatus } from '@shared/protocol';
 import { money } from '@/lib/format';
+import {
+  EMPTY_MENTIONS,
+  insertMention,
+  matchMentions,
+  mentionItems,
+  mentionQuery,
+  type MentionItem,
+  type Mentions,
+} from '@/lib/mentions';
 import { CommandPicker, matchCommands } from './CommandPicker';
+import { MentionPicker } from './MentionPicker';
 import { SessionControls, type ControlsProps } from './SessionControls';
 
 type Props = {
@@ -19,6 +29,8 @@ type Props = {
   /** Embedded: the model and mode pickers live here, beside Skills, as quiet
    *  text menus — machinery next to the composer, not in a second title bar. */
   controls?: Omit<ControlsProps, 'look' | 'embedded'>;
+  /** The project's marks and elements, offered on "@" (posted in by the studio). */
+  mentions?: Mentions;
 };
 
 /** The picker is open while the draft is a lone "/word" with no space yet. */
@@ -39,10 +51,13 @@ export function ChatInput({
   autoFocus,
   focusKey,
   controls,
+  mentions = EMPTY_MENTIONS,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [active, setActive] = useState(0);
+  const [caret, setCaret] = useState(0);
+  const [pendingCaret, setPendingCaret] = useState<number | null>(null);
   const busy = status === 'running' || status === 'requires_action';
   const disabled = status === 'connecting';
 
@@ -50,9 +65,26 @@ export function ChatInput({
   const pickerOpen = query !== null && dismissed !== value;
   const matches = useMemo(() => (query === null ? [] : matchCommands(commands, query)), [commands, query]);
 
+  // "@" at the caret opens the marks — when the studio gave us any
+  const items = useMemo(() => mentionItems(mentions), [mentions]);
+  const at = items.length > 0 && !pickerOpen ? mentionQuery(value, caret) : null;
+  const atOpen = at !== null && dismissed !== value;
+  const atMatches = useMemo(() => (at === null ? [] : matchMentions(items, at.query)), [items, at]);
+
   useEffect(() => {
     setActive(0);
-  }, [query]);
+  }, [query, at?.query]);
+
+  useEffect(() => {
+    if (pendingCaret === null) return;
+    const el = ref.current;
+    if (el) {
+      el.focus();
+      el.setSelectionRange(pendingCaret, pendingCaret);
+      setCaret(pendingCaret);
+    }
+    setPendingCaret(null);
+  }, [pendingCaret, value]);
 
   useEffect(() => {
     const el = ref.current;
@@ -78,7 +110,42 @@ export function ChatInput({
     ref.current?.focus();
   };
 
+  const pickMention = (it: MentionItem) => {
+    if (!at) return;
+    const next = insertMention(value, caret, at, it.insert);
+    onChange(next.value);
+    setDismissed(null);
+    setPendingCaret(next.caret);
+  };
+
+  const trackCaret = () => {
+    const el = ref.current;
+    if (el) setCaret(el.selectionStart ?? el.value.length);
+  };
+
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (atOpen) {
+      if (e.key === 'ArrowDown' && atMatches.length) {
+        e.preventDefault();
+        setActive((i) => (i + 1) % atMatches.length);
+        return;
+      }
+      if (e.key === 'ArrowUp' && atMatches.length) {
+        e.preventDefault();
+        setActive((i) => (i - 1 + atMatches.length) % atMatches.length);
+        return;
+      }
+      if ((e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) && atMatches.length) {
+        e.preventDefault();
+        pickMention(atMatches[active] ?? atMatches[0]!);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setDismissed(value);
+        return;
+      }
+    }
     if (pickerOpen && matches.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -127,11 +194,20 @@ export function ChatInput({
             onPick={pick}
           />
         )}
+        {atOpen && at && (
+          <MentionPicker items={atMatches} query={at.query} activeIndex={active} onHover={setActive} onPick={pickMention} />
+        )}
         <textarea
           ref={ref}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            onChange(e.target.value);
+            setCaret(e.target.selectionStart ?? e.target.value.length);
+          }}
           onKeyDown={onKey}
+          onKeyUp={trackCaret}
+          onClick={trackCaret}
+          onSelect={trackCaret}
           placeholder={placeholder}
           disabled={disabled}
           rows={1}
@@ -179,6 +255,27 @@ export function ChatInput({
               <SlashSquare className="size-3.5" /> Skills
               {commands.length > 0 && <span className="text-ink-3">{commands.length}</span>}
             </button>
+            {items.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  // "@" where the caret is (or at the end), then the list opens
+                  const el = ref.current;
+                  const pos = el ? (el.selectionStart ?? value.length) : value.length;
+                  const head = value.slice(0, pos);
+                  const glue = head && !/\s$/.test(head) ? ' ' : '';
+                  const next = `${head}${glue}@${value.slice(pos)}`;
+                  onChange(next);
+                  setDismissed(null);
+                  setPendingCaret(head.length + glue.length + 1);
+                }}
+                className="flex h-7 items-center gap-1 rounded-md px-2 text-[11.5px] font-medium text-ink-2 hover:bg-panel-2 hover:text-ink"
+                title="Name a mark or an element — @C1"
+              >
+                <AtSign className="size-3.5" /> Marks
+                <span className="text-ink-3">{mentions.marks.length}</span>
+              </button>
+            )}
             {controls ? (
               <SessionControls {...controls} look="text" embedded />
             ) : (
