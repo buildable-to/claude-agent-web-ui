@@ -26,6 +26,9 @@ export const page = {
   token: read('token'),
   project: read('project'),
   embed: read('embed') === '1',
+  /** The conversation the link names (`?conversation=<id>`), read from the
+   *  URL alone — a link decides, never the tab's remembered past. */
+  conversation: new URLSearchParams(location.search).get('conversation'),
   /** Dev mode only (server started with --dev-auth): which folder to use. */
   account: read('account'),
 };
