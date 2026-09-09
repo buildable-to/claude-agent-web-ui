@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ServerConfig } from '@shared/protocol';
+import { AgentDock } from './components/AgentDock';
 import { ChatInput } from './components/ChatInput';
 import { FileTree } from './components/FileTree';
+import { dockLanes } from '@/lib/agents';
 import { finishedFileSteps, runningAgents } from '@/lib/transcript';
 import { MessageList } from './components/MessageList';
 import { PermissionBanner } from './components/PermissionBanner';
@@ -61,6 +63,9 @@ export default function App() {
   // reload the files panel now, not only when the whole turn ends.
   const fileSteps = finishedFileSteps(state.transcript);
   const agentsRunning = runningAgents(state.transcript);
+  // sub-agents still out, kept under the chat where the transcript cannot
+  // scroll them away
+  const dock = dockLanes(state.transcript);
   useEffect(() => {
     if (fileSteps > 0) setTreeKey((k) => k + 1);
   }, [fileSteps]);
@@ -201,6 +206,7 @@ export default function App() {
           }}
           {...(embed ? EMBED_COPY : {})}
         />
+        {dock.length > 0 && <AgentDock lanes={dock} />}
         {connection === 'expired' && (
           <p className="mx-auto w-full max-w-3xl px-6 text-[12.5px] text-warn">
             This page’s access has expired. Reload the project to continue.

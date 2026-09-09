@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   agentName,
   agentType,
+  dockLanes,
   findingLine,
   fmtElapsed,
   isFanOut,
@@ -11,7 +12,7 @@ import {
   noteLaneTime,
   resetLaneClock,
 } from './agents';
-import type { ToolBlock } from './transcript';
+import { emptyTranscript, type ToolBlock, type Turn } from './transcript';
 
 const task = (id: string, extra: Partial<ToolBlock> = {}, input: Record<string, unknown> = {}): ToolBlock => ({
   type: 'tool_use',
@@ -154,3 +155,33 @@ test('the recorded <task-notification> is the lane’s finding after a reload, n
   assert.equal(b.task?.durationMs, 89480);
   assert.equal(b.task?.toolUses, 3);
 });
+
+test('the dock lists every sub-agent of a turn that still has one running, running first; nothing once all are back', () => {
+  const turn = (id: string, blocks: ToolBlock[], open: boolean): Turn => ({ kind: 'assistant', id, blocks, open });
+  const t = (...turns: Turn[]) => ({ ...emptyTranscript(), turns });
+  const ids = (lanes: ReturnType<typeof dockLanes>) => lanes.map((l) => l.agent.id);
+
+  // A live fan-out: the one already back is listed after the one still out.
+  const live = turn('t1', [bash('b'), task('a', { result: 'found' }), task('c')], true);
+  assert.deepEqual(ids(dockLanes(t(live))), ['c', 'a']);
+  assert.equal(dockLanes(t(live))[0]?.live, true);
+
+  // The turn ended with a foreground sub-agent unfinished: not running, so nothing to dock.
+  assert.deepEqual(ids(dockLanes(t(turn('t1', [task('a', { result: 'found' }), task('c')], false)))), []);
+
+  // A backgrounded sub-agent runs on after its turn: docked, with its finished sibling.
+  const bg = turn('t1', [task('a', { result: 'found' }), task('c', { task: { status: 'running' } })], false);
+  assert.deepEqual(ids(dockLanes(t(bg))), ['c', 'a']);
+
+  // Only turns with something running contribute; earlier fan-outs stay in the transcript.
+  const earlier = turn('t0', [task('x', { result: 'x' }), task('y', { result: 'y' })], false);
+  assert.deepEqual(ids(dockLanes(t(earlier, bg))), ['c', 'a']);
+
+  // Everything back: the dock is gone.
+  assert.deepEqual(ids(dockLanes(t(turn('t1', [task('a', { result: 'a' }), task('c', { result: 'c' })], true)))), []);
+  assert.deepEqual(ids(dockLanes(t(user()))), []);
+});
+
+function user(): Turn {
+  return { kind: 'user', id: 'u', text: 'hi', images: 0 };
+}
