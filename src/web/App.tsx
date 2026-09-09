@@ -75,15 +75,26 @@ export default function App() {
   const [mentions, setMentions] = useState<Mentions>(EMPTY_MENTIONS);
   useEffect(() => (embed ? listenForMentions(setMentions) : undefined), []);
 
-  // Embedded on a project: open its latest conversation, so the engineer
-  // continues where they left off instead of starting blank every time.
+  // Embedded on a project: open the conversation the link names, else the
+  // latest one, so the engineer continues where they left off instead of
+  // starting blank every time.
   useEffect(() => {
     if (!embed || autoPicked.current || !sessionsLoaded) return;
     autoPicked.current = true; // decided once, on the first list; "New" later means new
     if (selected.id !== null || state.transcript.turns.length > 0 || state.status !== 'idle') return;
-    const latest = sessions[0];
-    if (latest) setSelected((s) => ({ id: latest.sessionId, nonce: s.nonce + 1 }));
+    const named = page.conversation ? sessions.find((x) => x.sessionId === page.conversation) : undefined;
+    const open = named ?? sessions[0];
+    if (open) setSelected((s) => ({ id: open.sessionId, nonce: s.nonce + 1 }));
   }, [sessionsLoaded, sessions, selected.id, state.transcript.turns.length, state.status]);
+
+  // The page that embeds us keeps the open conversation in its address, so a
+  // link lands on this exact conversation and Back/Forward walk between them.
+  // A new conversation has no id until its first turn; it is told then.
+  const openConversation = selected.id ?? state.sessionId ?? null;
+  useEffect(() => {
+    if (!embed) return;
+    tellParent({ type: 'conversation', id: openConversation });
+  }, [openConversation]);
 
   // The page that embeds us wants two things: when the project changed for
   // real (redraw), and whether the agent needs a human (badge the fold button).
