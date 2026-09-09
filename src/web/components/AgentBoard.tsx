@@ -40,7 +40,7 @@ export function FanOut({ blocks, live }: Props) {
   );
 }
 
-function useClock(on: boolean) {
+export function useClock(on: boolean) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!on) return;
@@ -50,7 +50,7 @@ function useClock(on: boolean) {
   return on ? now : Date.now();
 }
 
-function boardElapsed(agents: ToolBlock[], now: number): number | undefined {
+export function boardElapsed(agents: ToolBlock[], now: number): number | undefined {
   let start = Infinity;
   let end = -Infinity;
   for (const a of agents) {
@@ -150,7 +150,7 @@ export function AgentBoard({ agents, live }: { agents: ToolBlock[]; live: boolea
   );
 }
 
-type LaneProps = {
+export type LaneProps = {
   agent: ToolBlock;
   live: boolean;
   now: number;
@@ -158,7 +158,7 @@ type LaneProps = {
   onToggle: () => void;
 };
 
-function Lane({ agent, live, now, open, onToggle }: LaneProps) {
+export function Lane({ agent, live, now, open, onToggle }: LaneProps) {
   const state = laneState(agent, live);
   const back = state !== 'running';
   const detail = toolDetail(agent) ?? (state === 'running' ? 'Working' : undefined);

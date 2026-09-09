@@ -1,7 +1,7 @@
 // Sub-agents as the page reads them: a Task/Agent tool block whose children
 // are the calls the sub-agent made and whose result is its finding. Pure
 // helpers; the board and the card both lean on them.
-import { ASYNC_PLACEHOLDER, isInFlight, type ToolBlock } from './transcript';
+import { ASYNC_PLACEHOLDER, isInFlight, type ToolBlock, type Transcript } from './transcript';
 
 export const DEFAULT_AGENT_TYPE = 'general-purpose';
 
@@ -35,6 +35,29 @@ export function laneState(block: ToolBlock, live: boolean): LaneState {
   }
   if (block.result === undefined) return live ? 'running' : 'done';
   return block.isError ? 'failed' : 'done';
+}
+
+/** A row of the dock under the chat: the sub-agent, and whether the turn
+ *  that launched it is still live (a foreground sub-agent with no result yet
+ *  is running only while its turn is). */
+export type DockLane = { agent: ToolBlock; live: boolean };
+
+/** What the dock under the chat shows: every sub-agent of a turn that still
+ *  has one running — the running ones first, then the ones already back, so
+ *  the engineer watches the whole fan-out settle without scrolling after it.
+ *  Empty once nothing runs: the board in the transcript is the record. */
+export function dockLanes(t: Transcript): DockLane[] {
+  const running: DockLane[] = [];
+  const back: DockLane[] = [];
+  for (const turn of t.turns) {
+    if (turn.kind !== 'assistant') continue;
+    const agents = turn.blocks.filter((b): b is ToolBlock => b.type === 'tool_use' && isSubAgent(b));
+    if (!agents.some((a) => laneState(a, turn.open) === 'running')) continue;
+    for (const a of agents) {
+      (laneState(a, turn.open) === 'running' ? running : back).push({ agent: a, live: turn.open });
+    }
+  }
+  return [...running, ...back];
 }
 
 /** The sub-agent came back with something to read. */
