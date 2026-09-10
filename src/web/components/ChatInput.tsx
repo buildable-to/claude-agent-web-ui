@@ -1,4 +1,4 @@
-import { ArrowUp, AtSign, Eye, SlashSquare, Square, X } from 'lucide-react';
+import { ArrowUp, AtSign, Eye, EyeOff, SlashSquare, Square, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { CommandInfo, SessionStatus } from '@shared/protocol';
 import { money } from '@/lib/format';
@@ -36,6 +36,11 @@ type Props = {
   /** What is on the studio's screen; rides in front of the next message. */
   viewing?: Viewing | null;
   onDismissViewing?: () => void;
+  /** The engineer dropped the chip (✕); a small eye-off brings it back. */
+  viewingDismissed?: boolean;
+  onRestoreViewing?: () => void;
+  /** Click the chip: the studio frames what it names. */
+  onShowViewing?: () => void;
 };
 
 /** The picker is open while the draft is a lone "/word" with no space yet. */
@@ -59,6 +64,9 @@ export function ChatInput({
   mentions = EMPTY_MENTIONS,
   viewing = null,
   onDismissViewing,
+  viewingDismissed = false,
+  onRestoreViewing,
+  onShowViewing,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const mirror = useRef<HTMLDivElement>(null);
@@ -211,29 +219,54 @@ export function ChatInput({
         )}
         {/* What is on the studio's screen, always on: the chip says what the
             next message will carry in front of it ("Looking at …"), so the
-            engineer sees what the agent will be told. ✕ drops it until the
-            screen changes; there is nothing to type to get it back. */}
+            engineer sees what the agent will be told. The words are a button
+            — click, and the studio frames what they name (the answer to
+            "what does it think I am looking at"). ✕ drops it until the screen
+            changes; the eye-off it leaves behind brings it back. A new screen
+            re-keys the chip, so it rises in afresh and the change is seen. */}
         {viewing && (
-          <div className="flex items-center gap-1.5 px-3 pt-2.5">
+          <div key={viewing.text} className="viewing-in flex items-center gap-1.5 px-3 pt-2.5">
             <span
               title={viewing.line}
-              className="flex max-w-full items-center gap-1.5 rounded-full bg-panel-2 py-0.5 pr-1 pl-2 text-[11.5px] font-medium text-ink-2"
+              className="flex max-w-full items-center gap-1.5 rounded-full bg-panel-2 py-0.5 pr-1 pl-2 text-[12px] font-medium text-ink-2"
             >
               <Eye className="size-3 shrink-0 text-ink-3" />
-              <span className="text-ink-3">Looking at</span>
-              <span className="truncate text-ink">{viewing.text}</span>
+              <span className="shrink-0 text-ink-3">Looking at</span>
+              <button
+                type="button"
+                onClick={onShowViewing}
+                disabled={!onShowViewing}
+                title="Show it in the studio"
+                className="viewing-text min-w-0 truncate text-ink hover:underline disabled:no-underline"
+              >
+                {viewing.text}
+              </button>
               {onDismissViewing && (
                 <button
                   type="button"
                   onClick={onDismissViewing}
                   title="Leave this out of the next message"
                   aria-label="Leave this out of the next message"
-                  className="rounded-full p-0.5 text-ink-3 hover:bg-panel-3 hover:text-ink"
+                  className="shrink-0 rounded-full p-0.5 text-ink-3 hover:bg-panel-3 hover:text-ink"
                 >
                   <X className="size-3" />
                 </button>
               )}
             </span>
+          </div>
+        )}
+        {!viewing && viewingDismissed && onRestoreViewing && (
+          <div className="flex items-center px-3 pt-2.5">
+            <button
+              type="button"
+              onClick={onRestoreViewing}
+              title="Put what you are looking at back in front of the next message"
+              aria-label="Put what you are looking at back in front of the next message"
+              className="flex items-center gap-1 rounded-full py-0.5 pr-2 pl-1.5 text-[11.5px] text-ink-3 hover:bg-panel-2 hover:text-ink"
+            >
+              <EyeOff className="size-3" />
+              <span>not saying what you look at</span>
+            </button>
           </div>
         )}
         {/* A chosen mark should look chosen while you type, not only after

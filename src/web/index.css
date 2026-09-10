@@ -418,6 +418,45 @@ select.pill {
 .rise {
   animation: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
+/* the looking-at chip: a new screen re-keys it, and it rises in with a
+   moment of the accent behind the words, so a change is seen without a sound */
+@keyframes viewing-in {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes viewing-flash {
+  0%,
+  35% {
+    background: var(--accent-soft, rgba(47, 111, 208, 0.28));
+  }
+  100% {
+    background: transparent;
+  }
+}
+.viewing-in {
+  animation: viewing-in 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.viewing-in .viewing-text {
+  animation: viewing-flash 1.4s ease-out both;
+  border-radius: 4px;
+  padding: 0 3px;
+  margin: 0 -3px;
+  /* the END of the words is the view; when the chip is too narrow the cut
+     falls at the start ("…page 1 of 4 · VIEW FROM A"), not at the view */
+  direction: rtl;
+  text-align: left;
+  unicode-bidi: plaintext;
+}
 @keyframes breathe {
   0%,
   100% {

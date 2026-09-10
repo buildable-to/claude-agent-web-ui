@@ -14,7 +14,7 @@ import { EMPTY_MENTIONS, type Mentions } from './lib/mentions';
 import { listenForMentions, MentionsProvider } from './lib/mentionsLive';
 import { BASE, page, tellParent } from './lib/page';
 import { hearParent, readViewing, withViewing, type Viewing } from './lib/studio';
-import { ViewingProvider } from './lib/viewingLive';
+import { showViewing, ViewingProvider } from './lib/viewingLive';
 import { ws, type ConnectionState } from './lib/ws';
 import { useEngineInfo } from './state/useEngineInfo';
 import { useSession } from './state/useSession';
@@ -268,6 +268,9 @@ export default function App() {
           mentions={mentions}
           viewing={viewingOn}
           onDismissViewing={() => setViewingOff(viewing ? viewing.text : null)}
+          viewingDismissed={!!viewing && !viewingOn}
+          onRestoreViewing={() => setViewingOff(null)}
+          onShowViewing={viewingOn && (viewingOn.view || viewingOn.mark) ? () => showViewing(viewingOn) : undefined}
           {...(embed
             ? {
                 controls: {

@@ -23,3 +23,15 @@ export function showView(viewKey: string, viewing: Viewing | null) {
     sheet: viewing.sheet?.kind ?? null,
   });
 }
+
+/** Say to the studio: frame what the chip names — the picked view when there
+ *  is one, else light the piece up. The answer to "what does it think I am
+ *  looking at", one click. */
+export function showViewing(viewing: Viewing | null) {
+  if (!viewing || !viewing.mark) return;
+  if (viewing.view) {
+    showView(viewing.view.key, viewing);
+    return;
+  }
+  tellParent({ type: 'highlight', mark: viewing.mark });
+}
