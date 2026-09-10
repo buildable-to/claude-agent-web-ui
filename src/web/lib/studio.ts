@@ -1,59 +1,99 @@
-// The Project Studio protocol: what this page says to the Buildable page that
-// embeds it, and what it hears back. Both directions are pinned to the
-// embedder's origin, read off the referrer — the iframe is cross-origin on a
-// laptop (:3456 beside :5000) and same-origin behind nginx on the box, so the
-// origin is discovered, never assumed.
+// What the Project Studio page that embeds us says about ITSELF: what is on
+// the engineer's screen right now. Everything you can look at over there is
+// a named thing — a piece, a sheet, a page, a view — and the page posts one
+// `viewing` record whenever that changes. This panel shows it as a chip
+// above the composer and sends it in front of the next message, so "make
+// this bigger" carries what "this" is.
 //
 // Kept apart from page.ts on purpose: page.ts reads location at import time,
-// which a plain unit test has no business needing.
+// which a plain unit test has no business needing. The listening side is
+// pinned to the embedder's origin, read off the referrer — the iframe is
+// cross-origin on a laptop (:3456 beside :5000) and same-origin behind nginx
+// on the box, so the origin is discovered, never assumed.
 
-/** Tell the page that embeds us (Project Studio) something happened. */
-export function tellParent(message: Record<string, unknown>) {
-  if (window.parent === window) return;
-  // Only the page that embedded us hears us — the messages carry what the
-  // engineer typed. The referrer is that page (the default referrer policy
-  // keeps the origin across origins); without one, nobody is told.
-  let target: string | null = null;
-  try {
-    target = document.referrer ? new URL(document.referrer).origin : null;
-  } catch {
-    target = null;
-  }
-  if (!target) return;
-  window.parent.postMessage({ source: 'buildable-agent', ...message }, target);
-}
-
-/** A piece the engineer picked in the studio: its mark, the library element it
- *  came from, and how many of it are placed. Sent as `type: 'mention'` when a
- *  piece is clicked in the 3D or the Elements panel. */
-export type StudioTag = {
-  mark: string;
-  element: { id: string; name: string; kind: string };
-  count: number;
-  ids: string[];
+/** What is on the studio's screen. `text` is the chip ("E1 · Reinforcement ·
+ *  page 1 of 4 · VIEW FROM A"); `line` is the sentence that rides in front
+ *  of the next message ("Looking at E1 · Reinforcement · page 1 of 4 · VIEW
+ *  FROM A [viewA]"). The fields say the same thing for a reader that wants
+ *  fields; only the two strings are required. */
+export type Viewing = {
+  mode: '3d' | 'xray' | 'drawings';
+  text: string;
+  line: string;
+  mark?: string;
+  element?: { id: string; name: string; kind: string };
+  sheet?: { kind: string; label: string };
+  page?: { n: number; of: number };
+  view?: { key: string; caption: string; denom: number | null };
+  ga?: { id: string; title: string };
 };
 
-/** Read a 'mention' message off the wire, or null if it is not one we trust to
- *  be well formed. The studio is same-origin-ish and friendly, but a tag that
- *  names nothing would put a bare "@" in front of the engineer's sentence. */
-export function readTag(m: Record<string, unknown>): StudioTag | null {
-  if (m.type !== 'mention' || typeof m.mark !== 'string' || !m.mark) return null;
-  const e = (m.element ?? {}) as Record<string, unknown>;
-  return {
-    mark: m.mark,
-    element: {
+/** The words the composer puts in front of the message, and the words the
+ *  transcript folds back off it. One place, so the two cannot drift. */
+export const LOOKING_AT = 'Looking at ';
+
+/** Read a `viewing` record off the wire, or null if it is not one we trust
+ *  to be well formed. A record with no words would print an empty chip and
+ *  a bare "Looking at" in front of the engineer's sentence. */
+export function readViewing(m: Record<string, unknown>): Viewing | null {
+  if (m.type !== 'viewing') return null;
+  const text = typeof m.text === 'string' ? m.text.trim() : '';
+  const line = typeof m.line === 'string' ? m.line.trim() : '';
+  if (!text || !line.startsWith(LOOKING_AT)) return null;
+  const mode = m.mode === 'xray' || m.mode === 'drawings' ? m.mode : '3d';
+  const out: Viewing = { mode, text, line };
+  if (typeof m.mark === 'string' && m.mark) out.mark = m.mark;
+  const e = m.element as Record<string, unknown> | undefined;
+  if (e && typeof e === 'object') {
+    out.element = {
       id: typeof e.id === 'string' ? e.id : '',
       name: typeof e.name === 'string' ? e.name : '',
       kind: typeof e.kind === 'string' ? e.kind : '',
-    },
-    count: typeof m.count === 'number' ? m.count : 0,
-    ids: Array.isArray(m.ids) ? m.ids.filter((x): x is string => typeof x === 'string') : [],
-  };
+    };
+  }
+  const s = m.sheet as Record<string, unknown> | undefined;
+  if (s && typeof s === 'object' && typeof s.kind === 'string') {
+    out.sheet = { kind: s.kind, label: typeof s.label === 'string' ? s.label : s.kind };
+  }
+  const p = m.page as Record<string, unknown> | undefined;
+  if (p && typeof p === 'object' && typeof p.n === 'number' && typeof p.of === 'number') {
+    out.page = { n: p.n, of: p.of };
+  }
+  const v = m.view as Record<string, unknown> | undefined;
+  if (v && typeof v === 'object' && typeof v.key === 'string' && v.key) {
+    out.view = {
+      key: v.key,
+      caption: typeof v.caption === 'string' && v.caption ? v.caption : v.key,
+      denom: typeof v.denom === 'number' ? v.denom : null,
+    };
+  }
+  const g = m.ga as Record<string, unknown> | undefined;
+  if (g && typeof g === 'object' && typeof g.id === 'string' && g.id) {
+    out.ga = { id: g.id, title: typeof g.title === 'string' ? g.title : '' };
+  }
+  return out;
 }
 
-/** Listen to the page that embeds us (Project Studio). Mirror of tellParent:
- *  only the embedder is heard, judged by the same referrer origin we speak to,
- *  and only messages that say who they are. Returns an unsubscribe. */
+/** The message as the engine gets it: the looking-at line first, then what
+ *  the engineer typed. Context, never a command — the sentence beneath it
+ *  says what to do. */
+export function withViewing(text: string, viewing: Viewing | null): string {
+  return viewing ? `${viewing.line}\n${text}` : text;
+}
+
+/** The transcript's view of a sent message: the looking-at line folded back
+ *  off the top, so it can be shown as a small grey line above the bubble
+ *  instead of as typed text. A message that never had one comes back whole. */
+export function splitViewing(text: string): { viewing: string | null; text: string } {
+  if (!text.startsWith(LOOKING_AT)) return { viewing: null, text };
+  const nl = text.indexOf('\n');
+  if (nl < 0) return { viewing: null, text };
+  return { viewing: text.slice(0, nl), text: text.slice(nl + 1) };
+}
+
+/** Listen to the page that embeds us (Project Studio). Only the embedder is
+ *  heard, judged by the referrer origin, and only messages that say who
+ *  they are. Returns an unsubscribe. */
 export function hearParent(handler: (message: Record<string, unknown>) => void): () => void {
   if (window.parent === window) return () => {};
   let origin: string | null = null;

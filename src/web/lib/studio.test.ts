@@ -1,51 +1,80 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readTag } from './studio';
+import { readViewing, splitViewing, withViewing } from './studio';
 
-// A tag comes off a postMessage from Project Studio. It is shown to the
-// engineer and it goes out in front of what they type, so a malformed one
-// would put a bare "@" — or a stranger's shape — into the agent's prompt.
+// A `viewing` record comes off a postMessage from Project Studio. It is shown
+// to the engineer as a chip and it goes out in front of what they type, so a
+// malformed one would print an empty chip, or a bare "Looking at" — or a
+// stranger's shape — into the agent's prompt.
 
 const good = {
   source: 'buildable-studio',
-  type: 'mention',
+  type: 'viewing',
   project: 'nika30x15',
-  mark: 'C3',
-  element: { id: 'e1', name: 'Fachwerk column 410×400', kind: 'column' },
-  count: 3,
-  ids: ['o1', 'o2', 'o3'],
+  mode: 'drawings',
+  mark: 'E1',
+  element: { id: 'e1', name: 'Double-slope roof beam 500', kind: 'beam' },
+  sheet: { kind: 'bands', label: 'Reinforcement' },
+  page: { n: 1, of: 4 },
+  view: { key: 'viewA', caption: 'VIEW FROM A', denom: 12 },
+  text: 'E1 · Reinforcement · page 1 of 4 · VIEW FROM A',
+  line: 'Looking at E1 · Reinforcement · page 1 of 4 · VIEW FROM A [viewA]',
 };
 
-test('reads a piece the studio picked', () => {
-  assert.deepEqual(readTag(good), {
-    mark: 'C3',
-    element: { id: 'e1', name: 'Fachwerk column 410×400', kind: 'column' },
-    count: 3,
-    ids: ['o1', 'o2', 'o3'],
+test('reads what the studio shows', () => {
+  assert.deepEqual(readViewing(good), {
+    mode: 'drawings',
+    text: 'E1 · Reinforcement · page 1 of 4 · VIEW FROM A',
+    line: 'Looking at E1 · Reinforcement · page 1 of 4 · VIEW FROM A [viewA]',
+    mark: 'E1',
+    element: { id: 'e1', name: 'Double-slope roof beam 500', kind: 'beam' },
+    sheet: { kind: 'bands', label: 'Reinforcement' },
+    page: { n: 1, of: 4 },
+    view: { key: 'viewA', caption: 'VIEW FROM A', denom: 12 },
   });
 });
 
-test('refuses anything that is not a mention', () => {
-  assert.equal(readTag({ ...good, type: 'mentions' }), null);
+test('refuses anything that is not a viewing record', () => {
+  assert.equal(readViewing({ ...good, type: 'mentions' }), null);
+  assert.equal(readViewing({ ...good, type: 'mention' }), null);
 });
 
-test('refuses a tag with no mark — it would render as a bare @', () => {
-  assert.equal(readTag({ ...good, mark: '' }), null);
-  assert.equal(readTag({ ...good, mark: 7 }), null);
-  const { mark: _mark, ...noMark } = good;
-  assert.equal(readTag(noMark), null);
+test('refuses a record with no words — it would print an empty chip', () => {
+  assert.equal(readViewing({ ...good, text: '' }), null);
+  assert.equal(readViewing({ ...good, text: 7 }), null);
+  assert.equal(readViewing({ ...good, line: 'E1' }), null); // not context, a bare name
 });
 
-test('survives a tag with no element or counts — the mark is what matters', () => {
-  assert.deepEqual(readTag({ source: 'buildable-studio', type: 'mention', mark: 'B1' }), {
-    mark: 'B1',
-    element: { id: '', name: '', kind: '' },
-    count: 0,
-    ids: [],
+test('the whole project in 3D is the smallest record there is', () => {
+  const v = readViewing({
+    source: 'buildable-studio',
+    type: 'viewing',
+    mode: '3d',
+    text: 'the whole project in 3D',
+    line: 'Looking at the whole project in 3D',
   });
+  assert.deepEqual(v, { mode: '3d', text: 'the whole project in 3D', line: 'Looking at the whole project in 3D' });
 });
 
-test('keeps only the string ids', () => {
-  assert.deepEqual(readTag({ ...good, ids: ['o1', 3, null, 'o2'] })?.ids, ['o1', 'o2']);
-  assert.deepEqual(readTag({ ...good, ids: 'o1' })?.ids, []);
+test('an unknown mode reads as 3D, a view with no caption is named by its key', () => {
+  const v = readViewing({ ...good, mode: 'cinema', view: { key: 'elev' } });
+  assert.equal(v?.mode, '3d');
+  assert.deepEqual(v?.view, { key: 'elev', caption: 'elev', denom: null });
+});
+
+test('the line rides in front of the message, and folds back off it in the transcript', () => {
+  const v = readViewing(good)!;
+  const sent = withViewing('make this 25% bigger', v);
+  assert.equal(sent, `${good.line}\nmake this 25% bigger`);
+  assert.deepEqual(splitViewing(sent), { viewing: good.line, text: 'make this 25% bigger' });
+});
+
+test('a message with no context goes out and comes back whole', () => {
+  assert.equal(withViewing('hi', null), 'hi');
+  assert.deepEqual(splitViewing('hi'), { viewing: null, text: 'hi' });
+  // an engineer who happens to START a sentence with the words is not folded
+  assert.deepEqual(splitViewing('Looking at it now, seems fine'), {
+    viewing: null,
+    text: 'Looking at it now, seems fine',
+  });
 });

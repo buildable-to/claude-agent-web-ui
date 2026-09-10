@@ -1,7 +1,8 @@
-import { AlertTriangle, Info } from 'lucide-react';
+import { AlertTriangle, Eye, Info } from 'lucide-react';
 import { memo } from 'react';
 import { splitMentions } from '@/lib/mentions';
 import { useMentions } from '@/lib/mentionsLive';
+import { splitViewing } from '@/lib/studio';
 import { isInFlight, NO_RESPONSE, type Block, type ToolBlock, type Turn } from '@/lib/transcript';
 import Markdown from './Markdown';
 import { Mention } from './Mention';
@@ -62,10 +63,20 @@ export const TurnView = memo(function TurnView({ turn, live = false }: TurnProps
   const mentions = useMentions();
   const marks = mentions.marks.map((m) => m.mark);
   if (turn.kind === 'user') {
+    // the looking-at line the composer put in front of the words is folded
+    // back off: a small grey line above the bubble says what the agent was
+    // told the engineer was looking at, and the bubble holds only their words
+    const { viewing, text } = splitViewing(turn.text);
     return (
-      <div className="rise flex justify-end pl-10">
+      <div className="rise flex flex-col items-end pl-10">
+        {viewing && (
+          <div className="mb-1 flex max-w-[min(34rem,78%)] items-center gap-1 text-[11px] text-ink-3" title={viewing}>
+            <Eye className="size-3 shrink-0" />
+            <span className="truncate">{viewing.replace(/ \[[^\]]+\]$/, '')}</span>
+          </div>
+        )}
         <div className="max-w-[min(34rem,78%)] rounded-[18px] rounded-br-[5px] bg-bubble px-3.5 py-2 text-[13.5px] leading-[1.5] whitespace-pre-wrap break-words text-white shadow-[0_1px_2px_rgba(0,0,0,.25)]">
-          {splitMentions(turn.text).map((part, i) =>
+          {splitMentions(text).map((part, i) =>
             typeof part === 'string' ? part : <Mention key={i} token={part.mention} light />,
           )}
           {turn.images > 0 && (

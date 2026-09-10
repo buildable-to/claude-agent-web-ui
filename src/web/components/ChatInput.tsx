@@ -1,7 +1,8 @@
-import { ArrowUp, AtSign, SlashSquare, Square } from 'lucide-react';
+import { ArrowUp, AtSign, Eye, SlashSquare, Square, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { CommandInfo, SessionStatus } from '@shared/protocol';
 import { money } from '@/lib/format';
+import type { Viewing } from '@/lib/studio';
 import {
   EMPTY_MENTIONS,
   insertMention,
@@ -32,6 +33,9 @@ type Props = {
   controls?: Omit<ControlsProps, 'look' | 'embedded'>;
   /** The project's marks and elements, offered on "@" (posted in by the studio). */
   mentions?: Mentions;
+  /** What is on the studio's screen; rides in front of the next message. */
+  viewing?: Viewing | null;
+  onDismissViewing?: () => void;
 };
 
 /** The picker is open while the draft is a lone "/word" with no space yet. */
@@ -53,6 +57,8 @@ export function ChatInput({
   focusKey,
   controls,
   mentions = EMPTY_MENTIONS,
+  viewing = null,
+  onDismissViewing,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const mirror = useRef<HTMLDivElement>(null);
@@ -202,6 +208,33 @@ export function ChatInput({
         )}
         {atOpen && at && (
           <MentionPicker items={atMatches} query={at.query} activeIndex={active} onHover={setActive} onPick={pickMention} />
+        )}
+        {/* What is on the studio's screen, always on: the chip says what the
+            next message will carry in front of it ("Looking at …"), so the
+            engineer sees what the agent will be told. ✕ drops it until the
+            screen changes; there is nothing to type to get it back. */}
+        {viewing && (
+          <div className="flex items-center gap-1.5 px-3 pt-2.5">
+            <span
+              title={viewing.line}
+              className="flex max-w-full items-center gap-1.5 rounded-full bg-panel-2 py-0.5 pr-1 pl-2 text-[11.5px] font-medium text-ink-2"
+            >
+              <Eye className="size-3 shrink-0 text-ink-3" />
+              <span className="text-ink-3">Looking at</span>
+              <span className="truncate text-ink">{viewing.text}</span>
+              {onDismissViewing && (
+                <button
+                  type="button"
+                  onClick={onDismissViewing}
+                  title="Leave this out of the next message"
+                  aria-label="Leave this out of the next message"
+                  className="rounded-full p-0.5 text-ink-3 hover:bg-panel-3 hover:text-ink"
+                >
+                  <X className="size-3" />
+                </button>
+              )}
+            </span>
+          </div>
         )}
         {/* A chosen mark should look chosen while you type, not only after
             sending. A textarea cannot colour a word, so a mirror behind it
