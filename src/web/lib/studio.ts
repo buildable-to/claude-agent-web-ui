@@ -157,3 +157,19 @@ export function hearParent(handler: (message: Record<string, unknown>) => void):
   window.addEventListener('message', on);
   return () => window.removeEventListener('message', on);
 }
+
+/** The transcript's grey line, read back: "Looking at E1 · Reinforcement ·
+ *  page 1 of 4 · VIEW FROM A [viewA]" → the mark (first part), the sheet
+ *  (second part, a label the studio resolves) and the view's key (the
+ *  bracket at the end). A line about the whole project, or a GA sheet,
+ *  names no piece and reads as null. */
+export function parseLine(line: string): { mark: string; sheet: string | null; view: string | null } | null {
+  const t = line.trim().replace(/^Looking at /, '');
+  const km = /\s\[([^\]]+)\]$/.exec(t);
+  const view = km?.[1] ?? null;
+  const parts = (km ? t.slice(0, km.index) : t).split(' · ');
+  const mark = parts[0]?.trim() ?? '';
+  if (!mark || mark.startsWith('the ') || /^S-\d+$/.test(mark)) return null;
+  const sheet = parts.length > 1 ? (parts[1] ?? '').trim() : '';
+  return { mark, sheet: sheet || null, view };
+}

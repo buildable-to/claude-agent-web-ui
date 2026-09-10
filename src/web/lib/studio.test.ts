@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { linkViews, readViewing, splitViewing, withViewing } from './studio';
+import { linkViews, parseLine, readViewing, splitViewing, withViewing } from './studio';
 
 // A `viewing` record comes off a postMessage from Project Studio. It is shown
 // to the engineer as a chip and it goes out in front of what they type, so a
@@ -111,4 +111,20 @@ test('a longer caption wins over one it contains', () => {
 
 test('no views, no change', () => {
   assert.equal(linkViews('VIEW FROM A', []), 'VIEW FROM A');
+});
+
+// The grey line above a sent message, read back so a click can show it.
+test('the line reads back to a mark, a sheet label and a view key', () => {
+  assert.deepEqual(parseLine('Looking at E1 · Reinforcement · page 1 of 4 · VIEW FROM A [viewA]'), {
+    mark: 'E1',
+    sheet: 'Reinforcement',
+    view: 'viewA',
+  });
+  assert.deepEqual(parseLine('Looking at C1 · 3D'), { mark: 'C1', sheet: '3D', view: null });
+  assert.deepEqual(parseLine('Looking at E1 · Formwork · Elevation [elev]'), { mark: 'E1', sheet: 'Formwork', view: 'elev' });
+});
+
+test('a line that names no piece reads as nothing to show', () => {
+  assert.equal(parseLine('Looking at the whole project in 3D'), null);
+  assert.equal(parseLine('Looking at S-231 · FACHWERK COLUMNS PLAN'), null);
 });
