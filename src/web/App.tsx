@@ -14,6 +14,7 @@ import { EMPTY_MENTIONS, type Mentions } from './lib/mentions';
 import { listenForMentions, MentionsProvider } from './lib/mentionsLive';
 import { BASE, page, tellParent } from './lib/page';
 import { hearParent, readViewing, withViewing, type Viewing } from './lib/studio';
+import { ViewingProvider } from './lib/viewingLive';
 import { ws, type ConnectionState } from './lib/ws';
 import { useEngineInfo } from './state/useEngineInfo';
 import { useSession } from './state/useSession';
@@ -194,6 +195,7 @@ export default function App() {
 
   return (
     <MentionsProvider value={mentions}>
+    <ViewingProvider value={viewing}>
     <div className="flex h-full">
       {!embed && (
         <Sidebar
@@ -281,6 +283,7 @@ export default function App() {
       </div>
       {filesOpen && !embed && <FileTree onPick={(p) => insertText(p)} refreshKey={treeKey} />}
     </div>
+    </ViewingProvider>
     </MentionsProvider>
   );
 }

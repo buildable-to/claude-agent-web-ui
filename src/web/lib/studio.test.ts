@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readViewing, splitViewing, withViewing } from './studio';
+import { linkViews, readViewing, splitViewing, withViewing } from './studio';
 
 // A `viewing` record comes off a postMessage from Project Studio. It is shown
 // to the engineer as a chip and it goes out in front of what they type, so a
@@ -77,4 +77,38 @@ test('a message with no context goes out and comes back whole', () => {
     viewing: null,
     text: 'Looking at it now, seems fine',
   });
+});
+
+// Views the agent names become pills — only the open sheet's, as printed.
+const VIEWS = [
+  { key: 'elev', caption: 'ELEVATION', denom: 75 },
+  { key: 'viewA', caption: 'VIEW FROM A', denom: 12 },
+  { key: 'sec@2305', caption: 'SECTION B–B', denom: 10 },
+];
+
+test('a caption of the open sheet becomes a pill carrying the view key', () => {
+  assert.equal(
+    linkViews('I moved VIEW FROM A to 1:10 and left the ELEVATION alone.', VIEWS),
+    'I moved [VIEW FROM A](view:viewA) to 1:10 and left the [ELEVATION](view:elev) alone.',
+  );
+});
+
+test('a caption inside code or an existing link is left alone, and case must match the paper', () => {
+  assert.equal(
+    linkViews('`VIEW FROM A` stays; [VIEW FROM A](view:viewA) stays', VIEWS),
+    '`VIEW FROM A` stays; [VIEW FROM A](view:viewA) stays',
+  );
+  assert.equal(linkViews('the view from a is small', VIEWS), 'the view from a is small');
+});
+
+test('a longer caption wins over one it contains', () => {
+  const views = [
+    { key: 'plan', caption: 'Plan', denom: 50 },
+    { key: 'pend', caption: 'Plan (end)', denom: 50 },
+  ];
+  assert.equal(linkViews('see Plan (end)', views), 'see [Plan (end)](view:pend)');
+});
+
+test('no views, no change', () => {
+  assert.equal(linkViews('VIEW FROM A', []), 'VIEW FROM A');
 });

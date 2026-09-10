@@ -3,6 +3,7 @@ import { memo } from 'react';
 import { splitMentions } from '@/lib/mentions';
 import { useMentions } from '@/lib/mentionsLive';
 import { splitViewing } from '@/lib/studio';
+import { useViewing } from '@/lib/viewingLive';
 import { isInFlight, NO_RESPONSE, type Block, type ToolBlock, type Turn } from '@/lib/transcript';
 import Markdown from './Markdown';
 import { Mention } from './Mention';
@@ -62,6 +63,8 @@ type TurnProps = {
 export const TurnView = memo(function TurnView({ turn, live = false }: TurnProps) {
   const mentions = useMentions();
   const marks = mentions.marks.map((m) => m.mark);
+  const viewing = useViewing();
+  const views = viewing?.views ?? [];
   if (turn.kind === 'user') {
     // the looking-at line the composer put in front of the words is folded
     // back off: a small grey line above the bubble says what the agent was
@@ -131,7 +134,9 @@ export const TurnView = memo(function TurnView({ turn, live = false }: TurnProps
             const streamingText = turn.open && i === pieces.length - 1;
             return (
               <div key={i} className="rise text-[13.5px] leading-[1.6] text-ink">
-                <Markdown marks={marks}>{piece.text}</Markdown>
+                <Markdown marks={marks} views={views}>
+                  {piece.text}
+                </Markdown>
                 {streamingText && (
                   <span className="ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[3px] bg-accent breathe" aria-hidden />
                 )}

@@ -26,7 +26,11 @@ export type Viewing = {
   page?: { n: number; of: number };
   view?: { key: string; caption: string; denom: number | null };
   ga?: { id: string; title: string };
+  /** Every view the open sheet draws — what the agent's words can point at. */
+  views?: StudioView[];
 };
+
+export type StudioView = { key: string; caption: string; denom: number | null };
 
 /** The words the composer puts in front of the message, and the words the
  *  transcript folds back off it. One place, so the two cannot drift. */
@@ -71,7 +75,48 @@ export function readViewing(m: Record<string, unknown>): Viewing | null {
   if (g && typeof g === 'object' && typeof g.id === 'string' && g.id) {
     out.ga = { id: g.id, title: typeof g.title === 'string' ? g.title : '' };
   }
+  if (Array.isArray(m.views)) {
+    const views = (m.views as unknown[])
+      .map((x) => (x && typeof x === 'object' ? (x as Record<string, unknown>) : null))
+      .filter((x): x is Record<string, unknown> => !!x && typeof x.key === 'string' && !!x.key)
+      .map((x) => ({
+        key: x.key as string,
+        caption: typeof x.caption === 'string' && x.caption ? x.caption : (x.key as string),
+        denom: typeof x.denom === 'number' ? x.denom : null,
+      }));
+    if (views.length) out.views = views;
+  }
   return out;
+}
+
+/** Views the agent names become pills: a caption of the OPEN sheet ("VIEW
+ *  FROM A", "Section B–B"), as a whole phrase outside code and existing
+ *  links, case as printed on the paper. The href carries the view's key, the
+ *  one thing the studio needs to frame it. Run AFTER linkMarks: a link that
+ *  pass wrote is skipped here like any other. */
+export function linkViews(markdown: string, views: StudioView[]): string {
+  const caps = views.filter((v) => v.caption).sort((a, b) => b.caption.length - a.caption.length);
+  if (!caps.length) return markdown;
+  const keyOf = new Map(caps.map((v) => [v.caption, v.key]));
+  const escaped = caps.map((v) => v.caption.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const re = new RegExp(`(^|[^\\w[\\]@/-])(${escaped.join('|')})(?![\\w/-])`, 'g');
+  const fix = (s: string) =>
+    s.replace(re, (_m, pre: string, cap: string) => `${pre}[${cap}](view:${keyOf.get(cap) ?? cap})`);
+  let fenced = false;
+  return markdown
+    .split('\n')
+    .map((line) => {
+      if (/^\s*```/.test(line)) {
+        fenced = !fenced;
+        return line;
+      }
+      if (fenced) return line;
+      return line
+        .split(/(`[^`]*`|\[[^\]]*\]\([^)]*\))/)
+        .map((part, i) => (i % 2 === 1 ? part : fix(part)))
+        .join('');
+    })
+    .join('\n');
 }
 
 /** The message as the engine gets it: the looking-at line first, then what
