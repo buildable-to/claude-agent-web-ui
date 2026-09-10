@@ -7,7 +7,8 @@ import { PermissionBanner } from './components/PermissionBanner';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { api } from './lib/api';
-import { BASE, page, tellParent } from './lib/page';
+import { BASE, page } from './lib/page';
+import { hearParent, readTag, tellParent, type StudioTag } from './lib/studio';
 import { ws, type ConnectionState } from './lib/ws';
 import { useEngineInfo } from './state/useEngineInfo';
 import { useSession } from './state/useSession';
@@ -45,6 +46,7 @@ export default function App() {
   const [selected, setSelected] = useState<{ id: string | null; nonce: number }>({ id: null, nonce: 0 });
   const [draft, setDraft] = useState('');
   const [focusKey, setFocusKey] = useState(0);
+  const [tags, setTags] = useState<StudioTag[]>([]);
   const [filesOpen, setFilesOpen] = useState(readFilesOpen);
   const [treeKey, setTreeKey] = useState(0);
   const { sessions, loaded: sessionsLoaded, refresh } = useSessions();
@@ -82,6 +84,22 @@ export default function App() {
   useEffect(() => {
     if (connection === 'expired') tellParent({ type: 'expired' });
   }, [connection]);
+
+  // Clicking a piece in the studio tags it here, so the engineer's next
+  // sentence is about the thing on their screen without them naming it. The
+  // tag rides above the composer and goes out in front of the message.
+  // Picking is ADD, never toggle: the same piece clicked twice in the 3D is
+  // one intent, and the only thing that takes a tag off is its own ✕ — a
+  // click that silently un-tagged what the pane is still showing would put
+  // the two out of step.
+  useEffect(() => {
+    return hearParent((m) => {
+      const tag = readTag(m);
+      if (!tag) return;
+      setTags((ts) => (ts.some((t) => t.mark === tag.mark) ? ts : [...ts, tag]));
+      setFocusKey((k) => k + 1);
+    });
+  }, []);
 
   // The tab itself reports state: a dot on the icon and a title prefix.
   useEffect(() => {
@@ -203,11 +221,16 @@ export default function App() {
           value={draft}
           onChange={setDraft}
           status={state.status}
+          tags={tags}
+          onUntag={(mark) => setTags((ts) => ts.filter((t) => t.mark !== mark))}
           onSend={(text) => {
             // the page that embeds us keeps the first thing the engineer says
-            // on an empty project as its brief (Buildable issue #405)
+            // on an empty project as its brief (Buildable issue #405) — the
+            // brief is what the ENGINEER wrote, so the marks stay out of it
             tellParent({ type: 'user_message', text });
-            session.send(text);
+            const marks = tags.map((t) => `@${t.mark}`).join(' ');
+            session.send(marks ? `${marks} ${text}` : text);
+            setTags([]);
           }}
           onStop={session.interrupt}
           commands={commands}

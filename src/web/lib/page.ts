@@ -41,19 +41,3 @@ export function authQuery(): string {
   if (page.account) return `account=${encodeURIComponent(page.account)}`;
   return '';
 }
-
-/** Tell the page that embeds us (Project Studio) something happened. */
-export function tellParent(message: Record<string, unknown>) {
-  if (window.parent === window) return;
-  // Only the page that embedded us hears us — the messages carry what the
-  // engineer typed. The referrer is that page (the default referrer policy
-  // keeps the origin across origins); without one, nobody is told.
-  let target: string | null = null;
-  try {
-    target = document.referrer ? new URL(document.referrer).origin : null;
-  } catch {
-    target = null;
-  }
-  if (!target) return;
-  window.parent.postMessage({ source: 'buildable-agent', ...message }, target);
-}

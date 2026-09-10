@@ -1,7 +1,8 @@
-import { ArrowUp, SlashSquare, Square } from 'lucide-react';
+import { ArrowUp, SlashSquare, Square, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { CommandInfo, SessionStatus } from '@shared/protocol';
 import { money } from '@/lib/format';
+import type { StudioTag } from '@/lib/studio';
 import { CommandPicker, matchCommands } from './CommandPicker';
 import { SessionControls, type ControlsProps } from './SessionControls';
 
@@ -16,6 +17,9 @@ type Props = {
   autoFocus?: boolean;
   /** Bumped by the parent when it wants the textarea focused (e.g. after inserting a path). */
   focusKey?: number;
+  /** Pieces picked in Project Studio. They ride in front of the next message. */
+  tags?: StudioTag[];
+  onUntag?: (mark: string) => void;
   /** Embedded: the model and mode pickers live here, beside Skills, as quiet
    *  text menus — machinery next to the composer, not in a second title bar. */
   controls?: Omit<ControlsProps, 'look' | 'embedded'>;
@@ -38,6 +42,8 @@ export function ChatInput({
   commandsLoading,
   autoFocus,
   focusKey,
+  tags,
+  onUntag,
   controls,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -126,6 +132,31 @@ export function ChatInput({
             onHover={setActive}
             onPick={pick}
           />
+        )}
+        {tags && tags.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2.5">
+            {tags.map((t) => (
+              <span
+                key={t.mark}
+                title={`${t.element.name || t.element.kind || 'piece'}${t.count > 1 ? ` · ×${t.count} placed` : ''}`}
+                className="flex items-center gap-1 rounded-full bg-panel-2 py-0.5 pr-1 pl-2 text-[11.5px] font-medium text-ink-2"
+              >
+                <span className="text-ink">@{t.mark}</span>
+                {t.element.name && <span className="max-w-[11rem] truncate text-ink-3">{t.element.name}</span>}
+                {onUntag && (
+                  <button
+                    type="button"
+                    onClick={() => onUntag(t.mark)}
+                    title={`Untag ${t.mark}`}
+                    aria-label={`Untag ${t.mark}`}
+                    className="rounded-full p-0.5 text-ink-3 hover:bg-panel-3 hover:text-ink"
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
         )}
         <textarea
           ref={ref}
