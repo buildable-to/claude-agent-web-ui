@@ -16,6 +16,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { agentType, laneLine } from '@/lib/agents';
 import type { ToolBlock } from '@/lib/transcript';
 import { baseName } from '@/lib/format';
 
@@ -129,8 +130,11 @@ export function toolDetail(tool: ToolBlock): string | undefined {
     case 'web_fetch':
       return str(i.url);
     case 'Task':
-    case 'Agent':
-      return str(i.subagent_type);
+    case 'Agent': {
+      // What the sub-agent is doing now, or the first line of what it found.
+      const last = tool.children[tool.children.length - 1];
+      return laneLine(tool, last ? stepWords(last) : undefined) ?? agentType(tool);
+    }
     case 'Skill':
       return str(i.skill) ?? str(i.command);
     case 'TodoWrite': {
@@ -141,4 +145,12 @@ export function toolDetail(tool: ToolBlock): string | undefined {
     default:
       return undefined;
   }
+}
+
+/** "Perceive project session d8344502", "Looked at 3d_iso.png". */
+export function stepWords(tool: ToolBlock): string {
+  const verb = toolVerb(tool);
+  if (tool.name === 'Bash') return verb; // the agent's own description of the command
+  const detail = toolDetail(tool);
+  return detail ? `${verb} ${detail}` : verb;
 }

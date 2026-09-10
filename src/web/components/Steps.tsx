@@ -5,10 +5,11 @@
 import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { baseName } from '@/lib/format';
-import type { ToolBlock, ToolImage } from '@/lib/transcript';
+import { page, tellParent } from '@/lib/page';
+import { isInFlight, type ToolBlock, type ToolImage } from '@/lib/transcript';
 import { Lightbox, type LightboxPicture } from './Lightbox';
 import { ToolCard } from './tools/cards';
-import { toolDetail, toolVerb } from './tools/config';
+import { stepWords } from './tools/config';
 
 type Props = {
   blocks: ToolBlock[];
@@ -16,13 +17,6 @@ type Props = {
   live: boolean;
 };
 
-/** "Perceive project session d8344502", "Looked at 3d_iso.png". */
-export function stepWords(tool: ToolBlock): string {
-  const verb = toolVerb(tool);
-  if (tool.name === 'Bash') return verb; // the agent's own description of the command
-  const detail = toolDetail(tool);
-  return detail ? `${verb} ${detail}` : verb;
-}
 
 function pictureCaption(tool: ToolBlock): string | undefined {
   const p = tool.input.file_path;
@@ -51,7 +45,24 @@ function Picture({ image, caption, onOpen }: { image: ToolImage; caption?: strin
 export function Steps({ blocks, live }: Props) {
   const [open, setOpen] = useState(false);
   const [shown, setShown] = useState<number | null>(null);   // which picture is open big
-  const current = live ? blocks.find((b) => b.result === undefined) : undefined;
+  // Framed by Project Studio, our own overlay would only cover the chat
+  // column: the page paints the picture over the whole window instead.
+  const embedded = page.embed && window.parent !== window;
+  const show = (i: number) => {
+    if (embedded) {
+      tellParent({
+        type: 'picture',
+        index: i,
+        pictures: pictures.map((p) => ({
+          src: `data:${p.image.mediaType};base64,${p.image.data}`,
+          ...(p.caption ? { caption: p.caption } : {}),
+        })),
+      });
+    } else setShown(i);
+  };
+  // A step is still going while it has no result, or while the engine says
+  // the sub-agent behind it is still running (even after the turn ended).
+  const current = blocks.find((b) => isInFlight(b) && (live || b.task !== undefined));
   const n = blocks.length;
   const failed = blocks.filter((b) => b.isError).length;
   const label = current ? `Working · ${stepWords(current)}` : `${n} step${n === 1 ? '' : 's'}`;
@@ -94,11 +105,11 @@ export function Steps({ blocks, live }: Props) {
       {pictures.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {pictures.map((p, i) => (
-            <Picture key={p.key} image={p.image} caption={p.caption} onOpen={() => setShown(i)} />
+            <Picture key={p.key} image={p.image} caption={p.caption} onOpen={() => show(i)} />
           ))}
         </div>
       )}
-      {shown !== null && (
+      {shown !== null && !embedded && (
         <Lightbox
           pictures={pictures as LightboxPicture[]}
           index={shown}

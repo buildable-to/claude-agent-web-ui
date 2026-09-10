@@ -10,6 +10,8 @@ type Props = {
   projectDir: string;
   status: SessionStatus | 'connecting';
   connection: 'connecting' | 'open' | 'closed' | 'expired';
+  /** Sub-agents the engine still runs in the background between turns. */
+  agentsRunning?: number;
   meta: SessionMeta;
   models: ModelOption[];
   filesOpen: boolean;
@@ -26,7 +28,7 @@ type Props = {
   onMode: (mode: PermissionMode) => void;
 };
 
-function statusLabel(status: Props['status'], connection: Props['connection']) {
+function statusLabel(status: Props['status'], connection: Props['connection'], agentsRunning = 0) {
   if (connection === 'expired') return { text: 'Expired · reload', dot: 'bg-warn' };
   if (connection !== 'open') {
     return { text: connection === 'closed' ? 'Reconnecting' : 'Connecting', dot: 'bg-ink-3 breathe' };
@@ -36,6 +38,9 @@ function statusLabel(status: Props['status'], connection: Props['connection']) {
     case 'starting':
       return { text: 'Starting', dot: 'bg-ink-3 breathe' };
     case 'idle':
+      if (agentsRunning > 0) {
+        return { text: `${agentsRunning} agent${agentsRunning === 1 ? '' : 's'} running`, dot: 'bg-accent breathe' };
+      }
       return { text: 'Ready', dot: 'bg-sea' };
     case 'running':
       return { text: 'Working', dot: 'bg-accent breathe' };
@@ -48,6 +53,7 @@ function statusLabel(status: Props['status'], connection: Props['connection']) {
 
 export function TopBar({
   projectName,
+  agentsRunning,
   projectDir,
   status,
   connection,
@@ -60,7 +66,7 @@ export function TopBar({
   onModel,
   onMode,
 }: Props) {
-  const s = statusLabel(status, connection);
+  const s = statusLabel(status, connection, agentsRunning);
   const locked = status === 'connecting';
 
   // Embedded in Project Studio the page is a panel beside the 3D: the studio's

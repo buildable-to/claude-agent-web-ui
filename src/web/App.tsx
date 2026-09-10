@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ServerConfig } from '@shared/protocol';
+import { AgentDock } from './components/AgentDock';
 import { ChatInput } from './components/ChatInput';
 import { FileTree } from './components/FileTree';
+import { dockLanes } from '@/lib/agents';
+import { finishedFileSteps, runningAgents } from '@/lib/transcript';
 import { MessageList } from './components/MessageList';
 import { PermissionBanner } from './components/PermissionBanner';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { api } from './lib/api';
-import { BASE, page } from './lib/page';
-import { hearParent, readTag, tellParent, type StudioTag } from './lib/studio';
+import { EMPTY_MENTIONS, type Mentions } from './lib/mentions';
+import { listenForMentions, MentionsProvider } from './lib/mentionsLive';
+import { BASE, page, tellParent } from './lib/page';
 import { ws, type ConnectionState } from './lib/ws';
 import { useEngineInfo } from './state/useEngineInfo';
 import { useSession } from './state/useSession';
@@ -46,7 +50,6 @@ export default function App() {
   const [selected, setSelected] = useState<{ id: string | null; nonce: number }>({ id: null, nonce: 0 });
   const [draft, setDraft] = useState('');
   const [focusKey, setFocusKey] = useState(0);
-  const [tags, setTags] = useState<StudioTag[]>([]);
   const [filesOpen, setFilesOpen] = useState(readFilesOpen);
   const [treeKey, setTreeKey] = useState(0);
   const { sessions, loaded: sessionsLoaded, refresh } = useSessions();
@@ -56,18 +59,42 @@ export default function App() {
   }, [refresh]);
   const session = useSession(selected.id, selected.nonce, onTurnEnd);
   const { state } = session;
+  // A step that may have written a file finished (a sub-agent's too):
+  // reload the files panel now, not only when the whole turn ends.
+  const fileSteps = finishedFileSteps(state.transcript);
+  const agentsRunning = runningAgents(state.transcript);
+  // sub-agents still out, kept under the chat where the transcript cannot
+  // scroll them away
+  const dock = dockLanes(state.transcript);
+  useEffect(() => {
+    if (fileSteps > 0) setTreeKey((k) => k + 1);
+  }, [fileSteps]);
   const { commands, models, loading: commandsLoading } = useEngineInfo(state.meta);
   const autoPicked = useRef(false);
+  // the project's marks and elements for "@", posted in by the studio
+  const [mentions, setMentions] = useState<Mentions>(EMPTY_MENTIONS);
+  useEffect(() => (embed ? listenForMentions(setMentions) : undefined), []);
 
-  // Embedded on a project: open its latest conversation, so the engineer
-  // continues where they left off instead of starting blank every time.
+  // Embedded on a project: open the conversation the link names, else the
+  // latest one, so the engineer continues where they left off instead of
+  // starting blank every time.
   useEffect(() => {
     if (!embed || autoPicked.current || !sessionsLoaded) return;
     autoPicked.current = true; // decided once, on the first list; "New" later means new
     if (selected.id !== null || state.transcript.turns.length > 0 || state.status !== 'idle') return;
-    const latest = sessions[0];
-    if (latest) setSelected((s) => ({ id: latest.sessionId, nonce: s.nonce + 1 }));
+    const named = page.conversation ? sessions.find((x) => x.sessionId === page.conversation) : undefined;
+    const open = named ?? sessions[0];
+    if (open) setSelected((s) => ({ id: open.sessionId, nonce: s.nonce + 1 }));
   }, [sessionsLoaded, sessions, selected.id, state.transcript.turns.length, state.status]);
+
+  // The page that embeds us keeps the open conversation in its address, so a
+  // link lands on this exact conversation and Back/Forward walk between them.
+  // A new conversation has no id until its first turn; it is told then.
+  const openConversation = selected.id ?? state.sessionId ?? null;
+  useEffect(() => {
+    if (!embed) return;
+    tellParent({ type: 'conversation', id: openConversation });
+  }, [openConversation]);
 
   // The page that embeds us wants two things: when the project changed for
   // real (redraw), and whether the agent needs a human (badge the fold button).
@@ -84,22 +111,6 @@ export default function App() {
   useEffect(() => {
     if (connection === 'expired') tellParent({ type: 'expired' });
   }, [connection]);
-
-  // Clicking a piece in the studio tags it here, so the engineer's next
-  // sentence is about the thing on their screen without them naming it. The
-  // tag rides above the composer and goes out in front of the message.
-  // Picking is ADD, never toggle: the same piece clicked twice in the 3D is
-  // one intent, and the only thing that takes a tag off is its own ✕ — a
-  // click that silently un-tagged what the pane is still showing would put
-  // the two out of step.
-  useEffect(() => {
-    return hearParent((m) => {
-      const tag = readTag(m);
-      if (!tag) return;
-      setTags((ts) => (ts.some((t) => t.mark === tag.mark) ? ts : [...ts, tag]));
-      setFocusKey((k) => k + 1);
-    });
-  }, []);
 
   // The tab itself reports state: a dot on the icon and a title prefix.
   useEffect(() => {
@@ -167,6 +178,7 @@ export default function App() {
   const pending = state.pending[0];
 
   return (
+    <MentionsProvider value={mentions}>
     <div className="flex h-full">
       {!embed && (
         <Sidebar
@@ -183,6 +195,7 @@ export default function App() {
           projectName={projectName}
           projectDir={projectDir}
           status={state.status}
+          agentsRunning={agentsRunning}
           connection={connection}
           meta={state.meta}
           models={models}
@@ -204,6 +217,7 @@ export default function App() {
           }}
           {...(embed ? EMBED_COPY : {})}
         />
+        {dock.length > 0 && <AgentDock lanes={dock} />}
         {connection === 'expired' && (
           <p className="mx-auto w-full max-w-3xl px-6 text-[12.5px] text-warn">
             This page’s access has expired. Reload the project to continue.
@@ -221,22 +235,18 @@ export default function App() {
           value={draft}
           onChange={setDraft}
           status={state.status}
-          tags={tags}
-          onUntag={(mark) => setTags((ts) => ts.filter((t) => t.mark !== mark))}
           onSend={(text) => {
             // the page that embeds us keeps the first thing the engineer says
-            // on an empty project as its brief (Buildable issue #405) — the
-            // brief is what the ENGINEER wrote, so the marks stay out of it
+            // on an empty project as its brief (Buildable issue #405)
             tellParent({ type: 'user_message', text });
-            const marks = tags.map((t) => `@${t.mark}`).join(' ');
-            session.send(marks ? `${marks} ${text}` : text);
-            setTags([]);
+            session.send(text);
           }}
           onStop={session.interrupt}
           commands={commands}
           commandsLoading={commandsLoading}
           autoFocus
           focusKey={focusKey}
+          mentions={mentions}
           {...(embed
             ? {
                 controls: {
@@ -252,5 +262,6 @@ export default function App() {
       </div>
       {filesOpen && !embed && <FileTree onPick={(p) => insertText(p)} refreshKey={treeKey} />}
     </div>
+    </MentionsProvider>
   );
 }

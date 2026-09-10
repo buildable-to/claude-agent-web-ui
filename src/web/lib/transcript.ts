@@ -11,6 +11,19 @@ import { parsePartialJson } from './parsePartialJson';
 
 export type ToolImage = { mediaType: string; data: string };
 
+/** What the engine says about a sub-agent it runs as a task: it started, it
+ *  is getting on (progress), it settled. A backgrounded agent's tool result
+ *  is a placeholder; this is where its real story lives. */
+export type TaskState = {
+  status: 'running' | 'completed' | 'failed' | 'stopped';
+  /** A one-line progress summary while running; the finding once settled. */
+  summary?: string;
+  lastTool?: string;
+  toolUses?: number;
+  durationMs?: number;
+  tokens?: number;
+};
+
 export type ToolBlock = {
   type: 'tool_use';
   id: string;
@@ -26,7 +39,18 @@ export type ToolBlock = {
   images: ToolImage[];
   /** Tool calls made by a sub-agent this tool spawned. */
   children: ToolBlock[];
+  /** The engine's own account of the sub-agent behind this call. */
+  task?: TaskState;
 };
+
+/** A backgrounded sub-agent's tool result is this placeholder, not a finding. */
+export const ASYNC_PLACEHOLDER = /^Async agent launched successfully/;
+
+/** Still going: no result yet, or the engine says its task is still running. */
+export function isInFlight(block: ToolBlock): boolean {
+  if (block.task) return block.task.status === 'running';
+  return block.result === undefined;
+}
 export type TextBlock = { type: 'text'; text: string };
 export type Block = TextBlock | ToolBlock;
 
@@ -195,6 +219,9 @@ export function applyMessage(t: Transcript, msg: SDKMessage): Transcript {
       if (msg.subtype === 'compact_boundary') {
         return addNote(t, msg.uuid, 'info', 'Earlier context was compacted to make room.');
       }
+      if (msg.subtype === 'task_started' || msg.subtype === 'task_progress' || msg.subtype === 'task_notification') {
+        return applyTask(t, msg as unknown as AnyRecord);
+      }
       return t;
     default:
       return t;
@@ -241,6 +268,18 @@ export function markCut(t: Transcript, id: string): Transcript {
   if (lastAssistant(t) === -1 && !endedMidTurn(t)) return t;
   if (t.turns.some((x) => x.kind === 'note' && x.text === CUT_TEXT && x.id === id)) return t;
   return addNote(closeOpenTurn(t), id, 'info', CUT_TEXT);
+}
+
+/** The engine is still working on the newest turn (a second tab attached
+ *  mid-turn, or the page came back): history closed it, so open it again for
+ *  what the engine sends next. A turn ending in the engineer's own words is
+ *  left alone: their words close a turn, the engine's next message opens one. */
+export function reopenLastTurn(t: Transcript): Transcript {
+  let i = t.turns.length - 1;
+  while (i >= 0 && t.turns[i]!.kind === 'note') i--;
+  const turn = t.turns[i];
+  if (!turn || turn.kind !== 'assistant' || turn.open) return t;
+  return { ...withTurn(t, i, { ...turn, open: true }), stream: null };
 }
 
 export function closeOpenTurn(t: Transcript): Transcript {
@@ -444,6 +483,14 @@ function applyUser(
     return out ? addNote(t, uuid, 'info', out.length > 400 ? `${out.slice(0, 400)}…` : out) : { ...t, seen };
   }
 
+  // A sub-agent settled: the engine tells the model in the user's voice.
+  // It is the lane's finding, not the engineer speaking — and unlike the
+  // live system message it is in the history, so a reload keeps it.
+  const notified = /<task-notification>([\s\S]*?)<\/task-notification>/.exec(rawText);
+  // Live, the notification wakes a new turn; closing the open one here keeps
+  // history looking the same.
+  if (notified) return closeOpenTurn(applyRecordedNotification({ ...t, seen }, notified[1]!));
+
   // Injected context (system reminders etc.) is not something the user typed.
   const text = rawText.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim();
   if (!text && !images) return { ...t, seen };
@@ -472,4 +519,115 @@ function applyResult(t: Transcript, msg: Extract<SDKMessage, { type: 'result' }>
     next = addNote(next, `${msg.uuid}-err`, 'error', detail || 'The turn ended with an error.');
   }
   return next;
+}
+
+const FILE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash']);
+
+/** How many steps that may have touched the folder have finished, sub-agents'
+ *  included. The files panel reloads when this grows, so a file a sub-agent
+ *  wrote shows while the turn is still running. */
+export function finishedFileSteps(t: Transcript): number {
+  let n = 0;
+  for (const turn of t.turns) {
+    if (turn.kind !== 'assistant') continue;
+    for (const b of turn.blocks) {
+      if (b.type !== 'tool_use') continue;
+      if (FILE_TOOLS.has(b.name) && b.result !== undefined) n++;
+      for (const c of b.children) if (FILE_TOOLS.has(c.name) && c.result !== undefined) n++;
+    }
+  }
+  return n;
+}
+
+/** task_started / task_progress / task_notification, joined to the Task tool
+ *  call by tool_use_id. Housekeeping tasks the engine hides are skipped. */
+function applyTask(t: Transcript, msg: AnyRecord): Transcript {
+  const uuid = typeof msg.uuid === 'string' ? msg.uuid : undefined;
+  if (uuid && t.seen.has(uuid)) return t;
+  const seen = uuid ? new Set(t.seen).add(uuid) : t.seen;
+  const toolId = typeof msg.tool_use_id === 'string' ? msg.tool_use_id : '';
+  if (!toolId || msg.ambient || msg.skip_transcript) return { ...t, seen };
+  const usage = isRecord(msg.usage) ? msg.usage : null;
+  const num = (v: unknown) => (typeof v === 'number' ? v : undefined);
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+  return updateTool({ ...t, seen }, toolId, (b) => {
+    const prev: TaskState = b.task ?? { status: 'running' };
+    switch (msg.subtype) {
+      case 'task_started':
+        return { ...b, task: { ...prev, status: 'running' } };
+      case 'task_progress':
+        return {
+          ...b,
+          task: {
+            ...prev,
+            status: 'running',
+            summary: str(msg.summary) ?? prev.summary,
+            lastTool: str(msg.last_tool_name) ?? prev.lastTool,
+            toolUses: num(usage?.tool_uses) ?? prev.toolUses,
+            durationMs: num(usage?.duration_ms) ?? prev.durationMs,
+            tokens: num(usage?.total_tokens) ?? prev.tokens,
+          },
+        };
+      case 'task_notification': {
+        const status = msg.status === 'failed' || msg.status === 'stopped' ? msg.status : 'completed';
+        return {
+          ...b,
+          task: {
+            ...prev,
+            status,
+            summary: str(msg.summary) ?? prev.summary,
+            toolUses: num(usage?.tool_uses) ?? prev.toolUses,
+            durationMs: num(usage?.duration_ms) ?? prev.durationMs,
+            tokens: num(usage?.total_tokens) ?? prev.tokens,
+          },
+        };
+      }
+      default:
+        return b;
+    }
+  });
+}
+
+/** Sub-agents the engine is still running in the background, across the
+ *  whole conversation: the page is not idle while they are. */
+export function runningAgents(t: Transcript): number {
+  let n = 0;
+  for (const turn of t.turns) {
+    if (turn.kind !== 'assistant') continue;
+    for (const b of turn.blocks) if (b.type === 'tool_use' && b.task?.status === 'running') n++;
+  }
+  return n;
+}
+
+/** The recorded form of a task_notification:
+ *  <task-notification><tool-use-id>…</tool-use-id><status>completed</status>
+ *  <result>…</result><usage><tool_uses>3</tool_uses><duration_ms>…</duration_ms></usage></task-notification> */
+function applyRecordedNotification(t: Transcript, body: string): Transcript {
+  const tag = (name: string) => {
+    const m = new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(body);
+    return m ? m[1]!.trim() : undefined;
+  };
+  const toolId = tag('tool-use-id');
+  if (!toolId) return t;
+  const status = tag('status');
+  const result = tag('result');
+  const toolUses = Number(tag('tool_uses'));
+  const durationMs = Number(tag('duration_ms'));
+  const tokens = Number(tag('subagent_tokens'));
+  return updateTool(t, toolId, (b) => {
+    const prev: TaskState = b.task ?? { status: 'running' };
+    // The live system message may already have said so; the record wins
+    // only where it knows more (its result is the finding in full).
+    return {
+      ...b,
+      task: {
+        ...prev,
+        status: status === 'failed' || status === 'stopped' ? status : 'completed',
+        summary: result || prev.summary,
+        toolUses: Number.isFinite(toolUses) ? toolUses : prev.toolUses,
+        durationMs: Number.isFinite(durationMs) ? durationMs : prev.durationMs,
+        tokens: Number.isFinite(tokens) ? tokens : prev.tokens,
+      },
+    };
+  });
 }
