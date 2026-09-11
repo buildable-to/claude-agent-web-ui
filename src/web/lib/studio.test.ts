@@ -122,14 +122,61 @@ test('no views, no change', () => {
 test('the line reads back to a mark, a sheet label and a view key', () => {
   assert.deepEqual(parseLine('Looking at E1 · Reinforcement · page 1 of 4 · VIEW FROM A [viewA]'), {
     mark: 'E1',
+    element_id: null,
     sheet: 'Reinforcement',
     view: 'viewA',
   });
-  assert.deepEqual(parseLine('Looking at C1 · 3D'), { mark: 'C1', sheet: '3D', view: null });
-  assert.deepEqual(parseLine('Looking at E1 · Formwork · Elevation [elev]'), { mark: 'E1', sheet: 'Formwork', view: 'elev' });
+  assert.deepEqual(parseLine('Looking at C1 · 3D'), { mark: 'C1', element_id: null, sheet: '3D', view: null });
+  assert.deepEqual(parseLine('Looking at E1 · Formwork · Elevation [elev]'), {
+    mark: 'E1',
+    element_id: null,
+    sheet: 'Formwork',
+    view: 'elev',
+  });
 });
 
 test('a line that names no piece reads as nothing to show', () => {
   assert.equal(parseLine('Looking at the whole project in 3D'), null);
   assert.equal(parseLine('Looking at S-231 · FACHWERK COLUMNS PLAN'), null);
+});
+
+// The Elements tab (issue #466): the element in the frame, the sheet tab in
+// it, the view clicked there. The id rides in the bracket — an element on
+// that tab may be unplaced, so no mark finds it, and its name may itself
+// hold " · ".
+test('the Elements tab record may name a draft instead of an element', () => {
+  const v = readViewing({
+    ...good,
+    mode: 'element',
+    mark: undefined,
+    element: undefined,
+    draft: { id: 'd4f2' },
+    text: 'draft d4f2 · Element Studio · Formwork',
+    line: 'Looking at draft d4f2 · Element Studio · Formwork [d4f2 · formwork]',
+  });
+  assert.equal(v?.mode, 'element');
+  assert.deepEqual(v?.draft, { id: 'd4f2' });
+  assert.equal(v?.mark, undefined);
+});
+
+test("an Elements tab line reads back to the element's id, the sheet kind and the view key", () => {
+  assert.deepEqual(
+    parseLine('Looking at Gutter GT-1 · 500×600 U · L12290 · Element Studio · Formwork · SECTION A–A [a63b0f7e · formwork · sec@400]'),
+    { mark: null, element_id: 'a63b0f7e', sheet: 'formwork', view: 'sec@400' },
+  );
+  assert.deepEqual(parseLine('Looking at Gutter GT-1 · Element Studio · Formwork [a63b0f7e · formwork]'), {
+    mark: null,
+    element_id: 'a63b0f7e',
+    sheet: 'formwork',
+    view: null,
+  });
+  assert.deepEqual(parseLine('Looking at C3 · Corbel column · Element Studio · 3D [c3e1]'), {
+    mark: null,
+    element_id: 'c3e1',
+    sheet: null,
+    view: null,
+  });
+  // nothing in the frame, or an unsaved new element: no id, nothing to show
+  assert.equal(parseLine('Looking at the Elements tab, nothing here yet'), null);
+  assert.equal(parseLine('Looking at a new element, unsaved · Element Studio · 3D'), null);
 });

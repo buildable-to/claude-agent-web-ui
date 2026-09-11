@@ -1,7 +1,7 @@
 // A view the agent named ("VIEW FROM A"), as a pill. Click: the studio opens
 // that sheet and frames that view — the other half of "same name both
 // ways": you point at a view for the agent, the agent points at one for you.
-import { showView, useViewing } from "@/lib/viewingLive";
+import { canShow, showView, useViewing } from "@/lib/viewingLive";
 
 export function ViewPill({
   token,
@@ -13,7 +13,7 @@ export function ViewPill({
   const viewing = useViewing();
   const v = viewing?.views?.find((x) => x.key === token);
   const label = v ? v.caption : token;
-  const live = !!(viewing && viewing.mark && v);
+  const live = !!(canShow(viewing) && v);   // a piece by mark, or the Elements tab's element by id
   return (
     <button
       type="button"
