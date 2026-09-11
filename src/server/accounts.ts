@@ -154,15 +154,22 @@ export class Accounts {
   private readonly trusted = new Set<string>();
   private readonly remembered = new Set<string>();
 
-  /** Keep the account's email beside its folder, for the usage view. */
+  /** Keep the account's email beside its folder (for the usage view) and
+   *  tell the agent whose desk it is: `CLAUDE.md` in the folder is read at
+   *  every session start, right beside Claude Code's own `userEmail` note —
+   *  which names the desk's shared login, not the engineer (ezdxf-flask
+   *  #461: an agent looked that login up and aimed a draft at another
+   *  account's canvas). Rewritten once per process, so every existing
+   *  folder gets the note on its first session after a deploy. */
   private remember(dir: string, id: string, email: string) {
     const key = `${dir}:${email}`;
     if (this.remembered.has(key)) return;
     try {
       writeFileSync(join(dir, '.account.json'), JSON.stringify({ id, email }, null, 2) + '\n');
+      writeFileSync(join(dir, 'CLAUDE.md'), deskNote(id, email));
       this.remembered.add(key);
-    } catch {
-      // cosmetic
+    } catch (err) {
+      console.error(`[accounts] could not write the desk note in ${dir} (will retry): ${String(err)}`);
     }
   }
 
@@ -199,6 +206,22 @@ export class Accounts {
       console.error(`[accounts] could not mark ${dir} trusted (will retry): ${String(err)}`);
     }
   }
+}
+
+/** The note in an account folder's `CLAUDE.md`: whose desk this is. The
+ *  doors take the account from BUILDABLE_ACCOUNT on their own; this line is
+ *  for the agent's understanding, so it never goes looking for an owner. */
+export function deskNote(id: string, email: string): string {
+  return [
+    `# This desk is Buildable account ${id}`,
+    '',
+    `The engineer you work for is ${email} — Buildable account \`${id}\` — and this`,
+    'folder is their desk. Every door (`perceive_project_v4`, `perceive_v4`,',
+    '`describe_v4`) writes for this account on its own: never name an owner,',
+    'never look one up by e-mail. Any other e-mail address in your system',
+    "context is the desk's shared Claude login, not the engineer.",
+    '',
+  ].join('\n');
 }
 
 export class AuthError extends Error {
