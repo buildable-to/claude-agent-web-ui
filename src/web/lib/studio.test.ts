@@ -56,6 +56,11 @@ test('the whole project in 3D is the smallest record there is', () => {
   assert.deepEqual(v, { mode: '3d', text: 'the whole project in 3D', line: 'Looking at the whole project in 3D' });
 });
 
+test('the Element tab is a mode of its own: the real Element Studio in a frame', () => {
+  const v = readViewing({ ...good, mode: 'element', text: 'C3 · Element', line: 'Looking at C3 · Element' });
+  assert.equal(v?.mode, 'element');
+});
+
 test('an unknown mode reads as 3D, a view with no caption is named by its key', () => {
   const v = readViewing({ ...good, mode: 'cinema', view: { key: 'elev' } });
   assert.equal(v?.mode, '3d');

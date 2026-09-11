@@ -17,7 +17,7 @@
  *  FROM A [viewA]"). The fields say the same thing for a reader that wants
  *  fields; only the two strings are required. */
 export type Viewing = {
-  mode: '3d' | 'xray' | 'drawings';
+  mode: '3d' | 'xray' | 'drawings' | 'element';
   text: string;
   line: string;
   mark?: string;
@@ -44,7 +44,7 @@ export function readViewing(m: Record<string, unknown>): Viewing | null {
   const text = typeof m.text === 'string' ? m.text.trim() : '';
   const line = typeof m.line === 'string' ? m.line.trim() : '';
   if (!text || !line.startsWith(LOOKING_AT)) return null;
-  const mode = m.mode === 'xray' || m.mode === 'drawings' ? m.mode : '3d';
+  const mode = m.mode === 'xray' || m.mode === 'drawings' || m.mode === 'element' ? m.mode : '3d';
   const out: Viewing = { mode, text, line };
   if (typeof m.mark === 'string' && m.mark) out.mark = m.mark;
   const e = m.element as Record<string, unknown> | undefined;
