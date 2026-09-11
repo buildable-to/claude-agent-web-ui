@@ -1,7 +1,9 @@
-import { AlertTriangle, Info } from 'lucide-react';
+import { AlertTriangle, Eye, Info } from 'lucide-react';
 import { memo } from 'react';
 import { splitMentions } from '@/lib/mentions';
 import { useMentions } from '@/lib/mentionsLive';
+import { splitViewing } from '@/lib/studio';
+import { showLine, useViewing } from '@/lib/viewingLive';
 import { isInFlight, NO_RESPONSE, type Block, type ToolBlock, type Turn } from '@/lib/transcript';
 import Markdown from './Markdown';
 import { Mention } from './Mention';
@@ -61,11 +63,28 @@ type TurnProps = {
 export const TurnView = memo(function TurnView({ turn, live = false }: TurnProps) {
   const mentions = useMentions();
   const marks = mentions.marks.map((m) => m.mark);
+  const viewing = useViewing();
+  const views = viewing?.views ?? [];
   if (turn.kind === 'user') {
+    // the looking-at line the composer put in front of the words is folded
+    // back off: a small grey line above the bubble says what the agent was
+    // told the engineer was looking at, and the bubble holds only their words
+    const { viewing, text } = splitViewing(turn.text);
     return (
-      <div className="rise flex justify-end pl-10">
+      <div className="rise flex flex-col items-end pl-10">
+        {viewing && (
+          <button
+            type="button"
+            className="mb-1 flex max-w-[min(34rem,78%)] items-center gap-1 text-[11px] text-ink-3 hover:text-ink"
+            title="What the agent was told you were looking at — click to show it in the studio"
+            onClick={() => showLine(viewing)}
+          >
+            <Eye className="size-3 shrink-0" />
+            <span className="truncate">{viewing.replace(/ \[[^\]]+\]$/, '')}</span>
+          </button>
+        )}
         <div className="max-w-[min(34rem,78%)] rounded-[18px] rounded-br-[5px] bg-bubble px-3.5 py-2 text-[13.5px] leading-[1.5] whitespace-pre-wrap break-words text-white shadow-[0_1px_2px_rgba(0,0,0,.25)]">
-          {splitMentions(turn.text).map((part, i) =>
+          {splitMentions(text).map((part, i) =>
             typeof part === 'string' ? part : <Mention key={i} token={part.mention} light />,
           )}
           {turn.images > 0 && (
@@ -120,7 +139,9 @@ export const TurnView = memo(function TurnView({ turn, live = false }: TurnProps
             const streamingText = turn.open && i === pieces.length - 1;
             return (
               <div key={i} className="rise text-[13.5px] leading-[1.6] text-ink">
-                <Markdown marks={marks}>{piece.text}</Markdown>
+                <Markdown marks={marks} views={views}>
+                  {piece.text}
+                </Markdown>
                 {streamingText && (
                   <span className="ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[3px] bg-accent breathe" aria-hidden />
                 )}

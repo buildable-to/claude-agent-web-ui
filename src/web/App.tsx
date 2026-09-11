@@ -13,6 +13,8 @@ import { api } from './lib/api';
 import { EMPTY_MENTIONS, type Mentions } from './lib/mentions';
 import { listenForMentions, MentionsProvider } from './lib/mentionsLive';
 import { BASE, page, tellParent } from './lib/page';
+import { hearParent, readViewing, withViewing, type Viewing } from './lib/studio';
+import { showViewing, ViewingProvider } from './lib/viewingLive';
 import { ws, type ConnectionState } from './lib/ws';
 import { useEngineInfo } from './state/useEngineInfo';
 import { useSession } from './state/useSession';
@@ -74,6 +76,20 @@ export default function App() {
   // the project's marks and elements for "@", posted in by the studio
   const [mentions, setMentions] = useState<Mentions>(EMPTY_MENTIONS);
   useEffect(() => (embed ? listenForMentions(setMentions) : undefined), []);
+  // What is on the studio's screen, posted in whenever it changes. It rides
+  // in front of the next message as a "Looking at …" line, always on; the ✕
+  // on the chip drops it until the screen changes again (`viewingOff` holds
+  // the text that was dismissed, so the next different screen shows anew).
+  const [viewing, setViewing] = useState<Viewing | null>(null);
+  const [viewingOff, setViewingOff] = useState<string | null>(null);
+  useEffect(() => {
+    if (!embed) return undefined;
+    return hearParent((m) => {
+      const v = readViewing(m);
+      if (v) setViewing(v);
+    });
+  }, []);
+  const viewingOn = viewing && viewing.text !== viewingOff ? viewing : null;
 
   // Embedded on a project: open the conversation the link names, else the
   // latest one, so the engineer continues where they left off instead of
@@ -102,6 +118,10 @@ export default function App() {
     return ws.subscribe((m) => {
       if (m.type === 'project_changed') {
         tellParent({ type: 'project_changed', sessionId: m.sessionId, ...(m.project ? { project: m.project } : {}) });
+      } else if (m.type === 'element_focus') {
+        // the Element tab follows what the agent read or saved: the same
+        // highlight note a pill sends, carrying an id instead of a mark
+        tellParent({ type: 'highlight', ...(m.kind === 'draft' ? { draft_id: m.id } : { element_id: m.id }) });
       }
     });
   }, []);
@@ -179,6 +199,7 @@ export default function App() {
 
   return (
     <MentionsProvider value={mentions}>
+    <ViewingProvider value={viewing}>
     <div className="flex h-full">
       {!embed && (
         <Sidebar
@@ -237,9 +258,11 @@ export default function App() {
           status={state.status}
           onSend={(text) => {
             // the page that embeds us keeps the first thing the engineer says
-            // on an empty project as its brief (Buildable issue #405)
+            // on an empty project as its brief (Buildable issue #405) — the
+            // brief is what the ENGINEER wrote, so the looking-at line stays
+            // out of it and goes only to the engine, in front of the words
             tellParent({ type: 'user_message', text });
-            session.send(text);
+            session.send(withViewing(text, viewingOn));
           }}
           onStop={session.interrupt}
           commands={commands}
@@ -247,6 +270,11 @@ export default function App() {
           autoFocus
           focusKey={focusKey}
           mentions={mentions}
+          viewing={viewingOn}
+          onDismissViewing={() => setViewingOff(viewing ? viewing.text : null)}
+          viewingDismissed={!!viewing && !viewingOn}
+          onRestoreViewing={() => setViewingOff(null)}
+          onShowViewing={viewingOn && (viewingOn.view || viewingOn.mark) ? () => showViewing(viewingOn) : undefined}
           {...(embed
             ? {
                 controls: {
@@ -262,6 +290,7 @@ export default function App() {
       </div>
       {filesOpen && !embed && <FileTree onPick={(p) => insertText(p)} refreshKey={treeKey} />}
     </div>
+    </ViewingProvider>
     </MentionsProvider>
   );
 }
