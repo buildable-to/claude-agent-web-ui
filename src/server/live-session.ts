@@ -114,6 +114,7 @@ export class LiveSession {
   private readonly onResult: LiveSessionOptions['onResult'];
   /** tool_use ids of shell commands that write the app's project for real. */
   private readonly realApplies = new Set<string>();
+  private perceives = new Map<string, PerceiveTarget>();
   private readonly persistAlways: boolean;
 
   constructor(opts: LiveSessionOptions) {
@@ -340,7 +341,9 @@ export class LiveSession {
   }
 
   /** A `--real` apply is the one command that changes the app's project. When
-   *  its result comes back, tell the page so it can redraw. */
+   *  its result comes back, tell the page so it can redraw. And the element
+   *  door names what the agent is looking at: `perceive_v4 <id>` — when its
+   *  result comes back, tell the page so the Element tab can follow. */
   private watchRealApplies(message: SDKMessage) {
     if (message.type === 'assistant') {
       const content = message.message.content;
@@ -349,6 +352,8 @@ export class LiveSession {
         if (block.type !== 'tool_use' || block.name !== 'Bash') continue;
         const command = String((block.input as { command?: unknown }).command ?? '');
         if (/\s--real\b/.test(command)) this.realApplies.add(block.id);
+        const target = perceiveTarget(command);
+        if (target) this.perceives.set(block.id, target);
       }
     } else if (message.type === 'user') {
       const content = message.message.content;
@@ -356,9 +361,19 @@ export class LiveSession {
       for (const block of content) {
         if (typeof block !== 'object' || block === null || block.type !== 'tool_result') continue;
         const id = String((block as { tool_use_id?: unknown }).tool_use_id ?? '');
+        const failed = (block as { is_error?: unknown }).is_error === true;
+        const target = this.perceives.get(id);
+        if (target) {
+          this.perceives.delete(id);
+          // a refused read or save points nowhere
+          if (!failed) {
+            const focus = focusFromResult(target, resultText(block));
+            this.broadcast({ type: 'element_focus', sessionId: this.sessionId, ...focus });
+          }
+        }
         if (!this.realApplies.delete(id)) continue;
         // a denied or failed apply changed nothing
-        if ((block as { is_error?: unknown }).is_error === true) continue;
+        if (failed) continue;
         this.broadcast({
           type: 'project_changed',
           sessionId: this.sessionId,
@@ -397,4 +412,34 @@ export class LiveSession {
       }
     }
   }
+}
+
+/** What a `perceive_v4` command line names: the element or draft id in
+ *  front of the flags, and whether it is the save door (`--save`, a draft). */
+export type PerceiveTarget = { id: string; save: boolean };
+
+export function perceiveTarget(command: string): PerceiveTarget | null {
+  const m = /\bperceive_v4(?:\.py)?\s+(?!-)([A-Za-z0-9_-]{2,})(?=\s|$)/.exec(command);
+  const id = m?.[1];
+  if (!id) return null;
+  return { id, save: /\s--save\b/.test(command) };
+}
+
+/** Where the Element tab should look once the door has answered: the saved
+ *  element a `--save --real` produced ("SAVED as e9" / "UPDATED e4"), else
+ *  the id the command named — a draft when it was the save door, otherwise
+ *  the page decides (its library knows which ids are elements). */
+export function focusFromResult(target: PerceiveTarget, text: string): { id: string; kind?: 'element' | 'draft' } {
+  const saved = /\b(?:SAVED as|UPDATED) ([A-Za-z0-9_-]+)/.exec(text)?.[1];
+  if (target.save && saved) return { id: saved, kind: 'element' };
+  return target.save ? { id: target.id, kind: 'draft' } : { id: target.id };
+}
+
+function resultText(block: unknown): string {
+  const content = (block as { content?: unknown }).content;
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((c) => (c && typeof c === 'object' && typeof (c as { text?: unknown }).text === 'string' ? (c as { text: string }).text : ''))
+    .join('\n');
 }

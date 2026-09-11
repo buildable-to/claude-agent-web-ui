@@ -101,6 +101,8 @@ export type ServerMessage =
   | { type: 'meta'; sessionId: string; meta: SessionMeta }
   /** The agent just changed the app's project for real (a `--real` apply finished). */
   | { type: 'project_changed'; sessionId: string; project?: string }
+  /** The agent read (or saved) an element or a draft: Project Studio's Element tab can follow it. */
+  | { type: 'element_focus'; sessionId: string; id: string; kind?: 'element' | 'draft' }
   | { type: 'error'; sessionId?: string; message: string };
 
 /** One row in the session list. */
