@@ -119,9 +119,11 @@ export default function App() {
       if (m.type === 'project_changed') {
         tellParent({ type: 'project_changed', sessionId: m.sessionId, ...(m.project ? { project: m.project } : {}) });
       } else if (m.type === 'element_focus') {
-        // the Element tab follows what the agent read or saved: the same
-        // highlight note a pill sends, carrying an id instead of a mark
-        tellParent({ type: 'highlight', ...(m.kind === 'draft' ? { draft_id: m.id } : { element_id: m.id }) });
+        // what the agent read or saved: the same highlight note a pill sends,
+        // carrying an id instead of a mark — and `auto`, because nobody
+        // clicked: the Elements tab adds a row and counts it, it does not
+        // jump (ezdxf-flask #469)
+        tellParent({ type: 'highlight', auto: true, ...(m.kind === 'draft' ? { draft_id: m.id } : { element_id: m.id }) });
       }
     });
   }, []);

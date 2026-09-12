@@ -107,6 +107,7 @@ export function attachWebSocket(
             ...(msg.model ? { model: msg.model } : {}),
             ...(msg.permissionMode ? { permissionMode: msg.permissionMode } : {}),
             ...(project ? { project } : {}),
+            ...(msg.sessionId ? {} : { firstPrompt: msg.text }),
           });
           attach(session);
           const text = msg.text.trim();

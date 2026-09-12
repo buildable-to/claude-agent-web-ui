@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { engineEnv, focusFromResult, perceiveTarget } from './live-session.js';
+import { conversationEnv, engineEnv, focusFromResult, perceiveTarget } from './live-session.js';
 
 test('the engine env never carries the service secrets', () => {
   process.env.AGENT_AUTH_SECRET = 'top-secret';
@@ -30,4 +30,17 @@ test('after a save the tab looks at the saved element; a draft read stays a draf
   assert.deepEqual(focusFromResult({ id: 'd4f2', save: true }, 'save: d4f2 → UPDATED e4 “Column C3” v8'), { id: 'e4', kind: 'element' });
   assert.deepEqual(focusFromResult({ id: 'd4f2', save: true }, 'save: d4f2 → would land (scratch — add --real to save it): “Column C3”'), { id: 'd4f2', kind: 'draft' });
   assert.deepEqual(focusFromResult({ id: '9c1e', save: false }, 'element 9c1e · v7 …'), { id: '9c1e' });
+});
+
+test('the engine knows which conversation it speaks for; the title rides along when there is one', () => {
+  assert.deepEqual(conversationEnv('abc-123'), { BUILDABLE_CONVERSATION: 'abc-123' });
+  assert.deepEqual(conversationEnv('abc-123', '  Gutter GT-1 from the DXF  '), {
+    BUILDABLE_CONVERSATION: 'abc-123',
+    BUILDABLE_CONVERSATION_TITLE: 'Gutter GT-1 from the DXF',
+  });
+  assert.deepEqual(conversationEnv('abc-123', '   '), { BUILDABLE_CONVERSATION: 'abc-123' });
+  // it rides through the allow-list with the rest of the engine's env
+  const env = engineEnv(conversationEnv('abc-123', 'Gutter'));
+  assert.equal(env.BUILDABLE_CONVERSATION, 'abc-123');
+  assert.equal(env.BUILDABLE_CONVERSATION_TITLE, 'Gutter');
 });
