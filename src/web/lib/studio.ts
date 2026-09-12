@@ -22,6 +22,8 @@ export type Viewing = {
   line: string;
   mark?: string;
   element?: { id: string; name: string; kind: string };
+  /** The Elements tab showing a draft the agent is drawing (no element yet). */
+  draft?: { id: string };
   sheet?: { kind: string; label: string };
   page?: { n: number; of: number };
   view?: { key: string; caption: string; denom: number | null };
@@ -55,6 +57,8 @@ export function readViewing(m: Record<string, unknown>): Viewing | null {
       kind: typeof e.kind === 'string' ? e.kind : '',
     };
   }
+  const d = m.draft as Record<string, unknown> | undefined;
+  if (d && typeof d === 'object' && typeof d.id === 'string' && d.id) out.draft = { id: d.id };
   const s = m.sheet as Record<string, unknown> | undefined;
   if (s && typeof s === 'object' && typeof s.kind === 'string') {
     out.sheet = { kind: s.kind, label: typeof s.label === 'string' ? s.label : s.kind };
@@ -158,18 +162,47 @@ export function hearParent(handler: (message: Record<string, unknown>) => void):
   return () => window.removeEventListener('message', on);
 }
 
-/** The transcript's grey line, read back: "Looking at E1 · Reinforcement ·
- *  page 1 of 4 · VIEW FROM A [viewA]" → the mark (first part), the sheet
- *  (second part, a label the studio resolves) and the view's key (the
- *  bracket at the end). A line about the whole project, or a GA sheet,
- *  names no piece and reads as null. */
-export function parseLine(line: string): { mark: string; sheet: string | null; view: string | null } | null {
+/** What the transcript's grey line points at, read back off its words. */
+export type LinePoint = {
+  /** A piece on the Drawings tab (or in the 3D): its mark. */
+  mark: string | null;
+  /** An element (or draft) on the Elements tab: its id, off the bracket. */
+  element_id: string | null;
+  /** A sheet label the studio resolves ("Reinforcement"), or a kind ("formwork"). */
+  sheet: string | null;
+  /** The view's program key. */
+  view: string | null;
+};
+
+/** The transcript's grey line, read back.
+ *
+ *  On the Drawings tab: "Looking at E1 · Reinforcement · page 1 of 4 · VIEW
+ *  FROM A [viewA]" → the mark (first part), the sheet (second part, a label
+ *  the studio resolves) and the view's key (the bracket at the end).
+ *
+ *  On the Elements tab: "Looking at Gutter GT-1 · 500×600 U · L12290 ·
+ *  Element Studio · Formwork · SECTION A–A [a63b0f7e · formwork · sec@400]"
+ *  → the element's id, the sheet kind and the view key are all in the
+ *  bracket (an element there may be unplaced, so no mark finds it; its name
+ *  may itself hold " · "); the sheet kind stands in for the label.
+ *
+ *  A line about the whole project, or a GA sheet, or an Elements tab with
+ *  nothing on it, names nothing to show and reads as null. */
+export function parseLine(line: string): LinePoint | null {
   const t = line.trim().replace(/^Looking at /, '');
   const km = /\s\[([^\]]+)\]$/.exec(t);
-  const view = km?.[1] ?? null;
-  const parts = (km ? t.slice(0, km.index) : t).split(' · ');
+  const bracket = km?.[1] ?? null;
+  const words = km ? t.slice(0, km.index) : t;
+  const parts = words.split(' · ');
+  if (parts.includes('Element Studio')) {
+    if (!bracket) return null;
+    const keys = bracket.split(' · ').map((k) => k.trim());
+    const element_id = keys[0] ?? '';
+    if (!element_id) return null;
+    return { mark: null, element_id, sheet: keys[1] ?? null, view: keys[2] ?? null };
+  }
   const mark = parts[0]?.trim() ?? '';
   if (!mark || mark.startsWith('the ') || /^S-\d+$/.test(mark)) return null;
   const sheet = parts.length > 1 ? (parts[1] ?? '').trim() : '';
-  return { mark, sheet: sheet || null, view };
+  return { mark, element_id: null, sheet: sheet || null, view: bracket };
 }
