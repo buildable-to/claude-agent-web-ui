@@ -12,6 +12,9 @@ test("a conversation's title: the engineer's name for it, else the summary, else
 test('a fresh conversation is called by the first line of its first message, cut short', () => {
   assert.equal(titleFromPrompt('make the gutter GT-1 from gutter.dxf\nlength as drawn'), 'make the gutter GT-1 from gutter.dxf');
   assert.equal(titleFromPrompt('\n\n   spaced   out  \n'), 'spaced out');
+  // the chip's line is context, not the name (found live: "Looking at the whole project in 3D")
+  assert.equal(titleFromPrompt('Looking at the whole project in 3D\nMake a simple precast lintel for this project'), 'Make a simple precast lintel for this project');
+  assert.equal(titleFromPrompt('Looking at E1 · Reinforcement [viewA]'), undefined);
   assert.equal(titleFromPrompt(''), undefined);
   assert.equal(titleFromPrompt(undefined), undefined);
   const long = 'x'.repeat(200);

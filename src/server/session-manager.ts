@@ -31,12 +31,15 @@ export function sessionTitle(s: { customTitle?: string; summary?: string; firstP
 }
 
 /** A fresh conversation is called by its first line until it has a better
- *  name — the same word the session list shows once the turn is on disk. */
+ *  name — the same word the session list shows once the turn is on disk.
+ *  The panel's own "Looking at …" line (the chip, web/lib/studio.ts
+ *  LOOKING_AT) rides in front of the engineer's sentence and is not a name:
+ *  found live, a lintel's chat was called "Looking at the whole project in 3D". */
 export function titleFromPrompt(text: string | undefined, max = 120): string | undefined {
   const line = (text ?? '')
     .split('\n')
     .map((l) => l.replace(/\s+/g, ' ').trim())
-    .find(Boolean);
+    .find((l) => l && !/^Looking at /.test(l));
   if (!line) return undefined;
   return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
 }
