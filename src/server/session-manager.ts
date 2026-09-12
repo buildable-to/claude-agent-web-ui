@@ -24,6 +24,23 @@ export type Usage = { totalCostUsd: number; numTurns: number; at: number };
  *  under one home; probe the engine once per process, not once per account. */
 export type SharedEngineInfo = { value: EngineInfo | null; probe: Promise<EngineInfo> | null };
 
+/** What a persisted conversation is called: the engineer's own name for it,
+ *  else the engine's summary, else how it began. */
+export function sessionTitle(s: { customTitle?: string; summary?: string; firstPrompt?: string }): string | undefined {
+  return s.customTitle || s.summary || s.firstPrompt || undefined;
+}
+
+/** A fresh conversation is called by its first line until it has a better
+ *  name — the same word the session list shows once the turn is on disk. */
+export function titleFromPrompt(text: string | undefined, max = 120): string | undefined {
+  const line = (text ?? '')
+    .split('\n')
+    .map((l) => l.replace(/\s+/g, ' ').trim())
+    .find(Boolean);
+  if (!line) return undefined;
+  return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
+}
+
 export class SessionManager {
   private readonly live = new Map<string, LiveSession>();
   private readonly info: SharedEngineInfo;
@@ -51,11 +68,14 @@ export class SessionManager {
     return s;
   }
 
-  /** Attach to a live session, resume a persisted one, or start fresh. */
+  /** Attach to a live session, resume a persisted one, or start fresh.
+   *  `firstPrompt` is the message that starts a fresh conversation: its first
+   *  line is the conversation's title until the engine has a better one. */
   async open(
     sessionId: string | null,
-    opts: { model?: string; permissionMode?: PermissionMode; project?: string } = {},
+    opts: { model?: string; permissionMode?: PermissionMode; project?: string; firstPrompt?: string } = {},
   ): Promise<LiveSession> {
+    let title: string | undefined;
     if (sessionId) {
       const existing = this.get(sessionId);
       if (existing) return existing;
@@ -63,9 +83,12 @@ export class SessionManager {
       // otherwise find the id in ANY folder under the shared home.
       const info = await getSessionInfo(sessionId, { dir: this.projectDir });
       if (!info) throw new Error('No such conversation in this account');
+      title = sessionTitle(info);
+    } else {
+      title = titleFromPrompt(opts.firstPrompt);
     }
     const project = opts.project ?? (sessionId ? this.projects[sessionId] : undefined);
-    const { project: _p, ...rest } = opts;
+    const { project: _p, firstPrompt: _f, ...rest } = opts;
     const only = await this.offeredCommands();
     const session = new LiveSession({
       cwd: this.projectDir,
@@ -76,6 +99,7 @@ export class SessionManager {
       ...(this.accountId ? { permissionMode: 'auto' as const } : {}),
       ...rest,
       ...(project ? { project } : {}),
+      ...(title ? { title } : {}),
       ...(only ? { onlyCommands: only } : {}),
       // On a shared server one click must not rewrite a folder's rules for good.
       persistAlways: !this.accountId,
@@ -148,7 +172,7 @@ export class SessionManager {
       const u = this.usage[s.sessionId];
       return {
         sessionId: s.sessionId,
-        title: s.customTitle || s.summary || s.firstPrompt || 'Untitled session',
+        title: sessionTitle(s) || 'Untitled session',
         lastModified: s.lastModified,
         createdAt: s.createdAt,
         cwd: s.cwd,

@@ -33,6 +33,16 @@ export function engineEnv(extra: Record<string, string> = {}): Record<string, st
   return { ...out, ...extra };
 }
 
+/** Which conversation the engine — and every door it runs — speaks for. The
+ *  element doors stamp a draft or a saved element with it, so the project's
+ *  Elements tab can say which chat made each row (ezdxf-flask #469). The id
+ *  is always known here (a fresh one is minted before the engine starts);
+ *  the title when the caller has one. */
+export function conversationEnv(sessionId: string, title?: string): Record<string, string> {
+  const t = (title ?? '').trim();
+  return { BUILDABLE_CONVERSATION: sessionId, ...(t ? { BUILDABLE_CONVERSATION_TITLE: t } : {}) };
+}
+
 /** Push-based async iterable that feeds user turns into the engine. */
 class InputQueue implements AsyncIterable<SDKUserMessage> {
   private items: SDKUserMessage[] = [];
@@ -83,6 +93,9 @@ export type LiveSessionOptions = {
   env?: Record<string, string>;
   /** The app project this conversation is about. */
   project?: string;
+  /** What this conversation is called, for the rows its elements make on the
+   *  project's Elements tab (ezdxf-flask #469): "from “<title>”". */
+  title?: string;
   /** Let "Always allow" write a rule to the folder's settings (default true; off on a shared server). */
   persistAlways?: boolean;
   /** Where the app shows the project, for the preface of the first message. */
@@ -162,7 +175,11 @@ export class LiveSession {
         settingSources: ['user', 'project', 'local'],
         canUseTool: this.canUseTool,
         abortController: this.abort,
-        env: engineEnv({ ...(opts.env ?? {}), CLAUDE_AGENT_SDK_CLIENT_APP: 'claude-agent-web-ui/0.1.0' }),
+        env: engineEnv({
+          ...(opts.env ?? {}),
+          ...conversationEnv(this.sessionId, opts.title),
+          CLAUDE_AGENT_SDK_CLIENT_APP: 'claude-agent-web-ui/0.1.0',
+        }),
         stderr: (data) => {
           const line = data.trim();
           if (line) console.error(`[engine ${this.shortId}] ${line}`);
