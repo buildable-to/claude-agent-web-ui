@@ -1,4 +1,4 @@
-import { ArrowUp, AtSign, Eye, EyeOff, SlashSquare, Square, X } from 'lucide-react';
+import { ArrowUp, AtSign, Bell, BellOff, Eye, EyeOff, SlashSquare, Square, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { CommandInfo, SessionStatus } from '@shared/protocol';
 import { money } from '@/lib/format';
@@ -41,6 +41,10 @@ type Props = {
   onRestoreViewing?: () => void;
   /** Click the chip: the studio frames what it names. */
   onShowViewing?: () => void;
+  /** The chime when the agent needs you: on or off in this browser, and the
+   *  bell that switches it. */
+  chime?: boolean;
+  onChime?: () => void;
 };
 
 /** The picker is open while the draft is a lone "/word" with no space yet. */
@@ -67,6 +71,8 @@ export function ChatInput({
   viewingDismissed = false,
   onRestoreViewing,
   onShowViewing,
+  chime = true,
+  onChime,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const mirror = useRef<HTMLDivElement>(null);
@@ -368,6 +374,22 @@ export function ChatInput({
               >
                 <AtSign className="size-3.5" /> Marks
                 <span className="text-ink-3">{mentions.marks.length}</span>
+              </button>
+            )}
+            {onChime && (
+              <button
+                type="button"
+                onClick={onChime}
+                aria-pressed={chime}
+                aria-label="Chime when the agent needs you"
+                title={
+                  chime
+                    ? 'A chime when the agent needs you — click to turn it off'
+                    : 'No chime when the agent needs you — click to turn it on'
+                }
+                className={`flex h-7 items-center rounded-md px-2 hover:bg-panel-2 hover:text-ink ${chime ? 'text-ink-2' : 'text-ink-3'}`}
+              >
+                {chime ? <Bell className="size-3.5" /> : <BellOff className="size-3.5" />}
               </button>
             )}
             {controls ? (

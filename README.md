@@ -61,6 +61,13 @@ scratch files go through, every command still asks) and Plan only; "Auto" and
 "Bypass all" are not offered there, since a mode that approves commands would
 skip the live-apply and memory cards.
 
+When a card comes up the tab says so — the title reads "● Needs you" and the
+icon turns amber — and the page chimes once, two short notes, so an engineer
+looking at the model hears it. The bell under the composer turns the chime off
+for this browser; turning it back on plays it once. A browser keeps a page
+silent until it has been clicked or typed in, so the first chime waits for
+that gesture; the title and the icon do not.
+
 ## What the page shows
 
 The engineer's words on the right, the agent's words on the left, and between
