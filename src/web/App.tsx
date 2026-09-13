@@ -10,6 +10,7 @@ import { PermissionBanner } from './components/PermissionBanner';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { api } from './lib/api';
+import { armChime, chime, readChimeOn, shouldChime, writeChimeOn } from './lib/chime';
 import { EMPTY_MENTIONS, type Mentions } from './lib/mentions';
 import { listenForMentions, MentionsProvider } from './lib/mentionsLive';
 import { BASE, page, tellParent } from './lib/page';
@@ -133,6 +134,28 @@ export default function App() {
   useEffect(() => {
     if (connection === 'expired') tellParent({ type: 'expired' });
   }, [connection]);
+
+  // A card came up while the engineer's eyes were on the model: a chime,
+  // unless this browser turned it off. The bell under the composer is the
+  // switch; turning it on plays the chime once, so they hear what it is —
+  // and that click is the gesture the browser wants before it lets the page
+  // sound.
+  const [chimeOn, setChimeOn] = useState(readChimeOn);
+  const lastStatus = useRef(state.status);
+  useEffect(() => {
+    armChime();
+  }, []);
+  useEffect(() => {
+    const prev = lastStatus.current;
+    lastStatus.current = state.status;
+    if (chimeOn && shouldChime(prev, state.status)) chime();
+  }, [state.status, chimeOn]);
+  const toggleChime = useCallback(() => {
+    const next = !chimeOn;
+    writeChimeOn(next);
+    setChimeOn(next);
+    if (next) chime();
+  }, [chimeOn]);
 
   // The tab itself reports state: a dot on the icon and a title prefix.
   useEffect(() => {
@@ -277,6 +300,8 @@ export default function App() {
           viewingDismissed={!!viewing && !viewingOn}
           onRestoreViewing={() => setViewingOff(null)}
           onShowViewing={canShow(viewingOn) ? () => showViewing(viewingOn) : undefined}
+          chime={chimeOn}
+          onChime={toggleChime}
           {...(embed
             ? {
                 controls: {
