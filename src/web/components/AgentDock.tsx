@@ -42,7 +42,7 @@ export function AgentDock({ lanes }: { lanes: DockLane[] }) {
   }`;
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 pb-2" role="region" aria-label="Agents running">
+    <div className="mx-auto w-full max-w-3xl px-6 pb-2 max-sm:px-3" role="region" aria-label="Agents running">
       <div className="rise rounded-xl border border-line bg-panel/90 px-2 py-1.5 shadow-strong backdrop-blur">
         <button
           type="button"
