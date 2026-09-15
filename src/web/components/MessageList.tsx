@@ -70,11 +70,11 @@ export function MessageList({
 
   return (
     <div ref={ref} className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-3xl space-y-5 px-6 py-6">
+      <div className="mx-auto max-w-3xl space-y-5 px-6 py-6 max-sm:px-4">
         {loading && <Skeleton />}
 
         {!loading && turns.length === 0 && (
-          <div className="rise pt-20">
+          <div className="rise pt-20 max-sm:pt-6">
             <div className="px-6 py-6 text-center">
               <p className="text-[11px] font-semibold tracking-[0.3em] text-ink-3 uppercase">
                 {kicker ?? `Claude Agent · ${projectName}`}

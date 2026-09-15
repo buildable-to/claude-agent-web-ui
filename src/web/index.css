@@ -477,6 +477,55 @@ select.pill {
   }
 }
 
+/* ===== Phones. Embedded, this page is Project Studio's Chat tab: the
+   studio's own bar and thumb bar sit outside the frame, and the frame is
+   the whole screen between them. Same query as the studio's phone block
+   (project_v4.html), so the two agree on what a phone is: a narrow
+   viewport, or a touch-only device in "Desktop site" mode. */
+@media (max-width: 768px), ((hover: none) and (pointer: coarse) and (max-width: 1100px)) {
+  /* iOS zooms the page into any field under 16px on focus; the mirror
+     shares the textarea's metrics, so it moves with it */
+  .focus-glow textarea,
+  .composer-mirror {
+    font-size: 16px;
+  }
+  /* A popover anchored to its trigger's left edge runs off a 390px screen.
+     On a phone every menu is a sheet across the screen: the composer's
+     (opening up) from the bottom, the thread row's (opening down) under it. */
+  .menu-pop {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    translate: none;
+    margin: 0;
+    max-height: 70dvh;
+  }
+  .menu-pop.bottom-full {
+    top: auto;
+    bottom: max(12px, env(safe-area-inset-bottom));
+  }
+  .menu-pop.top-full {
+    top: 52px;
+    bottom: auto;
+  }
+  /* rows and buttons a thumb can hit */
+  .menu-item {
+    min-height: 40px;
+  }
+  .menu-btn,
+  .iconbtn {
+    height: 2.25rem;
+  }
+  .lightbox {
+    padding: 12px;
+  }
+  .lightbox-fig img {
+    max-width: 100%;
+  }
+}
+
 /* Keyboard focus ring for controls; inputs inside a .focus-glow container use
    the container's ring instead. Layered so utilities can override it. */
 @layer base {

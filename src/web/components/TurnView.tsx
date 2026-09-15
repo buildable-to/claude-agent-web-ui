@@ -75,7 +75,7 @@ export const TurnView = memo(function TurnView({ turn, live = false }: TurnProps
         {viewing && (
           <button
             type="button"
-            className="mb-1 flex max-w-[min(34rem,78%)] items-center gap-1 text-[11px] text-ink-3 hover:text-ink"
+            className="mb-1 flex max-w-[min(34rem,78%)] max-sm:max-w-[88%] items-center gap-1 text-[11px] text-ink-3 hover:text-ink"
             title="What the agent was told you were looking at — click to show it in the studio"
             onClick={() => showLine(viewing)}
           >
@@ -83,7 +83,7 @@ export const TurnView = memo(function TurnView({ turn, live = false }: TurnProps
             <span className="truncate">{viewing.replace(/ \[[^\]]+\]$/, '')}</span>
           </button>
         )}
-        <div className="max-w-[min(34rem,78%)] rounded-[18px] rounded-br-[5px] bg-bubble px-3.5 py-2 text-[13.5px] leading-[1.5] whitespace-pre-wrap break-words text-white shadow-[0_1px_2px_rgba(0,0,0,.25)]">
+        <div className="max-w-[min(34rem,78%)] max-sm:max-w-[88%] rounded-[18px] rounded-br-[5px] bg-bubble px-3.5 py-2 text-[13.5px] leading-[1.5] whitespace-pre-wrap break-words text-white shadow-[0_1px_2px_rgba(0,0,0,.25)]">
           {splitMentions(text).map((part, i) =>
             typeof part === 'string' ? part : <Mention key={i} token={part.mention} light />,
           )}

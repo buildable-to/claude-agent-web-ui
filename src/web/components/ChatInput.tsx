@@ -208,7 +208,7 @@ export function ChatInput({
         : 'Ask for a change, a plan, or a diagnosis… or type / for skills';
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-5 pt-2 pb-3">
+    <div className="mx-auto w-full max-w-3xl px-5 pt-2 pb-3 max-sm:px-3">
       <div className="focus-glow relative rounded-[22px] border border-line-2 bg-panel shadow-strong transition">
         {pickerOpen && (
           <CommandPicker
@@ -341,7 +341,8 @@ export function ChatInput({
         </div>
       </div>
       <div className="mt-1.5 flex items-center justify-between gap-3 px-2">
-        <div className="flex items-center gap-2">
+        {/* on a phone the row wraps: Skills · Marks · bell, then the two pickers */}
+        <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => {
@@ -399,7 +400,7 @@ export function ChatInput({
             )}
           </div>
         {controls && controls.meta.totalCostUsd !== undefined && (
-          <span className="font-mono text-[10.5px] text-ink-3" title="Estimated cost of this conversation">
+          <span className="font-mono text-[10.5px] text-ink-3 max-sm:hidden" title="Estimated cost of this conversation">
             {money(controls.meta.totalCostUsd)}
           </span>
         )}

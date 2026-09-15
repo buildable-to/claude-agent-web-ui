@@ -69,7 +69,7 @@ function QuestionCard({ request, queued, onAnswer }: Props) {
   const btn =
     'h-8 rounded-md px-3.5 text-[12.5px] font-semibold transition active:translate-y-px focus-visible:outline-inverse-ink';
   return (
-    <div className="mx-auto w-full max-w-3xl px-6">
+    <div className="mx-auto w-full max-w-3xl px-6 max-sm:px-3">
       <div className="rise rounded-xl bg-inverse p-4 text-inverse-ink shadow-strong">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-accent/25 text-accent">
@@ -214,7 +214,7 @@ export function PermissionBanner({ request, queued, onAnswer }: Props) {
   const btn =
     'h-8 rounded-md px-3.5 text-[12.5px] font-semibold transition active:translate-y-px focus-visible:outline-inverse-ink';
   return (
-    <div className="mx-auto w-full max-w-3xl px-6">
+    <div className="mx-auto w-full max-w-3xl px-6 max-sm:px-3">
       <div className="rise rounded-xl bg-inverse p-4 text-inverse-ink shadow-strong">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-warn/25 text-[#8a5a00]">
