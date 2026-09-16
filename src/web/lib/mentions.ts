@@ -74,7 +74,7 @@ export function matchMentions(items: MentionItem[], query: string): MentionItem[
  *  or null when the caret is not inside one. */
 export function mentionQuery(value: string, caret: number): { start: number; query: string } | null {
   const before = value.slice(0, Math.max(0, Math.min(caret, value.length)));
-  const m = /(?:^|\s)@([^\s@]*)$/.exec(before);
+  const m = /(?:^|\s)@(|[A-Za-z][^\s@]*)$/.exec(before);
   if (!m) return null;
   const query = m[1] ?? '';
   return { start: before.length - query.length - 1, query };
@@ -93,7 +93,9 @@ export function insertMention(
   return { value: text + tail, caret: text.length };
 }
 
-const TOKEN = /@([A-Za-z0-9_.-]+)/g;
+// A mark always starts with a letter (B1, FB1, C10). So "@150" is not a
+// mention — it is a spacing, the way a stirrup run reads "12@100 | @200".
+const TOKEN = /@([A-Za-z][A-Za-z0-9_.-]*)/g;
 
 /** A sentence split into words and mentions, for the engineer's bubble. */
 export function splitMentions(text: string): Array<string | { mention: string }> {
@@ -132,7 +134,7 @@ export function linkMarks(markdown: string, known: string[]): string {
   // one pass: an "@word" anywhere, or a known mark as a whole word — so a
   // link this pass writes is never scanned again by a second one
   const both = new RegExp(
-    `(^|[^\\w[\\]])@([A-Za-z0-9_.-]+)` +
+    `(^|[^\\w[\\]])@([A-Za-z][A-Za-z0-9_.-]*)` +
       (escaped.length ? `|(^|[^\\w@/\\[\\]:-])(${escaped.join('|')})(?![\\w/-])` : ''),
     'g',
   );
