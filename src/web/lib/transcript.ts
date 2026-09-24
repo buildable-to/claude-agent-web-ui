@@ -270,6 +270,31 @@ export function markCut(t: Transcript, id: string): Transcript {
   return addNote(closeOpenTurn(t), id, 'info', CUT_TEXT);
 }
 
+/** What a sub-agent says when its conversation closed under it. */
+export const STOPPED_TEXT = 'Stopped: the conversation closed before this agent finished.';
+
+/** A conversation no engine holds any more (closed, reaped, the server
+ *  restarted) has no sub-agents running either: their tasks died with the
+ *  engine and no notification will ever come. Say so, instead of "running"
+ *  for ever (Maxima, 2026-09-24: six gutter drafters shown running two hours
+ *  after the conversation was closed). */
+export function stopOrphanTasks(t: Transcript): Transcript {
+  let changed = false;
+  const turns = t.turns.map((turn) => {
+    if (turn.kind !== 'assistant') return turn;
+    let mine = false;
+    const blocks = turn.blocks.map((b) => {
+      if (b.type !== 'tool_use' || b.task?.status !== 'running') return b;
+      mine = true;
+      return { ...b, task: { ...b.task, status: 'stopped' as const, summary: STOPPED_TEXT } };
+    });
+    if (!mine) return turn;
+    changed = true;
+    return { ...turn, blocks };
+  });
+  return changed ? { ...t, turns } : t;
+}
+
 /** The engine is still working on the newest turn (a second tab attached
  *  mid-turn, or the page came back): history closed it, so open it again for
  *  what the engine sends next. A turn ending in the engineer's own words is
