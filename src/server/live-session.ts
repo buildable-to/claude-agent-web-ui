@@ -112,6 +112,11 @@ export class LiveSession {
   status: SessionStatus = 'starting';
   meta: SessionMeta = {};
   lastActivity = Date.now();
+  /** Background tasks (sub-agents, backgrounded commands) the engine still
+   *  runs, housekeeping excluded — the SDK's own level signal
+   *  (`background_tasks_changed`). A conversation whose turn ended is still
+   *  working while this is above zero. */
+  backgroundWork = 0;
 
   private readonly input = new InputQueue();
   private readonly q: Query;
@@ -340,6 +345,8 @@ export class LiveSession {
       if (this.status === 'starting') this.setStatus('idle');
       this.broadcast({ type: 'meta', sessionId: this.sessionId, meta: this.meta });
       void this.loadInitDetails();
+    } else if (message.type === 'system' && message.subtype === 'background_tasks_changed') {
+      this.backgroundWork = message.tasks.filter((t) => !t.ambient).length;
     } else if (message.type === 'system' && message.subtype === 'session_state_changed') {
       this.setStatus(message.state);
     } else if (message.type === 'system' && message.subtype === 'status' && message.permissionMode) {

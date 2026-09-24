@@ -13,6 +13,24 @@ import { claudeConfigDir, installedSkills, probeEngine } from './commands.js';
 import { LiveSession } from './live-session.js';
 
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
+/** How long a conversation with background work still running may go without
+ *  a message before it is closed anyway — a guard against a task that never
+ *  settles, never the normal way a long fan-out ends. */
+const BACKGROUND_IDLE_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+
+/** Whether the reaper closes this conversation now. A turn that ended with
+ *  sub-agents still at work is NOT idle: closing it killed them (Maxima,
+ *  2026-09-24: six gutter drafters stopped mid-work by "closing idle", and the
+ *  page went on showing them running). */
+export function shouldReap(
+  s: { status: string; lastActivity: number; backgroundWork: number },
+  now: number,
+): boolean {
+  if (s.status !== 'idle' && s.status !== 'closed') return false;
+  const quiet = now - s.lastActivity;
+  if (s.status === 'closed') return quiet > IDLE_TIMEOUT_MS;
+  return quiet > (s.backgroundWork > 0 ? BACKGROUND_IDLE_TIMEOUT_MS : IDLE_TIMEOUT_MS);
+}
 /** Which app project each conversation in this folder is about. */
 const PROJECTS_FILE = '.agent-projects.json';
 /** What each conversation has cost so far (the engine's running totals). */
@@ -288,8 +306,7 @@ export class SessionManager {
   private reapIdle() {
     const now = Date.now();
     for (const [id, s] of this.live) {
-      const idle = s.status === 'idle' || s.status === 'closed';
-      if (idle && now - s.lastActivity > IDLE_TIMEOUT_MS) {
+      if (shouldReap(s, now)) {
         console.log(`[sessions] closing idle ${s.shortId}`);
         s.close();
         this.live.delete(id);

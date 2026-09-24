@@ -16,6 +16,7 @@ import {
   emptyTranscript,
   markCut,
   reopenLastTurn,
+  stopOrphanTasks,
   type Transcript,
 } from '@/lib/transcript';
 import { ws } from '@/lib/ws';
@@ -108,7 +109,9 @@ function reducer(state: SessionState, action: Action): SessionState {
             attached: false,
             status: 'idle',
             pending: [],
-            transcript: markCut(state.transcript, `cut-${m.sessionId}-${state.transcript.turns.length}`),
+            transcript: stopOrphanTasks(
+              markCut(state.transcript, `cut-${m.sessionId}-${state.transcript.turns.length}`),
+            ),
           };
         case 'message':
           return { ...state, transcript: applyMessage(state.transcript, m.message) };
@@ -126,7 +129,7 @@ function reducer(state: SessionState, action: Action): SessionState {
             pending: m.status === 'closed' ? [] : state.pending,
             transcript:
               m.status === 'closed'
-                ? markCut(state.transcript, `cut-${m.sessionId}-${state.transcript.turns.length}`)
+                ? stopOrphanTasks(markCut(state.transcript, `cut-${m.sessionId}-${state.transcript.turns.length}`))
                 : state.transcript,
           };
         case 'meta':
