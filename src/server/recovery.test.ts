@@ -76,12 +76,13 @@ test('drain cap persists a stopped-builder notice before abort, once, across res
   assert.equal(session.status, 'idle');
   assert.equal(manager.busy(), 1);
   const seen: ServerMessage[] = [];
+  let durableBeforeAbort = false;
   session.subscribe((m) => seen.push(m));
   session.subscribe((m) => {
     if (m.type === 'work_stopped') {
       const disk = JSON.parse(readFileSync(join(dir, '.agent-work.json'), 'utf8'));
-      assert.equal(disk.entries[session.sessionId].notices[0].id, m.notice.id);
-      assert.equal(cli.options?.abortController?.signal.aborted, false);
+      durableBeforeAbort = disk.entries[session.sessionId].notices[0].id === m.notice.id
+        && cli.options?.abortController?.signal.aborted === false;
     }
   });
   t.mock.timers.enable({ apis: ['Date', 'setInterval'] });
@@ -95,6 +96,7 @@ test('drain cap persists a stopped-builder notice before abort, once, across res
   assert.equal(notices.length, 1);
   assert.equal(notices[0]?.reason, 'service_stop');
   assert.equal(cli.options?.abortController?.signal.aborted, true);
+  assert.equal(durableBeforeAbort, true, 'notice delivery observes durable state before process abort');
   assert.equal(seen.filter((m) => m.type === 'work_stopped').length, 1);
   assert.ok(seen.findIndex((m) => m.type === 'work_stopped') < seen.findIndex((m) => m.type === 'status' && m.status === 'closed'));
   const restarted = new SessionManager(dir);
