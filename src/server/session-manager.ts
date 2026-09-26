@@ -255,9 +255,9 @@ export class SessionManager {
     return [...this.live.values()].filter((s) => s.status !== 'closed');
   }
 
-  /** Engines in the middle of a turn, or waiting on the engineer. */
+  /** Engines with foreground or background work, including permission waits. */
   busy(): number {
-    return this.liveSessions().filter((s) => s.status === 'running' || s.status === 'requires_action' || s.status === 'starting').length;
+    return this.liveSessions().filter((s) => s.backgroundWork > 0 || s.status === 'running' || s.status === 'requires_action' || s.status === 'starting').length;
   }
 
   /** Stop one conversation's engine: deny what it is waiting on, interrupt, close. */
