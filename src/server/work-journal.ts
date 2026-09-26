@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { StoppedWorkNotice } from '../shared/protocol.js';
 
 export type WorkState = {
@@ -92,6 +92,14 @@ export class WorkJournal {
         closeSync(fd);
       }
       renameSync(temp, this.path);
+      // File data alone does not make the rename survive a machine crash.
+      // Flush its directory entry before acknowledging the durable change.
+      const directory = openSync(dirname(this.path), 'r');
+      try {
+        fsyncSync(directory);
+      } finally {
+        closeSync(directory);
+      }
       this.data = data;
     } finally {
       rmSync(temp, { force: true });

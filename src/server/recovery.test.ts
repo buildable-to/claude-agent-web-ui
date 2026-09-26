@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import fs, { mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setImmediate } from 'node:timers/promises';
@@ -19,6 +20,27 @@ function folder(t: TestContext) {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
+
+test('journal synchronizes the renamed directory entry before acknowledging durable work', (t) => {
+  const dir = folder(t);
+  const journal = new WorkJournal(dir);
+  const operations: string[] = [];
+  const realFsync = fs.fsyncSync;
+  const realRename = fs.renameSync;
+  const sync = t.mock.method(fs, 'fsyncSync', (fd: number) => {
+    operations.push(fs.fstatSync(fd).isDirectory() ? 'directory sync' : 'file sync');
+    realFsync(fd);
+  });
+  const rename = t.mock.method(fs, 'renameSync', (...args: Parameters<typeof realRename>) => {
+    realRename(...args);
+    operations.push('rename');
+  });
+  // Keep the real disk operations, observing only their durability boundary.
+  syncBuiltinESMExports();
+  t.after(() => { sync.mock.restore(); rename.mock.restore(); syncBuiltinESMExports(); });
+  journal.begin({ sessionId: 'session', generation: 'engine', active: true, lastActiveAt: 1 });
+  assert.deepEqual(operations, ['file sync', 'rename', 'directory sync']);
+});
 
 /** Only the CLI process is replaced. The real pump, manager, journal, drain
  *  and WebSocket server run, with neither credentials nor model calls. */
