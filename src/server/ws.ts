@@ -87,7 +87,7 @@ export function attachWebSocket(
         case 'attach': {
           const session = sessions.get(msg.sessionId);
           if (!session) {
-            send({ type: 'not_live', sessionId: msg.sessionId });
+            send({ type: 'not_live', sessionId: msg.sessionId, stoppedWork: sessions.stoppedWork(msg.sessionId) });
             return;
           }
           attach(session);
@@ -109,6 +109,10 @@ export function attachWebSocket(
             ...(project ? { project } : {}),
             ...(msg.sessionId ? {} : { firstPrompt: msg.text }),
           });
+          if (state.draining()) {
+            session.close();
+            throw new Error(DRAINING_MESSAGE);
+          }
           attach(session);
           const text = msg.text.trim();
           if (text) session.send(text, msg.uuid);
@@ -162,6 +166,7 @@ export function attachWebSocket(
         replay: session.replay,
         pending: session.pendingRequests,
         meta: session.meta,
+        stoppedWork: sessions.stoppedWork(session.sessionId),
       });
     }
 

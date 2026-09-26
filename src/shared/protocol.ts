@@ -8,6 +8,18 @@ export type { PermissionMode, SDKMessage };
 
 export type SessionStatus = 'starting' | 'idle' | 'running' | 'requires_action' | 'closed';
 
+/** A durable interruption, distinct from ordinary turn completion. */
+export type StoppedWorkNotice = {
+  id: string;
+  sessionId: string;
+  reason: 'service_restart' | 'service_stop' | 'engine_exit' | 'user_stop' | 'idle_timeout';
+  detectedAt: number;
+  /** Last persisted evidence of activity, not an inferred crash time. */
+  lastActiveAt: number;
+  /** Place the notice after this persisted turn when replaying history. */
+  afterMessageUuid?: string;
+};
+
 /** A permission question the engine is waiting on. */
 export type PermissionRequest = {
   requestId: string;
@@ -92,8 +104,10 @@ export type ServerMessage =
       replay: SDKMessage[];
       pending: PermissionRequest[];
       meta: SessionMeta;
+      stoppedWork: StoppedWorkNotice[];
     }
-  | { type: 'not_live'; sessionId: string }
+  | { type: 'not_live'; sessionId: string; stoppedWork: StoppedWorkNotice[] }
+  | { type: 'work_stopped'; sessionId: string; notice: StoppedWorkNotice }
   | { type: 'message'; sessionId: string; message: SDKMessage }
   | { type: 'permission_request'; sessionId: string; request: PermissionRequest }
   | { type: 'permission_resolved'; sessionId: string; requestId: string }
@@ -129,6 +143,7 @@ export type HistoryMessage = {
   session_id: string;
   message: unknown;
   parent_tool_use_id: string | null;
+  stoppedWork?: StoppedWorkNotice;
 };
 
 export type ServerConfig = {

@@ -4,13 +4,13 @@ import { AgentDock } from './components/AgentDock';
 import { ChatInput } from './components/ChatInput';
 import { FileTree } from './components/FileTree';
 import { dockLanes } from '@/lib/agents';
-import { finishedFileSteps, runningAgents } from '@/lib/transcript';
+import { finishedFileSteps, runningAgents, stoppedWorkNotices } from '@/lib/transcript';
 import { MessageList } from './components/MessageList';
 import { PermissionBanner } from './components/PermissionBanner';
 import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { api } from './lib/api';
-import { armChime, chime, readChimeOn, shouldChime, writeChimeOn } from './lib/chime';
+import { armChime, chime, readChimeOn, shouldChime, shouldChimeForStoppedWork, writeChimeOn } from './lib/chime';
 import { EMPTY_MENTIONS, type Mentions } from './lib/mentions';
 import { listenForMentions, MentionsProvider } from './lib/mentionsLive';
 import { BASE, page, tellParent } from './lib/page';
@@ -150,6 +150,9 @@ export default function App() {
     lastStatus.current = state.status;
     if (chimeOn && shouldChime(prev, state.status)) chime();
   }, [state.status, chimeOn]);
+  useEffect(() => {
+    if (shouldChimeForStoppedWork(stoppedWorkNotices(state.transcript), chimeOn)) chime();
+  }, [state.transcript, chimeOn]);
   const toggleChime = useCallback(() => {
     const next = !chimeOn;
     writeChimeOn(next);
