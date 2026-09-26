@@ -198,7 +198,7 @@ export function ChatInput({
 
   // one set of metrics for the textarea and its mirror
   const field = `py-[11px] ${busy ? 'pr-[5.25rem]' : 'pr-12'} pl-4 text-[13.5px] leading-relaxed`;
-  const hasMentions = /(^|\s)@[^\s@]+/.test(value);
+  const hasMentions = /(^|\s)@[A-Za-z][^\s@]*/.test(value);
 
   const placeholder =
     status === 'closed'
