@@ -21,7 +21,11 @@ type Props = {
   value: string;
   onChange: (value: string) => void;
   status: SessionStatus | 'connecting';
-  onSend: (text: string) => void;
+  /** Builders and background commands can outlive the coordinator turn. */
+  backgroundWork?: number;
+  /** Returning false keeps the draft when delivery cannot be accepted yet. */
+  onSend: (text: string) => void | boolean;
+  stopping?: boolean;
   onStop: () => void;
   commands: CommandInfo[];
   commandsLoading: boolean;
@@ -58,6 +62,8 @@ export function ChatInput({
   value,
   onChange,
   status,
+  backgroundWork = 0,
+  stopping = false,
   onSend,
   onStop,
   commands,
@@ -80,8 +86,8 @@ export function ChatInput({
   const [active, setActive] = useState(0);
   const [caret, setCaret] = useState(0);
   const [pendingCaret, setPendingCaret] = useState<number | null>(null);
-  const busy = status === 'running' || status === 'requires_action';
-  const disabled = status === 'connecting';
+  const busy = status === 'starting' || status === 'running' || status === 'requires_action' || backgroundWork > 0;
+  const disabled = status === 'connecting' || stopping;
 
   const query = pickerQuery(value);
   const pickerOpen = query !== null && dismissed !== value;
@@ -122,7 +128,7 @@ export function ChatInput({
   const submit = () => {
     const t = value.trim();
     if (!t || disabled) return;
-    onSend(t);
+    if (onSend(t) === false) return;
     onChange('');
   };
 
@@ -190,6 +196,11 @@ export function ChatInput({
       setDismissed(value);
       return;
     }
+    if (e.key === 'Escape' && busy && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      onStop();
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       submit();
@@ -201,7 +212,7 @@ export function ChatInput({
   const hasMentions = /(^|\s)@[^\s@]+/.test(value);
 
   const placeholder =
-    status === 'closed'
+    stopping ? 'Stopping work… Your draft will stay here.' : status === 'closed'
       ? 'The engine stopped. Send a message to start it again.'
       : busy
         ? 'Send a follow-up. It runs after the current step.'
@@ -321,8 +332,8 @@ export function ChatInput({
             <button
               type="button"
               onClick={onStop}
-              title="Stop the current turn"
-              aria-label="Stop"
+              title="Stop work, including builders and queued messages (Esc)"
+              aria-label="Stop work"
               className="sendbtn bg-panel-3 text-ink hover:bg-danger hover:text-white"
             >
               <Square className="size-3" fill="currentColor" />

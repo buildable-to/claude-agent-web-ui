@@ -280,19 +280,32 @@ export default function App() {
             onAnswer={session.answerPermission}
           />
         )}
+        {session.pendingSendCount > 0 && (
+          <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-6 text-[12.5px] text-ink-3" role="status">
+            <span>{session.pendingSendCount === 1 ? 'Message delivery pending.' : `${session.pendingSendCount} message deliveries pending.`}</span>
+            {state.error && (
+              <button type="button" className="text-accent hover:underline" onClick={session.retrySend}>
+                Retry sending
+              </button>
+            )}
+          </div>
+        )}
         <ChatInput
           value={draft}
           onChange={setDraft}
           status={state.status}
+          backgroundWork={state.backgroundWork}
+          stopping={session.stopping}
           onSend={(text) => {
             // the page that embeds us keeps the first thing the engineer says
             // on an empty project as its brief (Buildable issue #405) — the
             // brief is what the ENGINEER wrote, so the looking-at line stays
             // out of it and goes only to the engine, in front of the words
-            tellParent({ type: 'user_message', text });
-            session.send(withViewing(text, viewingOn));
+            const accepted = session.send(withViewing(text, viewingOn));
+            if (accepted) tellParent({ type: 'user_message', text });
+            return accepted;
           }}
-          onStop={session.interrupt}
+          onStop={session.stopWork}
           commands={commands}
           commandsLoading={commandsLoading}
           autoFocus

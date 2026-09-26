@@ -73,6 +73,8 @@ export type ClientMessage =
   | {
       type: 'start';
       sessionId: string | null;
+      /** Stable across retries until this start has attached. */
+      requestId?: string;
       text: string;
       uuid?: string;
       model?: string;
@@ -91,6 +93,8 @@ export type ClientMessage =
       answers?: Record<string, string>;
     }
   | { type: 'interrupt'; sessionId: string }
+  /** Stop this conversation's foreground work, builders, and queued prompts. */
+  | { type: 'stop_work'; sessionId: string }
   | { type: 'set_permission_mode'; sessionId: string; mode: PermissionMode }
   | { type: 'set_model'; sessionId: string; model: string | null };
 
@@ -98,8 +102,12 @@ export type ServerMessage =
   | {
       type: 'attached';
       sessionId: string;
+      /** Echoes the start being acknowledged; absent on a plain attach. */
+      requestId?: string;
       cwd: string;
       status: SessionStatus;
+      /** Current nonambient tasks, including background shell commands. */
+      backgroundWork?: number;
       /** Messages the live process has produced so far (no stream events). */
       replay: SDKMessage[];
       pending: PermissionRequest[];
@@ -117,7 +125,7 @@ export type ServerMessage =
   | { type: 'project_changed'; sessionId: string; project?: string }
   /** The agent read (or saved) an element or a draft: Project Studio's Element tab can follow it. */
   | { type: 'element_focus'; sessionId: string; id: string; kind?: 'element' | 'draft' }
-  | { type: 'error'; sessionId?: string; message: string };
+  | { type: 'error'; sessionId?: string; requestId?: string; message: string };
 
 /** One row in the session list. */
 export type SessionSummary = {

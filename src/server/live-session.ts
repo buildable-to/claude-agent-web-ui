@@ -22,6 +22,7 @@ import type {
 } from '../shared/protocol.js';
 import { toCommandInfo, toModelOptions } from './commands.js';
 import type { WorkState } from './work-journal.js';
+import { committedProject } from './commit-receipt.js';
 
 /** What an engine (and everything it runs) may see of the service's
  *  environment. The service's own secrets never cross this line. */
@@ -60,6 +61,7 @@ class InputQueue implements AsyncIterable<SDKUserMessage> {
 
   close() {
     this.closed = true;
+    this.items.length = 0;
     for (const w of this.waiters.splice(0)) w({ value: undefined, done: true });
   }
 
@@ -127,6 +129,7 @@ export class LiveSession {
   backgroundWork = 0;
 
   private readonly input = new InputQueue();
+  private readonly acceptedMessages = new Set<string>();
   private readonly q: Query;
   private readonly abort = new AbortController();
   private readonly subscribers = new Set<Subscriber>();
@@ -134,6 +137,11 @@ export class LiveSession {
   /** Everything the engine has emitted this process lifetime, minus stream events. */
   private readonly buffer: SDKMessage[] = [];
   private closed = false;
+  private stopRequested = false;
+  private stopFinished = false;
+  private stopRecorded = false;
+  private stopping: Promise<void> | undefined;
+  private readonly backgroundTasks = new Set<string>();
   private terminalOnlyCommands: string[] = [];
   private readonly onlyCommands: ReadonlySet<string> | null;
   private readonly onInfo: ((info: EngineInfo) => void) | undefined;
@@ -219,6 +227,12 @@ export class LiveSession {
     return this.sessionId.slice(0, 8);
   }
 
+  /** A requested stop owns this engine until task cancellation and teardown
+   * finish. A resume must wait instead of submitting to this dying query. */
+  get isStopping() {
+    return this.stopRequested && !this.stopFinished;
+  }
+
   get pendingRequests(): PermissionRequest[] {
     return [...this.pending.values()].map((p) => p.request);
   }
@@ -233,7 +247,8 @@ export class LiveSession {
   }
 
   send(text: string, uuid?: string) {
-    if (this.closed) throw new Error('Session is closed');
+    if (this.closed || this.stopRequested) throw new Error('Session is closed');
+    if (uuid && this.acceptedMessages.has(uuid)) return;
     const message: SDKUserMessage = {
       type: 'user',
       message: { role: 'user', content: text },
@@ -253,6 +268,7 @@ export class LiveSession {
       throw err;
     }
     this.input.push(message);
+    if (uuid) this.acceptedMessages.add(uuid);
   }
 
   answerPermission(
@@ -285,6 +301,41 @@ export class LiveSession {
     await this.q.interrupt();
   }
 
+  /** Cancel visible work through the SDK before closing its process. Unlike
+   * interrupt(), this also discards queued turns and stops background tasks. */
+  stopWork(): Promise<void> {
+    if (this.stopping) return this.stopping;
+    if (this.closed) return Promise.resolve();
+    this.stopRequested = true;
+    // Persist before asking the engine to cancel: a disconnect during shutdown
+    // must still explain why the coordinator and builders stopped.
+    this.recordStop('user_stop');
+    this.input.close();
+    for (const id of [...this.pending.keys()]) this.answerPermission(id, 'deny');
+    this.stopping = (async () => {
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        // TaskStop owns child cleanup, including background shell processes.
+        // A stuck control response must not prevent closing the entire query.
+        await Promise.race([
+          Promise.allSettled([...this.backgroundTasks].map((id) => Promise.resolve().then(() => this.q.stopTask(id)))),
+          new Promise<void>((resolve) => { timeout = setTimeout(resolve, 2000); }),
+        ]);
+      } finally {
+        if (timeout) clearTimeout(timeout);
+        try {
+          this.close('user_stop');
+          // close starts cleanup; return waits for the SDK's bounded process
+          // teardown before a queued resume may own this conversation again.
+          await this.q.return(undefined);
+        } finally {
+          this.stopFinished = true;
+        }
+      }
+    })();
+    return this.stopping;
+  }
+
   async setPermissionMode(mode: PermissionMode) {
     await this.q.setPermissionMode(mode);
     this.meta = { ...this.meta, permissionMode: mode };
@@ -299,6 +350,20 @@ export class LiveSession {
 
   close(reason: StoppedWorkNotice['reason'] = 'service_stop') {
     if (this.closed) return;
+    this.recordStop(reason);
+    this.closed = true;
+    for (const id of [...this.pending.keys()]) this.answerPermission(id, 'deny');
+    this.input.close();
+    this.abort.abort();
+    this.q?.close();
+    this.backgroundWork = 0;
+    this.backgroundTasks.clear();
+    this.setStatus('closed');
+  }
+
+  private recordStop(reason: StoppedWorkNotice['reason']) {
+    if (this.stopRecorded) return;
+    this.stopRecorded = true;
     try {
       const notice = this.onStop?.(this.workState(), reason);
       if (notice) this.broadcast({ type: 'work_stopped', sessionId: this.sessionId, notice });
@@ -306,16 +371,12 @@ export class LiveSession {
       console.error(`[engine ${this.shortId}] recovery write failed: ${String(err)}`);
       this.broadcast({ type: 'error', sessionId: this.sessionId, message: 'Could not save the interruption notice. Work has stopped; reopen this conversation before continuing.' });
     }
-    this.closed = true;
-    for (const id of [...this.pending.keys()]) this.answerPermission(id, 'deny');
-    this.input.close();
-    this.abort.abort();
-    this.setStatus('closed');
   }
 
   // --- internals -----------------------------------------------------------
 
   private readonly canUseTool: CanUseTool = (toolName, input, opts) => {
+    if (this.closed || this.stopRequested) return Promise.resolve({ behavior: 'deny', message: 'Work was stopped by the user.' });
     const request: PermissionRequest = {
       requestId: opts.requestId,
       toolUseId: opts.toolUseID,
@@ -361,7 +422,7 @@ export class LiveSession {
   }
 
   private handle(message: SDKMessage) {
-    if (this.closed) return;
+    if (this.closed || this.stopRequested) return;
     this.lastActivity = Date.now();
     if (message.type === 'user' || message.type === 'assistant') {
       this.lastMessageUuid = message.uuid;
@@ -387,7 +448,9 @@ export class LiveSession {
       this.broadcast({ type: 'meta', sessionId: this.sessionId, meta: this.meta });
       void this.loadInitDetails();
     } else if (message.type === 'system' && message.subtype === 'background_tasks_changed') {
-      this.backgroundWork = message.tasks.filter((t) => !t.ambient).length;
+      this.backgroundTasks.clear();
+      for (const task of message.tasks) if (!task.ambient) this.backgroundTasks.add(task.task_id);
+      this.backgroundWork = this.backgroundTasks.size;
       this.onActivity?.(this.workState());
     } else if (message.type === 'system' && message.subtype === 'session_state_changed') {
       this.setStatus(message.state);
@@ -438,12 +501,14 @@ export class LiveSession {
           }
         }
         if (!this.realApplies.delete(id)) continue;
-        // a denied or failed apply changed nothing
-        if (failed) continue;
+        // Observation may fail after the app has committed. A failed result
+        // needs an explicit validated receipt, never a guess from error prose.
+        const committed = committedProject(resultText(block));
+        if (failed && !committed) continue;
         this.broadcast({
           type: 'project_changed',
           sessionId: this.sessionId,
-          ...(this.project ? { project: this.project } : {}),
+          ...((committed ?? this.project) ? { project: committed ?? this.project } : {}),
         });
       }
     }
@@ -466,7 +531,7 @@ export class LiveSession {
     if (this.status === status) return;
     if (this.status === 'closed') return;
     this.status = status;
-    if (!this.closed) this.onActivity?.(this.workState());
+    if (!this.closed && !this.stopRequested) this.onActivity?.(this.workState());
     this.broadcast({ type: 'status', sessionId: this.sessionId, status });
   }
 

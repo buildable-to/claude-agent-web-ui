@@ -92,11 +92,44 @@ export class SessionManager {
 
   get(sessionId: string): LiveSession | undefined {
     const s = this.live.get(sessionId);
-    if (s && s.status === 'closed') {
+    if (s && s.status === 'closed' && !s.isStopping) {
       this.live.delete(sessionId);
       return undefined;
     }
     return s;
+  }
+
+  /** One browser start can be retried after a dropped attachment. Keep the
+   * reservation for this manager's lifetime so an old retry never starts a
+   * second engine. Account managers do not share these reservations. */
+  private readonly starts = new Map<string, Promise<LiveSession> | WeakRef<LiveSession>>();
+
+  async openStarted(
+    requestId: string | undefined,
+    sessionId: string | null,
+    opts: Parameters<SessionManager['open']>[1] = {},
+  ): Promise<LiveSession> {
+    if (requestId === undefined) return this.open(sessionId, opts);
+    if (typeof requestId !== 'string' || !requestId || requestId.length > 128) throw new Error('Invalid start request');
+    const existing = this.starts.get(requestId);
+    if (existing) {
+      const session = existing instanceof WeakRef ? existing.deref() : await existing;
+      if (!session || session.status === 'closed') throw new Error('This start has already stopped. Reopen the conversation to continue.');
+      return session;
+    }
+    const pending = this.open(sessionId, opts);
+    this.starts.set(requestId, pending);
+    try {
+      const session = await pending;
+      // Preserve this engine generation without retaining a closed replay
+      // buffer. The same session ID may later resume in a different engine;
+      // retrying this old start must never replay its prompt into that engine.
+      this.starts.set(requestId, new WeakRef(session));
+      return session;
+    } catch (err) {
+      this.starts.delete(requestId);
+      throw err;
+    }
   }
 
   /** Attach to a live session, resume a persisted one, or start fresh.
@@ -108,7 +141,7 @@ export class SessionManager {
   ): Promise<LiveSession> {
     if (sessionId) {
       const existing = this.get(sessionId);
-      if (existing) return existing;
+      if (existing && !existing.isStopping) return existing;
       const pending = this.opening.get(sessionId);
       if (pending) return pending;
     }
@@ -130,7 +163,12 @@ export class SessionManager {
     let title: string | undefined;
     if (sessionId) {
       const existing = this.get(sessionId);
-      if (existing) return existing;
+      if (existing) {
+        if (!existing.isStopping) return existing;
+        // Share this reserved open while shutdown finishes. Resuming the same
+        // SDK conversation in parallel with its cancelling engine is unsafe.
+        await existing.stopWork();
+      }
       // Only this folder's own conversations resume here. The engine would
       // otherwise find the id in ANY folder under the shared home.
       const info = await (this.dependencies.getSessionInfo ?? getSessionInfo)(sessionId, { dir: this.projectDir });
@@ -318,8 +356,8 @@ export class SessionManager {
   async stop(sessionId: string): Promise<boolean> {
     const s = this.get(sessionId);
     if (!s) return false;
-    s.close('user_stop');
-    this.live.delete(sessionId);
+    await s.stopWork();
+    if (this.live.get(sessionId) === s) this.live.delete(sessionId);
     return true;
   }
 

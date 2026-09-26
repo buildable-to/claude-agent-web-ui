@@ -11,6 +11,8 @@ export type SessionState = {
   /** True while this page is subscribed to a running engine. */
   attached: boolean;
   status: SessionStatus | 'connecting';
+  /** Authoritative SDK membership, excluding ambient housekeeping. */
+  backgroundWork: number;
   meta: SessionMeta;
   transcript: Transcript;
   pending: PermissionRequest[];
@@ -35,6 +37,7 @@ export function initialSessionState(sessionId: string | null): SessionState {
     cwd: null,
     attached: false,
     status: sessionId ? 'connecting' : 'idle',
+    backgroundWork: 0,
     meta: {},
     transcript: emptyTranscript(),
     pending: [],
@@ -88,6 +91,9 @@ export function sessionReducer(state: SessionState, action: Action): SessionStat
             cwd: m.cwd,
             attached: true,
             status: m.status,
+            backgroundWork: m.backgroundWork ?? m.replay.reduce((count, msg) =>
+              msg.type === 'system' && msg.subtype === 'background_tasks_changed'
+                ? msg.tasks.filter((task) => !task.ambient).length : count, 0),
             meta: { ...state.meta, ...m.meta },
             pending: m.pending,
             transcript,
@@ -103,6 +109,7 @@ export function sessionReducer(state: SessionState, action: Action): SessionStat
             ...state,
             attached: false,
             status: 'idle',
+            backgroundWork: 0,
             pending: [],
             stopNotified: notices.length > 0,
             transcript: notices.length > 0
@@ -118,12 +125,18 @@ export function sessionReducer(state: SessionState, action: Action): SessionStat
             ...state,
             attached: false,
             status: 'closed',
+            backgroundWork: 0,
             pending: [],
             stopNotified: true,
             transcript: closeStoppedWork(state.transcript, [m.notice]),
           };
         case 'message':
-          return { ...state, transcript: applyMessage(state.transcript, m.message) };
+          return {
+            ...state,
+            backgroundWork: m.message.type === 'system' && m.message.subtype === 'background_tasks_changed'
+              ? m.message.tasks.filter((task) => !task.ambient).length : state.backgroundWork,
+            transcript: applyMessage(state.transcript, m.message),
+          };
         case 'permission_request':
           return state.pending.some((p) => p.requestId === m.request.requestId)
             ? state
@@ -134,6 +147,7 @@ export function sessionReducer(state: SessionState, action: Action): SessionStat
           return {
             ...state,
             status: m.status,
+            backgroundWork: m.status === 'closed' ? 0 : state.backgroundWork,
             attached: m.status === 'closed' ? false : state.attached,
             pending: m.status === 'closed' ? [] : state.pending,
             transcript:

@@ -53,8 +53,8 @@ export function attachWebSocket(
     const send = (message: ServerMessage) => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));
     };
-    const fail = (message: string, sessionId?: string) =>
-      send({ type: 'error', message, ...(sessionId ? { sessionId } : {}) });
+    const fail = (message: string, sessionId?: string, requestId?: string) =>
+      send({ type: 'error', message, ...(sessionId ? { sessionId } : {}), ...(requestId ? { requestId } : {}) });
 
     ws.on('message', async (raw) => {
       let msg: ClientMessage;
@@ -73,7 +73,7 @@ export function attachWebSocket(
         await handle(msg);
       } catch (err) {
         const text = err instanceof Error ? err.message : String(err);
-        fail(text, 'sessionId' in msg ? (msg.sessionId ?? undefined) : undefined);
+        fail(text, 'sessionId' in msg ? (msg.sessionId ?? undefined) : undefined, msg.type === 'start' ? msg.requestId : undefined);
       }
     });
 
@@ -85,7 +85,11 @@ export function attachWebSocket(
     async function handle(msg: ClientMessage) {
       switch (msg.type) {
         case 'attach': {
-          const session = sessions.get(msg.sessionId);
+          let session = sessions.get(msg.sessionId);
+          if (session?.isStopping) {
+            await session.stopWork();
+            session = sessions.get(msg.sessionId);
+          }
           if (!session) {
             send({ type: 'not_live', sessionId: msg.sessionId, stoppedWork: sessions.stoppedWork(msg.sessionId) });
             return;
@@ -103,7 +107,7 @@ export function attachWebSocket(
             throw new Error('This page was opened for a different project');
           }
           const project = pinned ?? msg.project;
-          const session = await sessions.open(msg.sessionId, {
+          const session = await sessions.openStarted(msg.requestId, msg.sessionId, {
             ...(msg.model ? { model: msg.model } : {}),
             ...(msg.permissionMode ? { permissionMode: msg.permissionMode } : {}),
             ...(project ? { project } : {}),
@@ -113,9 +117,10 @@ export function attachWebSocket(
             session.close();
             throw new Error(DRAINING_MESSAGE);
           }
-          attach(session);
           const text = msg.text.trim();
-          if (text) session.send(text, msg.uuid);
+          if (text) session.send(text, msg.uuid ?? msg.requestId);
+          // Acknowledgement means the first prompt has actually been accepted.
+          attach(session, msg.requestId);
           return;
         }
         case 'detach': {
@@ -142,6 +147,14 @@ export function attachWebSocket(
           await requireLive(msg.sessionId).interrupt();
           return;
         }
+        case 'stop_work': {
+          // The manager belongs to the authenticated socket's account. An id
+          // from another account can neither find nor stop its engine here.
+          if (!await sessions.stop(msg.sessionId)) {
+            send({ type: 'not_live', sessionId: msg.sessionId, stoppedWork: sessions.stoppedWork(msg.sessionId) });
+          }
+          return;
+        }
         case 'set_permission_mode': {
           refuseUnlessAsking(msg.mode);
           await requireLive(msg.sessionId).setPermissionMode(msg.mode);
@@ -154,15 +167,18 @@ export function attachWebSocket(
       }
     }
 
-    function attach(session: LiveSession) {
+    function attach(session: LiveSession, requestId?: string) {
+      if (ws.readyState !== ws.OPEN) return;
       attachments.get(session.sessionId)?.unsubscribe();
       const unsubscribe = session.subscribe(send);
       attachments.set(session.sessionId, { unsubscribe });
       send({
         type: 'attached',
         sessionId: session.sessionId,
+        ...(requestId ? { requestId } : {}),
         cwd: session.cwd,
         status: session.status,
+        backgroundWork: session.backgroundWork,
         replay: session.replay,
         pending: session.pendingRequests,
         meta: session.meta,
