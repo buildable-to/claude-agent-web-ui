@@ -1,7 +1,8 @@
 # Chat reliability fixes from the overnight review
 
 This change covers RR-1, RR-2 and the chat-service side of REL-1. The linked app
-change supplies the committed mutation receipt and fixes the application
+change ([app PR #622](https://github.com/buildable-to/ezdxf-flask/pull/622))
+supplies the committed mutation receipt and fixes the application
 findings. No production state or real model requests were used for validation.
 
 ## Behavior
