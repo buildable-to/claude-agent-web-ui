@@ -683,15 +683,26 @@ export function runningAgents(t: Transcript): number {
 }
 
 /** The step the agent is on right now: the newest visible tool call of the
- *  open turn that has no answer yet. None while it thinks or writes. */
+ *  open turn that has no answer yet; failing that, the newest sub-agent or
+ *  backgrounded command still running from any turn (the turn that sent it
+ *  may have ended). None while it only thinks or writes. */
 export function currentStep(t: Transcript): ToolBlock | null {
   let i = t.turns.length - 1;
   while (i >= 0 && t.turns[i]!.kind === 'note') i--;
   const turn = t.turns[i];
-  if (!turn || turn.kind !== 'assistant' || !turn.open) return null;
-  for (let j = turn.blocks.length - 1; j >= 0; j--) {
-    const b = turn.blocks[j]!;
-    if (b.type === 'tool_use' && !HIDDEN_TOOLS.has(b.name) && isInFlight(b)) return b;
+  if (turn && turn.kind === 'assistant' && turn.open) {
+    for (let j = turn.blocks.length - 1; j >= 0; j--) {
+      const b = turn.blocks[j]!;
+      if (b.type === 'tool_use' && !HIDDEN_TOOLS.has(b.name) && isInFlight(b)) return b;
+    }
+  }
+  for (let k = t.turns.length - 1; k >= 0; k--) {
+    const tk = t.turns[k]!;
+    if (tk.kind !== 'assistant') continue;
+    for (let j = tk.blocks.length - 1; j >= 0; j--) {
+      const b = tk.blocks[j]!;
+      if (b.type === 'tool_use' && b.task?.status === 'running') return b;
+    }
   }
   return null;
 }

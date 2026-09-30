@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { HistoryMessage, ServerMessage, StoppedWorkNotice } from '@shared/protocol';
+import type { HistoryMessage, SDKMessage, ServerMessage, StoppedWorkNotice } from '@shared/protocol';
 import { initialSessionState, sessionReducer, type SessionState } from './session-state';
 import { applyHistory, applyMessage, CUT_TEXT, emptyTranscript, runningAgents, type Transcript } from './transcript';
 
@@ -151,4 +151,21 @@ test('a new conversation counts from the moment the engineer sent it', () => {
   assert.ok(starting.busySince !== null);
   const running = event(starting, { type: 'status', sessionId: 's', status: 'running', busyForMs: 0 });
   assert.equal(running.busySince, starting.busySince);
+});
+
+test('background work the engine reports keeps the page at work after the turn, and is replayed on attach', () => {
+  const tasks = (list: Array<{ description: string; ambient?: boolean }>) => ({
+    type: 'system', subtype: 'background_tasks_changed', uuid: 'u', session_id: 's',
+    tasks: list.map((t, i) => ({ task_id: `t${i}`, task_type: 'local_agent', ...t })),
+  }) as unknown as SDKMessage;
+  const idle = { ...initialSessionState('s'), status: 'idle' as const, attached: true };
+  const busy = event(idle, { type: 'message', sessionId: 's', message: tasks([{ description: 'Run sleep command' }, { description: 'watch', ambient: true }]) });
+  assert.deepEqual(busy.background, ['Run sleep command']);
+  assert.deepEqual(event(busy, { type: 'message', sessionId: 's', message: tasks([]) }).background, []);
+  assert.deepEqual(event(busy, { type: 'status', sessionId: 's', status: 'closed' }).background, []);
+  const attached = event(initialSessionState('s'), {
+    type: 'attached', sessionId: 's', cwd: '/x', status: 'idle', replay: [tasks([{ description: 'A' }]), tasks([{ description: 'B' }])],
+    pending: [], meta: {}, stoppedWork: [],
+  });
+  assert.deepEqual(attached.background, ['B']);
 });

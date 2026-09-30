@@ -161,6 +161,9 @@ test('the current step is the open turn\'s newest unanswered visible call', () =
   assert.equal(currentStep(turnOf(true, [tool('1', 'Bash', 'ok'), tool('2', 'Bash')]))?.id, '2');
   assert.equal(currentStep(turnOf(true, [tool('1', 'Bash'), tool('2', 'Skill')]))?.id, '1', 'a skill loading is not a step');
   assert.equal(currentStep(turnOf(false, [tool('1', 'Bash')])), null, 'a closed turn is not at work');
+  const agent = { ...tool('7', 'Agent', 'Async agent launched successfully'), task: { status: 'running' as const } };
+  assert.equal(currentStep(turnOf(false, [agent]))?.id, '7', 'a sub-agent outlives the turn that sent it');
+  assert.equal(currentStep(turnOf(false, [{ ...agent, task: { status: 'completed' as const } }])), null);
   const backgrounded = { ...tool('1', 'Bash', 'Command running in background'), task: { status: 'running' as const } };
   assert.equal(currentStep(turnOf(true, [backgrounded]))?.id, '1', 'a backgrounded command is still the step');
   const withNote: Transcript = {
