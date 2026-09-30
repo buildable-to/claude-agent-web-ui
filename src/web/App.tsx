@@ -135,8 +135,10 @@ export default function App() {
     });
   }, []);
   useEffect(() => {
-    tellParent({ type: 'status', status: shownStatus });
-  }, [shownStatus]);
+    // the line to the server is down: whatever the agent is doing, this page
+    // cannot know — the studio must not keep saying "working" on its word
+    tellParent({ type: 'status', status: connection === 'closed' ? 'offline' : shownStatus });
+  }, [shownStatus, connection]);
   useEffect(() => {
     if (connection === 'expired') tellParent({ type: 'expired' });
   }, [connection]);
@@ -170,13 +172,14 @@ export default function App() {
   useEffect(() => {
     const name = config?.projectName ?? 'Claude Agent Web UI';
     const attention = state.status === 'requires_action';
-    const working = shownStatus === 'running' || state.status === 'starting';
+    // offline, this page no longer knows: the tab must not say working
+    const working = connection === 'open' && (shownStatus === 'running' || state.status === 'starting');
     document.title = attention ? `● Needs you · ${name}` : working ? `… Working · ${name}` : name;
     const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if (link) {
       link.href = `${BASE}/${attention ? 'favicon-attention.png' : working ? 'favicon-working.png' : 'favicon.png'}`;
     }
-  }, [state.status, shownStatus, config?.projectName]);
+  }, [state.status, shownStatus, connection, config?.projectName]);
 
   useEffect(() => {
     api.config().then(setConfig).catch(() => setConfig(null));
@@ -274,6 +277,7 @@ export default function App() {
         />
         {dock.length > 0 && <AgentDock lanes={dock} />}
         <WorkLine
+          connection={connection}
           status={state.status}
           background={background ? state.background : null}
           since={state.busySince}
@@ -305,6 +309,7 @@ export default function App() {
             session.send(withViewing(text, viewingOn));
           }}
           onStop={session.interrupt}
+          backgroundWork={background}
           commands={commands}
           commandsLoading={commandsLoading}
           autoFocus

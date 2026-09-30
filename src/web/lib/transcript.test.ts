@@ -172,3 +172,19 @@ test('the current step is the open turn\'s newest unanswered visible call', () =
   };
   assert.equal(currentStep(withNote)?.id, '1', 'a note does not hide the step');
 });
+
+test('a follow-up sent mid-turn does not mark the running step done; the next words close it', () => {
+  const running: Transcript = {
+    ...emptyTranscript(),
+    turns: [{ kind: 'assistant', id: 'a', open: true, blocks: [
+      { type: 'tool_use', id: 'render', name: 'Bash', input: {}, done: true, images: [], children: [] },
+    ] }],
+  };
+  const followed = addLocalUserTurn(running, 'u1', 'also check the beams');
+  assert.equal(assistantTurn(followed, 0).open, true, 'the step is still running');
+  assert.equal(followed.turns[1]!.kind, 'user');
+  assert.equal(currentStep(followed)?.id, 'render', 'the work line keeps naming it');
+  const next = applyMessage(followed, live({ type: 'assistant', uuid: 'm2', message: { id: 'msg2', role: 'assistant', content: [{ type: 'text', text: 'Now the beams.' }] } }));
+  assert.equal(assistantTurn(next, 0).open, false, 'the engine spoke after the follow-up: the old turn is done');
+  assert.equal(assistantTurn(next, 2).open, true);
+});

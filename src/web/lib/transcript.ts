@@ -137,8 +137,17 @@ function withTurn(t: Transcript, index: number, turn: Turn): Transcript {
 function ensureOpenAssistant(t: Transcript, id: string): [Transcript, number] {
   const idx = lastAssistant(t);
   if (idx !== -1) return [t, idx];
+  // a turn left open above a follow-up the engineer sent mid-turn is done
+  // once the engine speaks after that follow-up
+  const turns = closeAll(t.turns);
   const turn: Turn = { kind: 'assistant', id, blocks: [], open: true };
-  return [{ ...t, turns: [...t.turns, turn] }, t.turns.length];
+  return [{ ...t, turns: [...turns, turn] }, turns.length];
+}
+
+function closeAll(turns: Turn[]): Turn[] {
+  return turns.some((x) => x.kind === 'assistant' && x.open)
+    ? turns.map((x) => (x.kind === 'assistant' && x.open ? { ...x, open: false } : x))
+    : turns;
 }
 
 function updateBlock(t: Transcript, turnIdx: number, blockIdx: number, fn: (b: Block) => Block): Transcript {
@@ -250,9 +259,15 @@ export function applyHistory(t: Transcript, history: HistoryMessage[]): Transcri
   return closeOpenTurn(next);
 }
 
+/** The engineer's own words, shown the moment they send. Sent mid-turn (a
+ *  follow-up that runs after the current step) they must not close the turn:
+ *  its step is still running, and its pill must keep saying so. */
 export function addLocalUserTurn(t: Transcript, id: string, text: string): Transcript {
   if (t.seen.has(id)) return t;
-  return addUserTurn({ ...t, seen: new Set(t.seen).add(id) }, id, text, 0);
+  const seen = new Set(t.seen).add(id);
+  const last = t.turns[t.turns.length - 1];
+  if (last && last.kind === 'user' && last.text === text && last.images === 0) return { ...t, seen };
+  return { ...t, seen, turns: [...t.turns, { kind: 'user', id, text, images: 0 }] };
 }
 
 export function addNote(t: Transcript, id: string, level: 'info' | 'error', text: string): Transcript {
@@ -366,12 +381,8 @@ export function reopenLastTurn(t: Transcript): Transcript {
 }
 
 export function closeOpenTurn(t: Transcript): Transcript {
-  const idx = lastAssistant(t);
-  if (idx === -1) return { ...t, stream: null };
-  const turn = t.turns[idx]!;
-  if (turn.kind !== 'assistant') return { ...t, stream: null };
-  const closed = withTurn(t, idx, { ...turn, open: false });
-  return { ...closed, stream: null };
+  // every open turn: one may sit above a follow-up the engineer sent mid-turn
+  return { ...t, turns: closeAll(t.turns), stream: null };
 }
 
 /** The engineer said something. The same words twice in a row (the page's
@@ -687,8 +698,9 @@ export function runningAgents(t: Transcript): number {
  *  backgrounded command still running from any turn (the turn that sent it
  *  may have ended). None while it only thinks or writes. */
 export function currentStep(t: Transcript): ToolBlock | null {
+  // the newest open turn (it may sit above a follow-up sent mid-turn)
   let i = t.turns.length - 1;
-  while (i >= 0 && t.turns[i]!.kind === 'note') i--;
+  while (i >= 0 && !(t.turns[i]!.kind === 'assistant' && (t.turns[i] as { open: boolean }).open)) i--;
   const turn = t.turns[i];
   if (turn && turn.kind === 'assistant' && turn.open) {
     for (let j = turn.blocks.length - 1; j >= 0; j--) {

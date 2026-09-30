@@ -12,13 +12,14 @@ import type { SessionStatus, StoppedWorkNotice } from '@shared/protocol';
 
 type Status = SessionStatus | 'connecting';
 
-/** A card came up during a live turn: sound it. A card found on arrival
- *  (attach replays a pending one when the page opens or a conversation is
- *  picked) is not news, so `connecting` and `idle` before it stay quiet.
+/** A card came up: sound it — during a turn the engineer started, a turn the
+ *  engine started by itself, or from a sub-agent after the turn ended. A card
+ *  found on arrival (attach replays a pending one when the page opens or a
+ *  conversation is picked) is not news, so `connecting` before it stays quiet.
  *  Status alone: a second card queued behind the first keeps the status and
  *  does not sound again — the engineer is already there, answering. */
 export function shouldChime(prev: Status, next: Status): boolean {
-  return next === 'requires_action' && (prev === 'running' || prev === 'starting');
+  return next === 'requires_action' && prev !== 'connecting' && prev !== 'requires_action';
 }
 
 type ChimeStorage = Pick<Storage, 'getItem' | 'setItem'>;
