@@ -8,6 +8,7 @@ import { finishedFileSteps, runningAgents, stoppedWorkNotices } from '@/lib/tran
 import { MessageList } from './components/MessageList';
 import { PermissionBanner } from './components/PermissionBanner';
 import { Sidebar } from './components/Sidebar';
+import { WorkLine } from './components/WorkLine';
 import { TopBar } from './components/TopBar';
 import { api } from './lib/api';
 import { armChime, chime, readChimeOn, shouldChime, shouldChimeForStoppedWork, writeChimeOn } from './lib/chime';
@@ -50,6 +51,8 @@ const EMBED_COPY = {
 export default function App() {
   const [config, setConfig] = useState<ServerConfig | null>(null);
   const [connection, setConnection] = useState<ConnectionState>(ws.state);
+  // "offline" only once the line has been up: the first connect at load is not an outage
+  const wasOpen = useRef(false);
   const [selected, setSelected] = useState<{ id: string | null; nonce: number }>({ id: null, nonce: 0 });
   const [draft, setDraft] = useState('');
   const [focusKey, setFocusKey] = useState(0);
@@ -69,6 +72,13 @@ export default function App() {
   // sub-agents still out, kept under the chat where the transcript cannot
   // scroll them away
   const dock = dockLanes(state.transcript);
+  // The turn ended but sub-agents or backgrounded commands are still going:
+  // to the engineer (the work line, the tab, Project Studio's bar) the agent
+  // is still working.
+  // the engine's own list only: a task the transcript still marks running
+  // (a missed notification) must not keep the page "working" for ever
+  const background = state.status === 'idle' && state.background.length > 0;
+  const shownStatus = background ? 'running' : state.status;
   useEffect(() => {
     if (fileSteps > 0) setTreeKey((k) => k + 1);
   }, [fileSteps]);
@@ -129,8 +139,15 @@ export default function App() {
     });
   }, []);
   useEffect(() => {
-    tellParent({ type: 'status', status: state.status });
-  }, [state.status]);
+    // the line to the server is down: whatever the agent is doing, this page
+    // cannot know — the studio must not keep saying "working" on its word
+    // (while it retries it flips closed ↔ connecting: both are offline, or
+    // the studio's bar flickers and refetches on every retry). Expired has
+    // its own message and word on the bar.
+    if (connection === 'expired') return;
+    if (connection === 'open') wasOpen.current = true;
+    tellParent({ type: 'status', status: connection === 'open' || !wasOpen.current ? shownStatus : 'offline' });
+  }, [shownStatus, connection]);
   useEffect(() => {
     if (connection === 'expired') tellParent({ type: 'expired' });
   }, [connection]);
@@ -164,13 +181,14 @@ export default function App() {
   useEffect(() => {
     const name = config?.projectName ?? 'Claude Agent Web UI';
     const attention = state.status === 'requires_action';
-    const working = state.status === 'running' || state.status === 'starting';
+    // offline, this page no longer knows: the tab must not say working
+    const working = connection === 'open' && (shownStatus === 'running' || state.status === 'starting');
     document.title = attention ? `● Needs you · ${name}` : working ? `… Working · ${name}` : name;
     const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if (link) {
       link.href = `${BASE}/${attention ? 'favicon-attention.png' : working ? 'favicon-working.png' : 'favicon.png'}`;
     }
-  }, [state.status, config?.projectName]);
+  }, [state.status, shownStatus, connection, config?.projectName]);
 
   useEffect(() => {
     api.config().then(setConfig).catch(() => setConfig(null));
@@ -267,6 +285,13 @@ export default function App() {
           {...(embed ? EMBED_COPY : {})}
         />
         {dock.length > 0 && <AgentDock lanes={dock} />}
+        <WorkLine
+          connection={connection}
+          status={state.status}
+          background={background ? state.background : null}
+          since={state.busySince}
+          transcript={state.transcript}
+        />
         {connection === 'expired' && (
           <p className="mx-auto w-full max-w-3xl px-6 text-[12.5px] text-warn">
             This page’s access has expired. Reload the project to continue.
@@ -293,6 +318,8 @@ export default function App() {
             session.send(withViewing(text, viewingOn));
           }}
           onStop={session.interrupt}
+          backgroundWork={background}
+          connected={connection === 'open'}
           commands={commands}
           commandsLoading={commandsLoading}
           autoFocus

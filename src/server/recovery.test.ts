@@ -50,6 +50,8 @@ function engine() {
   let params: Parameters<typeof query>[0];
   let launches = 0;
   const prompts: unknown[] = [];
+  const stoppedTasks: string[] = [];
+  let interrupts = 0;
   const factory: typeof query = (args) => {
     launches++;
     params = args;
@@ -66,7 +68,11 @@ function engine() {
         if (value) yield value;
       }
     })();
-    return Object.assign(stream, { interrupt: async () => {}, close: () => {} }) as Query;
+    return Object.assign(stream, {
+      interrupt: async () => { interrupts++; },
+      stopTask: async (id: string) => { stoppedTasks.push(id); },
+      close: () => {},
+    }) as Query;
   };
   async function emit(message: SDKMessage | Error | null) {
     messages.push(message);
@@ -74,7 +80,8 @@ function engine() {
     await setImmediate();
   }
   return {
-    factory, emit, prompts,
+    factory, emit, prompts, stoppedTasks,
+    get interrupts() { return interrupts; },
     get launches() { return launches; },
     get options() { return params.options; },
     async background(count: number, ambient = false) {
@@ -83,6 +90,9 @@ function engine() {
     },
     async idle() {
       await emit({ type: 'system', subtype: 'session_state_changed', state: 'idle', uuid: randomUUID(), session_id: 'test' });
+    },
+    async running() {
+      await emit({ type: 'system', subtype: 'session_state_changed', state: 'running', uuid: randomUUID(), session_id: 'test' });
     },
   };
 }
@@ -346,4 +356,32 @@ test('reconnected WebSocket gets durable notices without starting Claude; anothe
   const other = await attach('b');
   assert.ok(other.type === 'not_live' && other.stoppedWork.length === 0);
   assert.equal(cli.launches, 0);
+});
+
+test('the engine says when its turns start and end, so a turn it starts by itself counts as work', async (t) => {
+  const cli = engine();
+  const manager = new SessionManager(folder(t), undefined, undefined, { queryFactory: cli.factory });
+  const session = await manager.open(null);
+  assert.equal(cli.options?.env?.CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS, '1');
+  await cli.idle();
+  assert.equal(manager.busy(), 0);
+  await cli.running();   // a sub-agent came back; nobody sent anything
+  assert.equal(session.status, 'running');
+  assert.equal(manager.busy(), 1, 'a deploy drain waits for it');
+  manager.closeAll();
+});
+
+test('Stop after the turn stops the work left in the background, and only that', async (t) => {
+  const cli = engine();
+  const manager = new SessionManager(folder(t), undefined, undefined, { queryFactory: cli.factory });
+  const session = await manager.open(null);
+  await cli.idle();
+  await cli.background(2);
+  await session.interrupt();
+  assert.deepEqual(cli.stoppedTasks, ['builder-0', 'builder-1']);
+  assert.equal(cli.interrupts, 0, 'no turn to interrupt');
+  await cli.background(0);
+  await session.interrupt();
+  assert.equal(cli.interrupts, 1, 'nothing in the background: a plain interrupt, as before');
+  manager.closeAll();
 });

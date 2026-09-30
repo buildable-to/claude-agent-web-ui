@@ -18,7 +18,29 @@ export type SessionState = {
   error: string | null;
   /** This engine's closure already has a precise explanation; history alone does not set it. */
   stopNotified: boolean;
+  /** When the current turn began, on this page's clock; null between turns. */
+  busySince: number | null;
+  /** What the engine is still doing in the background (sub-agents, commands
+   *  it put behind it), in its own words; it may outlive the turn. */
+  background: string[];
 };
+
+/** The engine's live background work, when this message is its account of it
+ *  (REPLACE semantics); housekeeping (ambient) tasks are not work. */
+function backgroundOf(message: unknown): string[] | undefined {
+  const m = message as { type?: string; subtype?: string; tasks?: Array<{ description?: string; ambient?: boolean }> };
+  if (m?.type !== 'system' || m.subtype !== 'background_tasks_changed' || !Array.isArray(m.tasks)) return undefined;
+  return m.tasks.filter((t) => !t.ambient).map((t) => t.description || 'Background work');
+}
+
+const isBusy = (status: SessionStatus) => status === 'running' || status === 'requires_action';
+
+/** The turn's start: kept while it runs, taken from the engine's own count
+ *  when it first reports one (a reload mid-turn keeps the real time). */
+function busySince(prev: number | null, status: SessionStatus, busyForMs?: number): number | null {
+  if (!isBusy(status)) return null;
+  return prev ?? Date.now() - (busyForMs ?? 0);
+}
 
 type Action =
   | { type: 'reset'; sessionId: string | null }
@@ -41,6 +63,8 @@ export function initialSessionState(sessionId: string | null): SessionState {
     loadingHistory: Boolean(sessionId),
     error: null,
     stopNotified: false,
+    busySince: null,
+    background: [],
   };
 }
 
@@ -59,7 +83,7 @@ export function sessionReducer(state: SessionState, action: Action): SessionStat
     case 'local_user':
       return { ...state, transcript: addLocalUserTurn(state.transcript, action.id, action.text) };
     case 'starting':
-      return { ...state, status: 'starting', error: null, stopNotified: false };
+      return { ...state, status: 'starting', error: null, stopNotified: false, busySince: Date.now() };
     case 'choose':
       return {
         ...state,
@@ -78,9 +102,13 @@ export function sessionReducer(state: SessionState, action: Action): SessionStat
           // History closes every turn; if the engine is mid-turn (working, or
           // waiting on a permission), its next messages belong to the last
           // turn, not to a new one.
-          const midTurn = m.status === 'running' || m.status === 'requires_action';
+          const midTurn = isBusy(m.status);
           let transcript = midTurn ? reopenLastTurn(state.transcript) : state.transcript;
-          for (const msg of m.replay) transcript = applyMessage(transcript, msg);
+          let background: string[] = [];
+          for (const msg of m.replay) {
+            transcript = applyMessage(transcript, msg);
+            background = backgroundOf(msg) ?? background;
+          }
           for (const notice of m.stoppedWork ?? []) transcript = addStoppedWork(transcript, notice);
           return {
             ...state,
@@ -93,6 +121,8 @@ export function sessionReducer(state: SessionState, action: Action): SessionStat
             transcript,
             error: null,
             stopNotified: false,
+            busySince: m.status === 'starting' ? (state.busySince ?? Date.now()) : busySince(null, m.status, m.busyForMs),
+            background,
           };
         }
         case 'not_live': {
@@ -103,6 +133,8 @@ export function sessionReducer(state: SessionState, action: Action): SessionStat
             ...state,
             attached: false,
             status: 'idle',
+            busySince: null,
+            background: [],
             pending: [],
             stopNotified: notices.length > 0,
             transcript: notices.length > 0
@@ -118,12 +150,20 @@ export function sessionReducer(state: SessionState, action: Action): SessionStat
             ...state,
             attached: false,
             status: 'closed',
+            busySince: null,
+            background: [],
             pending: [],
             stopNotified: true,
             transcript: closeStoppedWork(state.transcript, [m.notice]),
           };
-        case 'message':
-          return { ...state, transcript: applyMessage(state.transcript, m.message) };
+        case 'message': {
+          const background = backgroundOf(m.message);
+          return {
+            ...state,
+            transcript: applyMessage(state.transcript, m.message),
+            ...(background ? { background } : {}),
+          };
+        }
         case 'permission_request':
           return state.pending.some((p) => p.requestId === m.request.requestId)
             ? state
@@ -134,7 +174,11 @@ export function sessionReducer(state: SessionState, action: Action): SessionStat
           return {
             ...state,
             status: m.status,
+            // 'starting' is the page's own guess until the engine speaks; the
+            // turn it starts runs on from there
+            busySince: m.status === 'starting' ? (state.busySince ?? Date.now()) : busySince(state.busySince, m.status, m.busyForMs),
             attached: m.status === 'closed' ? false : state.attached,
+            background: m.status === 'closed' ? [] : state.background,
             pending: m.status === 'closed' ? [] : state.pending,
             transcript:
               m.status === 'closed'
@@ -150,6 +194,7 @@ export function sessionReducer(state: SessionState, action: Action): SessionStat
             ...state,
             error: m.message,
             status: state.status === 'starting' ? 'idle' : state.status,
+            busySince: state.status === 'starting' ? null : state.busySince,
             transcript: addNote(state.transcript, `err-${Date.now()}`, 'error', m.message),
           };
       }

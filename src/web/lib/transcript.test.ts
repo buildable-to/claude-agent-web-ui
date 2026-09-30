@@ -6,7 +6,11 @@ import {
   applyHistory,
   applyMessage,
   emptyTranscript,
+  currentStep,
+  CUT_TEXT,
+  markCut,
   NO_RESPONSE,
+  type Block,
   type ToolBlock,
   type Transcript,
   type Turn,
@@ -145,4 +149,56 @@ test('live: a skill’s text and other injected context are not the engineer spe
     ['user', 'note'],
   );
   assert.equal((t.turns[1] as Extract<Turn, { kind: 'note' }>).text, 'Request interrupted by user');
+});
+
+test('the current step is the open turn\'s newest unanswered visible call', () => {
+  const tool = (id: string, name: string, result?: string) => ({
+    type: 'tool_use' as const, id, name, input: {}, done: true, images: [], children: [],
+    ...(result !== undefined ? { result } : {}),
+  });
+  const turnOf = (open: boolean, blocks: Block[]): Transcript => ({
+    ...emptyTranscript(), turns: [{ kind: 'assistant', id: 'a', open, blocks }],
+  });
+  assert.equal(currentStep(turnOf(true, [tool('1', 'Bash', 'ok')])), null, 'every step answered: thinking');
+  assert.equal(currentStep(turnOf(true, [tool('1', 'Bash', 'ok'), tool('2', 'Bash')]))?.id, '2');
+  assert.equal(currentStep(turnOf(true, [tool('1', 'Bash'), tool('2', 'Skill')]))?.id, '1', 'a skill loading is not a step');
+  assert.equal(currentStep(turnOf(false, [tool('1', 'Bash')])), null, 'a closed turn is not at work');
+  const agent = { ...tool('7', 'Agent', 'Async agent launched successfully'), task: { status: 'running' as const } };
+  assert.equal(currentStep(turnOf(false, [agent]))?.id, '7', 'a sub-agent outlives the turn that sent it');
+  assert.equal(currentStep(turnOf(false, [{ ...agent, task: { status: 'completed' as const } }])), null);
+  const backgrounded = { ...tool('1', 'Bash', 'Command running in background'), task: { status: 'running' as const } };
+  assert.equal(currentStep(turnOf(true, [backgrounded]))?.id, '1', 'a backgrounded command is still the step');
+  const withNote: Transcript = {
+    ...turnOf(true, [tool('1', 'Read')]),
+    turns: [...turnOf(true, [tool('1', 'Read')]).turns, { kind: 'note', id: 'n', level: 'info', text: 'compacted' }],
+  };
+  assert.equal(currentStep(withNote)?.id, '1', 'a note does not hide the step');
+});
+
+test('a follow-up sent mid-turn does not mark the running step done; the next words close it', () => {
+  const running: Transcript = {
+    ...emptyTranscript(),
+    turns: [{ kind: 'assistant', id: 'a', open: true, blocks: [
+      { type: 'tool_use', id: 'render', name: 'Bash', input: {}, done: true, images: [], children: [] },
+    ] }],
+  };
+  const followed = addLocalUserTurn(running, 'u1', 'also check the beams');
+  assert.equal(assistantTurn(followed, 0).open, true, 'the step is still running');
+  assert.equal(followed.turns[1]!.kind, 'user');
+  assert.equal(currentStep(followed)?.id, 'render', 'the work line keeps naming it');
+  const next = applyMessage(followed, live({ type: 'assistant', uuid: 'm2', message: { id: 'msg2', role: 'assistant', content: [{ type: 'text', text: 'Now the beams.' }] } }));
+  assert.equal(assistantTurn(next, 0).open, false, 'the engine spoke after the follow-up: the old turn is done');
+  assert.equal(assistantTurn(next, 2).open, true);
+});
+
+test('an engine that dies under a follow-up sent mid-turn closes the turn above it and says so', () => {
+  const running: Transcript = {
+    ...emptyTranscript(),
+    turns: [{ kind: 'assistant', id: 'a', open: true, blocks: [
+      { type: 'tool_use', id: 'render', name: 'Bash', input: {}, done: true, images: [], children: [] },
+    ] }],
+  };
+  const cut = markCut(addLocalUserTurn(running, 'u1', 'also the beams'), 'cut-1');
+  assert.equal(assistantTurn(cut, 0).open, false);
+  assert.ok(cut.turns.some((x) => x.kind === 'note' && x.text === CUT_TEXT));
 });

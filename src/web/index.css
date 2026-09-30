@@ -469,10 +469,31 @@ select.pill {
 .breathe {
   animation: breathe 1.6s ease-in-out infinite;
 }
+/* the work line's sweep: a thin light running along its foot, so the line
+   moves even when nothing else on the page does */
+.work-sweep {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  width: 30%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: work-sweep 1.8s ease-in-out infinite;
+}
+@keyframes work-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(340%);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .rise,
   .breathe,
-  .animate-pulse {
+  .animate-pulse,
+  .work-sweep {
     animation: none !important;
   }
 }

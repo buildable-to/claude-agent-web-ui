@@ -118,6 +118,8 @@ export class LiveSession {
   readonly cwd: string;
   readonly project: string | undefined;
   status: SessionStatus = 'starting';
+  /** When the current turn began (running, or asking the engineer); null between turns. */
+  private busySince: number | null = null;
   meta: SessionMeta = {};
   lastActivity = Date.now();
   /** Background tasks (sub-agents, backgrounded commands) the engine still
@@ -125,6 +127,8 @@ export class LiveSession {
    *  (`background_tasks_changed`). A conversation whose turn ended is still
    *  working while this is above zero. */
   backgroundWork = 0;
+  /** The ids behind backgroundWork, so Stop can stop them. */
+  private backgroundIds: string[] = [];
 
   private readonly input = new InputQueue();
   private readonly q: Query;
@@ -201,6 +205,11 @@ export class LiveSession {
             ...(opts.env ?? {}),
             ...conversationEnv(this.sessionId, opts.title),
             CLAUDE_AGENT_SDK_CLIENT_APP: 'claude-agent-web-ui/0.1.0',
+            // Without it the engine never says when a turn starts or ends
+            // (session_state_changed): a turn it starts by itself (a
+            // sub-agent came back, a background command finished) ran with
+            // the page, the studio and the deploy drain all reading idle.
+            CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
           }),
           stderr: (data) => {
             const line = data.trim();
@@ -280,9 +289,19 @@ export class LiveSession {
   }
 
   async interrupt() {
-    // Deny anything still waiting on the user, then stop the turn.
+    // Deny anything still waiting on the user, then stop the turn — and the
+    // sub-agents and backgrounded commands it left running: the engineer has
+    // one Stop, and it stops the work, not only the part in the foreground.
     for (const id of [...this.pending.keys()]) this.answerPermission(id, 'deny');
-    await this.q.interrupt();
+    const background = this.backgroundIds;
+    if (this.status === 'running' || this.status === 'requires_action' || !background.length) await this.q.interrupt();
+    await Promise.all(
+      background.map((id) =>
+        this.q.stopTask(id).catch((err: unknown) => {
+          console.error(`[engine ${this.shortId}] stopTask ${id}: ${String(err)}`);
+        }),
+      ),
+    );
   }
 
   async setPermissionMode(mode: PermissionMode) {
@@ -341,6 +360,8 @@ export class LiveSession {
             sessionId: this.sessionId,
             requestId: opts.requestId,
           });
+          // the card is gone: "needs you" with nothing to answer is a lie
+          if (this.pending.size === 0 && this.status === 'requires_action') this.setStatus('running');
         }
       });
     });
@@ -387,7 +408,9 @@ export class LiveSession {
       this.broadcast({ type: 'meta', sessionId: this.sessionId, meta: this.meta });
       void this.loadInitDetails();
     } else if (message.type === 'system' && message.subtype === 'background_tasks_changed') {
-      this.backgroundWork = message.tasks.filter((t) => !t.ambient).length;
+      const work = message.tasks.filter((t) => !t.ambient);
+      this.backgroundWork = work.length;
+      this.backgroundIds = work.map((t) => t.task_id);
       this.onActivity?.(this.workState());
     } else if (message.type === 'system' && message.subtype === 'session_state_changed') {
       this.setStatus(message.state);
@@ -462,12 +485,23 @@ export class LiveSession {
     }
   }
 
+  /** How long the current turn has run, so a page that attaches (or reloads)
+   *  mid-turn shows the real time on it, not 0:00. Sent as a duration, not a
+   *  timestamp: the page's clock need not agree with ours. */
+  get busyForMs(): number | undefined {
+    return this.busySince === null ? undefined : Date.now() - this.busySince;
+  }
+
   private setStatus(status: SessionStatus) {
     if (this.status === status) return;
     if (this.status === 'closed') return;
     this.status = status;
+    const busy = status === 'running' || status === 'requires_action';
+    if (!busy) this.busySince = null;
+    else if (this.busySince === null) this.busySince = Date.now();
     if (!this.closed) this.onActivity?.(this.workState());
-    this.broadcast({ type: 'status', sessionId: this.sessionId, status });
+    const busyForMs = this.busyForMs;
+    this.broadcast({ type: 'status', sessionId: this.sessionId, status, ...(busyForMs !== undefined ? { busyForMs } : {}) });
   }
 
   private workState(): WorkState {

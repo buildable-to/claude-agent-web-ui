@@ -4,16 +4,12 @@ import { splitMentions } from '@/lib/mentions';
 import { useMentions } from '@/lib/mentionsLive';
 import { splitViewing } from '@/lib/studio';
 import { showLine, useViewing } from '@/lib/viewingLive';
-import { isInFlight, NO_RESPONSE, type Block, type ToolBlock, type Turn } from '@/lib/transcript';
+import { HIDDEN_TOOLS, NO_RESPONSE, type Block, type ToolBlock, type Turn } from '@/lib/transcript';
 import Markdown from './Markdown';
 import { Mention } from './Mention';
 import { FanOut } from './AgentBoard';
 import { isFanOut } from '@/lib/agents';
 import { Steps } from './Steps';
-
-/** Plumbing the engineer has no use for: a skill loading is not a step, nor
- *  is the engine fetching one of its own tool definitions. */
-const HIDDEN_TOOLS = new Set(['Skill', 'ToolSearch']);
 
 type Piece = { kind: 'text'; text: string } | { kind: 'steps'; blocks: ToolBlock[] };
 
@@ -39,28 +35,11 @@ function groupBlocks(blocks: Block[]): Piece[] {
   return pieces;
 }
 
-/** Three breathing dots: the agent is at work with nothing to show yet. */
-export function Dots() {
-  return (
-    <span className="inline-flex gap-1" aria-hidden>
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="size-1.5 rounded-full bg-accent breathe"
-          style={{ animationDelay: `${i * 200}ms` }}
-        />
-      ))}
-    </span>
-  );
-}
-
 type TurnProps = {
   turn: Turn;
-  /** The engine is running a turn right now. */
-  live?: boolean;
 };
 
-export const TurnView = memo(function TurnView({ turn, live = false }: TurnProps) {
+export const TurnView = memo(function TurnView({ turn }: TurnProps) {
   const mentions = useMentions();
   const marks = mentions.marks.map((m) => m.mark);
   const viewing = useViewing();
@@ -111,15 +90,9 @@ export const TurnView = memo(function TurnView({ turn, live = false }: TurnProps
     );
   }
 
+  // Whether the agent is still at it is the work line's job (WorkLine,
+  // pinned above the composer), not the turn's.
   const pieces = groupBlocks(turn.blocks);
-  // Nothing on screen says the agent is busy: no visible step yet (a skill
-  // loading, a long think), or every step has answered and it is deciding
-  // what comes next. Say so, or the engineer cannot tell waiting from done.
-  const last = pieces[pieces.length - 1];
-  const thinking =
-    live &&
-    turn.open &&
-    (!last || (last.kind === 'steps' && !last.blocks.some(isInFlight)));
 
   // The agent speaks without a box: its mark at the left, its words as text,
   // the stretches of work as one quiet line between them.
@@ -151,12 +124,6 @@ export const TurnView = memo(function TurnView({ turn, live = false }: TurnProps
           if (isFanOut(piece.blocks)) return <FanOut key={i} blocks={piece.blocks} live={turn.open} />;
           return <Steps key={i} blocks={piece.blocks} live={turn.open} />;
         })}
-        {thinking && (
-          <div className="rise flex items-center gap-2.5 text-[13px] text-ink-2">
-            <Dots />
-            Working…
-          </div>
-        )}
       </div>
     </div>
   );

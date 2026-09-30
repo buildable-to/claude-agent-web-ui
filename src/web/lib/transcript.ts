@@ -51,6 +51,10 @@ export function isInFlight(block: ToolBlock): boolean {
   if (block.task) return block.task.status === 'running';
   return block.result === undefined;
 }
+
+/** Plumbing the engineer has no use for: a skill loading is not a step, nor
+ *  is the engine fetching one of its own tool definitions. */
+export const HIDDEN_TOOLS = new Set(['Skill', 'ToolSearch']);
 export type TextBlock = { type: 'text'; text: string };
 export type Block = TextBlock | ToolBlock;
 
@@ -133,8 +137,17 @@ function withTurn(t: Transcript, index: number, turn: Turn): Transcript {
 function ensureOpenAssistant(t: Transcript, id: string): [Transcript, number] {
   const idx = lastAssistant(t);
   if (idx !== -1) return [t, idx];
+  // a turn left open above a follow-up the engineer sent mid-turn is done
+  // once the engine speaks after that follow-up
+  const turns = closeAll(t.turns);
   const turn: Turn = { kind: 'assistant', id, blocks: [], open: true };
-  return [{ ...t, turns: [...t.turns, turn] }, t.turns.length];
+  return [{ ...t, turns: [...turns, turn] }, turns.length];
+}
+
+function closeAll(turns: Turn[]): Turn[] {
+  return turns.some((x) => x.kind === 'assistant' && x.open)
+    ? turns.map((x) => (x.kind === 'assistant' && x.open ? { ...x, open: false } : x))
+    : turns;
 }
 
 function updateBlock(t: Transcript, turnIdx: number, blockIdx: number, fn: (b: Block) => Block): Transcript {
@@ -246,9 +259,15 @@ export function applyHistory(t: Transcript, history: HistoryMessage[]): Transcri
   return closeOpenTurn(next);
 }
 
+/** The engineer's own words, shown the moment they send. Sent mid-turn (a
+ *  follow-up that runs after the current step) they must not close the turn:
+ *  its step is still running, and its pill must keep saying so. */
 export function addLocalUserTurn(t: Transcript, id: string, text: string): Transcript {
   if (t.seen.has(id)) return t;
-  return addUserTurn({ ...t, seen: new Set(t.seen).add(id) }, id, text, 0);
+  const seen = new Set(t.seen).add(id);
+  const last = t.turns[t.turns.length - 1];
+  if (last && last.kind === 'user' && last.text === text && last.images === 0) return { ...t, seen };
+  return { ...t, seen, turns: [...t.turns, { kind: 'user', id, text, images: 0 }] };
 }
 
 export function addNote(t: Transcript, id: string, level: 'info' | 'error', text: string): Transcript {
@@ -314,7 +333,9 @@ export function endedMidTurn(t: Transcript): boolean {
 
 /** The engine is gone under this conversation: close what was open and say so once. */
 export function markCut(t: Transcript, id: string): Transcript {
-  if (lastAssistant(t) === -1 && !endedMidTurn(t)) return t;
+  // any open turn counts: one may sit above a follow-up sent mid-turn
+  const open = t.turns.some((x) => x.kind === 'assistant' && x.open);
+  if (!open && !endedMidTurn(t)) return t;
   if (t.turns.some((x) => x.kind === 'note' && x.text === CUT_TEXT && x.id === id)) return t;
   return addNote(closeOpenTurn(t), id, 'info', CUT_TEXT);
 }
@@ -362,12 +383,8 @@ export function reopenLastTurn(t: Transcript): Transcript {
 }
 
 export function closeOpenTurn(t: Transcript): Transcript {
-  const idx = lastAssistant(t);
-  if (idx === -1) return { ...t, stream: null };
-  const turn = t.turns[idx]!;
-  if (turn.kind !== 'assistant') return { ...t, stream: null };
-  const closed = withTurn(t, idx, { ...turn, open: false });
-  return { ...closed, stream: null };
+  // every open turn: one may sit above a follow-up the engineer sent mid-turn
+  return { ...t, turns: closeAll(t.turns), stream: null };
 }
 
 /** The engineer said something. The same words twice in a row (the page's
@@ -676,6 +693,32 @@ export function runningAgents(t: Transcript): number {
     for (const b of turn.blocks) if (b.type === 'tool_use' && b.task?.status === 'running') n++;
   }
   return n;
+}
+
+/** The step the agent is on right now: the newest visible tool call of the
+ *  open turn that has no answer yet; failing that, the newest sub-agent or
+ *  backgrounded command still running from any turn (the turn that sent it
+ *  may have ended). None while it only thinks or writes. */
+export function currentStep(t: Transcript): ToolBlock | null {
+  // the newest open turn (it may sit above a follow-up sent mid-turn)
+  let i = t.turns.length - 1;
+  while (i >= 0 && !(t.turns[i]!.kind === 'assistant' && (t.turns[i] as { open: boolean }).open)) i--;
+  const turn = t.turns[i];
+  if (turn && turn.kind === 'assistant' && turn.open) {
+    for (let j = turn.blocks.length - 1; j >= 0; j--) {
+      const b = turn.blocks[j]!;
+      if (b.type === 'tool_use' && !HIDDEN_TOOLS.has(b.name) && isInFlight(b)) return b;
+    }
+  }
+  for (let k = t.turns.length - 1; k >= 0; k--) {
+    const tk = t.turns[k]!;
+    if (tk.kind !== 'assistant') continue;
+    for (let j = tk.blocks.length - 1; j >= 0; j--) {
+      const b = tk.blocks[j]!;
+      if (b.type === 'tool_use' && b.task?.status === 'running') return b;
+    }
+  }
+  return null;
 }
 
 /** The recorded form of a task_notification:
