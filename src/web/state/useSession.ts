@@ -113,7 +113,8 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
 
   const interrupt = useCallback(() => {
     const id = activeId.current;
-    if (id && attached.current) ws.send({ type: 'interrupt', sessionId: id });
+    // never queued for a reconnect: it would stop whatever runs by then
+    if (id && attached.current && ws.state === 'open') ws.send({ type: 'interrupt', sessionId: id });
   }, []);
 
   const setPermissionMode = useCallback((mode: PermissionMode) => {

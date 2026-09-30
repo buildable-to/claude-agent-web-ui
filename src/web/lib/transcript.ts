@@ -333,7 +333,9 @@ export function endedMidTurn(t: Transcript): boolean {
 
 /** The engine is gone under this conversation: close what was open and say so once. */
 export function markCut(t: Transcript, id: string): Transcript {
-  if (lastAssistant(t) === -1 && !endedMidTurn(t)) return t;
+  // any open turn counts: one may sit above a follow-up sent mid-turn
+  const open = t.turns.some((x) => x.kind === 'assistant' && x.open);
+  if (!open && !endedMidTurn(t)) return t;
   if (t.turns.some((x) => x.kind === 'note' && x.text === CUT_TEXT && x.id === id)) return t;
   return addNote(closeOpenTurn(t), id, 'info', CUT_TEXT);
 }

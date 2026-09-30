@@ -51,6 +51,8 @@ const EMBED_COPY = {
 export default function App() {
   const [config, setConfig] = useState<ServerConfig | null>(null);
   const [connection, setConnection] = useState<ConnectionState>(ws.state);
+  // "offline" only once the line has been up: the first connect at load is not an outage
+  const wasOpen = useRef(false);
   const [selected, setSelected] = useState<{ id: string | null; nonce: number }>({ id: null, nonce: 0 });
   const [draft, setDraft] = useState('');
   const [focusKey, setFocusKey] = useState(0);
@@ -73,7 +75,9 @@ export default function App() {
   // The turn ended but sub-agents or backgrounded commands are still going:
   // to the engineer (the work line, the tab, Project Studio's bar) the agent
   // is still working.
-  const background = state.status === 'idle' && (state.background.length > 0 || agentsRunning > 0);
+  // the engine's own list only: a task the transcript still marks running
+  // (a missed notification) must not keep the page "working" for ever
+  const background = state.status === 'idle' && state.background.length > 0;
   const shownStatus = background ? 'running' : state.status;
   useEffect(() => {
     if (fileSteps > 0) setTreeKey((k) => k + 1);
@@ -137,7 +141,12 @@ export default function App() {
   useEffect(() => {
     // the line to the server is down: whatever the agent is doing, this page
     // cannot know — the studio must not keep saying "working" on its word
-    tellParent({ type: 'status', status: connection === 'closed' ? 'offline' : shownStatus });
+    // (while it retries it flips closed ↔ connecting: both are offline, or
+    // the studio's bar flickers and refetches on every retry). Expired has
+    // its own message and word on the bar.
+    if (connection === 'expired') return;
+    if (connection === 'open') wasOpen.current = true;
+    tellParent({ type: 'status', status: connection === 'open' || !wasOpen.current ? shownStatus : 'offline' });
   }, [shownStatus, connection]);
   useEffect(() => {
     if (connection === 'expired') tellParent({ type: 'expired' });
@@ -310,6 +319,7 @@ export default function App() {
           }}
           onStop={session.interrupt}
           backgroundWork={background}
+          connected={connection === 'open'}
           commands={commands}
           commandsLoading={commandsLoading}
           autoFocus

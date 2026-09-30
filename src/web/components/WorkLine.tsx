@@ -2,7 +2,7 @@
 // it never scrolls away: what it is doing now and how long the turn has run.
 // The clock ticks every second, so a long step (a render, a queue for the
 // server) still reads as alive; a step that changes says it is getting on.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { SessionStatus } from '@shared/protocol';
 import type { ConnectionState } from '@/lib/ws';
 import { clock } from '@/lib/format';
@@ -25,8 +25,17 @@ export function WorkLine({ connection, status, background, since, transcript }: 
   const [now, setNow] = useState(() => Date.now());
   // background work has no turn clock: count from when this page saw it
   const [seen, setSeen] = useState<number | null>(null);
+  // the turn's start outlives the turn: work that goes on in the background
+  // keeps counting from it, not from when this page opened
+  const lastSince = useRef<number | null>(null);
   useEffect(() => {
-    if (!on) return;
+    if (since !== null) lastSince.current = since;
+  }, [since]);
+  useEffect(() => {
+    if (!on) {
+      lastSince.current = null;
+      return;
+    }
     setNow(Date.now());
     setSeen(Date.now());
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -53,7 +62,7 @@ export function WorkLine({ connection, status, background, since, transcript }: 
   const what = background?.length
     ? background[0] + (background.length > 1 ? ` +${background.length - 1}` : '')
     : step && stepWords(step);
-  const start = since ?? seen;
+  const start = since ?? lastSince.current ?? seen;
   return (
     <div className="mx-auto w-full max-w-3xl px-5 max-sm:px-3" role="status" aria-live="polite">
       <div className="rise relative flex h-8 items-center gap-2 overflow-hidden rounded-full bg-accent-soft pr-3.5 pl-3 text-[12.5px]">

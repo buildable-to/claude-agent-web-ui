@@ -7,6 +7,8 @@ import {
   applyMessage,
   emptyTranscript,
   currentStep,
+  CUT_TEXT,
+  markCut,
   NO_RESPONSE,
   type Block,
   type ToolBlock,
@@ -187,4 +189,16 @@ test('a follow-up sent mid-turn does not mark the running step done; the next wo
   const next = applyMessage(followed, live({ type: 'assistant', uuid: 'm2', message: { id: 'msg2', role: 'assistant', content: [{ type: 'text', text: 'Now the beams.' }] } }));
   assert.equal(assistantTurn(next, 0).open, false, 'the engine spoke after the follow-up: the old turn is done');
   assert.equal(assistantTurn(next, 2).open, true);
+});
+
+test('an engine that dies under a follow-up sent mid-turn closes the turn above it and says so', () => {
+  const running: Transcript = {
+    ...emptyTranscript(),
+    turns: [{ kind: 'assistant', id: 'a', open: true, blocks: [
+      { type: 'tool_use', id: 'render', name: 'Bash', input: {}, done: true, images: [], children: [] },
+    ] }],
+  };
+  const cut = markCut(addLocalUserTurn(running, 'u1', 'also the beams'), 'cut-1');
+  assert.equal(assistantTurn(cut, 0).open, false);
+  assert.ok(cut.turns.some((x) => x.kind === 'note' && x.text === CUT_TEXT));
 });

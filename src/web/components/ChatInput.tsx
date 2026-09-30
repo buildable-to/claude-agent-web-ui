@@ -25,6 +25,8 @@ type Props = {
   onStop: () => void;
   /** Sub-agents or backgrounded commands still run after the turn: Stop stays. */
   backgroundWork?: boolean;
+  /** The line to the server is up; a Stop sent without it would fire later, on whatever runs then. */
+  connected?: boolean;
   commands: CommandInfo[];
   commandsLoading: boolean;
   autoFocus?: boolean;
@@ -61,6 +63,7 @@ export function ChatInput({
   onChange,
   status,
   backgroundWork = false,
+  connected = true,
   onSend,
   onStop,
   commands,
@@ -325,7 +328,14 @@ export function ChatInput({
             <button
               type="button"
               onClick={onStop}
-              title={busy ? 'Stop the current turn' : 'Stop the work still running in the background'}
+              disabled={!connected}
+              title={
+                !connected
+                  ? 'Reconnecting — Stop comes back when the connection does'
+                  : busy
+                    ? 'Stop the current turn'
+                    : 'Stop the work still running in the background'
+              }
               aria-label="Stop"
               className="sendbtn bg-panel-3 text-ink hover:bg-danger hover:text-white"
             >
