@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { SessionStatus } from '@shared/protocol';
 import type { Turn } from '@/lib/transcript';
-import { Dots, TurnView } from './TurnView';
+import { TurnView } from './TurnView';
 
 type Props = {
   turns: Turn[];
@@ -61,13 +61,6 @@ export function MessageList({
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [turns, status]);
 
-  const last = turns[turns.length - 1];
-  const starting = status === 'starting';
-  // Before the agent's turn exists. Once it does, the turn itself says
-  // whether the agent is busy (see TurnView).
-  const running = status === 'running';
-  const waiting = running && (!last || last.kind !== 'assistant');
-
   return (
     <div ref={ref} className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl space-y-5 px-6 py-6 max-sm:px-4">
@@ -111,21 +104,9 @@ export function MessageList({
         )}
 
         {turns.map((turn) => (
-          <TurnView key={turn.id} turn={turn} live={running} />
+          <TurnView key={turn.id} turn={turn} />
         ))}
 
-        {starting && (
-          <div className="rise flex items-center gap-2.5 text-[13px] text-ink-2">
-            <Dots />
-            Starting Claude Code…
-          </div>
-        )}
-        {waiting && (
-          <div className="rise flex items-center gap-2.5 text-[13px] text-ink-2">
-            <Dots />
-            Working…
-          </div>
-        )}
       </div>
     </div>
   );

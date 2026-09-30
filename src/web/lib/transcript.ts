@@ -51,6 +51,10 @@ export function isInFlight(block: ToolBlock): boolean {
   if (block.task) return block.task.status === 'running';
   return block.result === undefined;
 }
+
+/** Plumbing the engineer has no use for: a skill loading is not a step, nor
+ *  is the engine fetching one of its own tool definitions. */
+export const HIDDEN_TOOLS = new Set(['Skill', 'ToolSearch']);
 export type TextBlock = { type: 'text'; text: string };
 export type Block = TextBlock | ToolBlock;
 
@@ -676,6 +680,20 @@ export function runningAgents(t: Transcript): number {
     for (const b of turn.blocks) if (b.type === 'tool_use' && b.task?.status === 'running') n++;
   }
   return n;
+}
+
+/** The step the agent is on right now: the newest visible tool call of the
+ *  open turn that has no answer yet. None while it thinks or writes. */
+export function currentStep(t: Transcript): ToolBlock | null {
+  let i = t.turns.length - 1;
+  while (i >= 0 && t.turns[i]!.kind === 'note') i--;
+  const turn = t.turns[i];
+  if (!turn || turn.kind !== 'assistant' || !turn.open) return null;
+  for (let j = turn.blocks.length - 1; j >= 0; j--) {
+    const b = turn.blocks[j]!;
+    if (b.type === 'tool_use' && !HIDDEN_TOOLS.has(b.name) && isInFlight(b)) return b;
+  }
+  return null;
 }
 
 /** The recorded form of a task_notification:

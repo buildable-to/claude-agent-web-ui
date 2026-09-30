@@ -100,6 +100,8 @@ export type ServerMessage =
       sessionId: string;
       cwd: string;
       status: SessionStatus;
+      /** How long the engine has been on this turn (running or asking), in ms. */
+      busyForMs?: number;
       /** Messages the live process has produced so far (no stream events). */
       replay: SDKMessage[];
       pending: PermissionRequest[];
@@ -111,7 +113,7 @@ export type ServerMessage =
   | { type: 'message'; sessionId: string; message: SDKMessage }
   | { type: 'permission_request'; sessionId: string; request: PermissionRequest }
   | { type: 'permission_resolved'; sessionId: string; requestId: string }
-  | { type: 'status'; sessionId: string; status: SessionStatus }
+  | { type: 'status'; sessionId: string; status: SessionStatus; busyForMs?: number }
   | { type: 'meta'; sessionId: string; meta: SessionMeta }
   /** The agent just changed the app's project for real (a `--real` apply finished). */
   | { type: 'project_changed'; sessionId: string; project?: string }

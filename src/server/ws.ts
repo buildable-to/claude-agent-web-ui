@@ -163,6 +163,7 @@ export function attachWebSocket(
         sessionId: session.sessionId,
         cwd: session.cwd,
         status: session.status,
+        ...(session.busyForMs !== undefined ? { busyForMs: session.busyForMs } : {}),
         replay: session.replay,
         pending: session.pendingRequests,
         meta: session.meta,

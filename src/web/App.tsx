@@ -8,6 +8,7 @@ import { finishedFileSteps, runningAgents, stoppedWorkNotices } from '@/lib/tran
 import { MessageList } from './components/MessageList';
 import { PermissionBanner } from './components/PermissionBanner';
 import { Sidebar } from './components/Sidebar';
+import { WorkLine } from './components/WorkLine';
 import { TopBar } from './components/TopBar';
 import { api } from './lib/api';
 import { armChime, chime, readChimeOn, shouldChime, shouldChimeForStoppedWork, writeChimeOn } from './lib/chime';
@@ -267,6 +268,7 @@ export default function App() {
           {...(embed ? EMBED_COPY : {})}
         />
         {dock.length > 0 && <AgentDock lanes={dock} />}
+        <WorkLine status={state.status} since={state.busySince} transcript={state.transcript} />
         {connection === 'expired' && (
           <p className="mx-auto w-full max-w-3xl px-6 text-[12.5px] text-warn">
             This page’s access has expired. Reload the project to continue.

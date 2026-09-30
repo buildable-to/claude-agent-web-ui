@@ -118,6 +118,8 @@ export class LiveSession {
   readonly cwd: string;
   readonly project: string | undefined;
   status: SessionStatus = 'starting';
+  /** When the current turn began (running, or asking the engineer); null between turns. */
+  private busySince: number | null = null;
   meta: SessionMeta = {};
   lastActivity = Date.now();
   /** Background tasks (sub-agents, backgrounded commands) the engine still
@@ -462,12 +464,23 @@ export class LiveSession {
     }
   }
 
+  /** How long the current turn has run, so a page that attaches (or reloads)
+   *  mid-turn shows the real time on it, not 0:00. Sent as a duration, not a
+   *  timestamp: the page's clock need not agree with ours. */
+  get busyForMs(): number | undefined {
+    return this.busySince === null ? undefined : Date.now() - this.busySince;
+  }
+
   private setStatus(status: SessionStatus) {
     if (this.status === status) return;
     if (this.status === 'closed') return;
     this.status = status;
+    const busy = status === 'running' || status === 'requires_action';
+    if (!busy) this.busySince = null;
+    else if (this.busySince === null) this.busySince = Date.now();
     if (!this.closed) this.onActivity?.(this.workState());
-    this.broadcast({ type: 'status', sessionId: this.sessionId, status });
+    const busyForMs = this.busyForMs;
+    this.broadcast({ type: 'status', sessionId: this.sessionId, status, ...(busyForMs !== undefined ? { busyForMs } : {}) });
   }
 
   private workState(): WorkState {

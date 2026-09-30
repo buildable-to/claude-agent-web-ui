@@ -6,7 +6,9 @@ import {
   applyHistory,
   applyMessage,
   emptyTranscript,
+  currentStep,
   NO_RESPONSE,
+  type Block,
   type ToolBlock,
   type Transcript,
   type Turn,
@@ -145,4 +147,25 @@ test('live: a skill’s text and other injected context are not the engineer spe
     ['user', 'note'],
   );
   assert.equal((t.turns[1] as Extract<Turn, { kind: 'note' }>).text, 'Request interrupted by user');
+});
+
+test('the current step is the open turn\'s newest unanswered visible call', () => {
+  const tool = (id: string, name: string, result?: string) => ({
+    type: 'tool_use' as const, id, name, input: {}, done: true, images: [], children: [],
+    ...(result !== undefined ? { result } : {}),
+  });
+  const turnOf = (open: boolean, blocks: Block[]): Transcript => ({
+    ...emptyTranscript(), turns: [{ kind: 'assistant', id: 'a', open, blocks }],
+  });
+  assert.equal(currentStep(turnOf(true, [tool('1', 'Bash', 'ok')])), null, 'every step answered: thinking');
+  assert.equal(currentStep(turnOf(true, [tool('1', 'Bash', 'ok'), tool('2', 'Bash')]))?.id, '2');
+  assert.equal(currentStep(turnOf(true, [tool('1', 'Bash'), tool('2', 'Skill')]))?.id, '1', 'a skill loading is not a step');
+  assert.equal(currentStep(turnOf(false, [tool('1', 'Bash')])), null, 'a closed turn is not at work');
+  const backgrounded = { ...tool('1', 'Bash', 'Command running in background'), task: { status: 'running' as const } };
+  assert.equal(currentStep(turnOf(true, [backgrounded]))?.id, '1', 'a backgrounded command is still the step');
+  const withNote: Transcript = {
+    ...turnOf(true, [tool('1', 'Read')]),
+    turns: [...turnOf(true, [tool('1', 'Read')]).turns, { kind: 'note', id: 'n', level: 'info', text: 'compacted' }],
+  };
+  assert.equal(currentStep(withNote)?.id, '1', 'a note does not hide the step');
 });

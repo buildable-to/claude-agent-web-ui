@@ -121,3 +121,34 @@ test('anchored historical incidents stop old tasks in order and preserve later r
   assert.equal(old?.type === 'tool_use' && old.task?.status, 'stopped');
   assert.equal(current?.type === 'tool_use' && current.task?.status, 'running');
 });
+
+test('the turn clock starts with the turn, survives a question, and stops between turns', () => {
+  const before = Date.now();
+  const running = event({ ...initialSessionState('s'), status: 'idle', attached: true }, { type: 'status', sessionId: 's', status: 'running' });
+  assert.ok(running.busySince !== null && running.busySince >= before);
+  const asking = event(running, { type: 'status', sessionId: 's', status: 'requires_action' });
+  assert.equal(asking.busySince, running.busySince);
+  const back = event(asking, { type: 'status', sessionId: 's', status: 'running', busyForMs: 0 });
+  assert.equal(back.busySince, running.busySince);
+  assert.equal(event(back, { type: 'status', sessionId: 's', status: 'idle' }).busySince, null);
+});
+
+test('a page that attaches mid-turn shows the time the engine has been at it, not 0:00', () => {
+  const attached = event(initialSessionState('s'), {
+    type: 'attached', sessionId: 's', cwd: '/x', status: 'running', busyForMs: 95_000,
+    replay: [], pending: [], meta: {}, stoppedWork: [],
+  });
+  const ago = Date.now() - attached.busySince!;
+  assert.ok(ago >= 95_000 && ago < 97_000, `${ago}`);
+  const idle = event(initialSessionState('s'), {
+    type: 'attached', sessionId: 's', cwd: '/x', status: 'idle', replay: [], pending: [], meta: {}, stoppedWork: [],
+  });
+  assert.equal(idle.busySince, null);
+});
+
+test('a new conversation counts from the moment the engineer sent it', () => {
+  const starting = sessionReducer(initialSessionState(null), { type: 'starting' });
+  assert.ok(starting.busySince !== null);
+  const running = event(starting, { type: 'status', sessionId: 's', status: 'running', busyForMs: 0 });
+  assert.equal(running.busySince, starting.busySince);
+});
