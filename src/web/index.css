@@ -1,37 +1,39 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
-/* Buildable's precision-dark CAD theme. Values mirror
-   buildable/static/css/_variables.css in the ezdxf-flask repo. Dark only. */
+/* Buildable's black-and-white theme. Values mirror Project Studio's :root
+   (buildable/templates/project_v4.html in the ezdxf-flask repo), where this
+   page sits as the chat panel. Dark only. */
 :root {
   color-scheme: dark;
-  --paper: #0f1014; /* bg-app */
-  --sidebar: #141519;
-  --panel: #1a1b21; /* bg-surface */
-  --panel-2: #1f2028; /* bg-elevated */
-  --panel-3: #252630; /* bg-hover */
-  --ink: #e8e9ed;
-  --ink-2: #8b8d9a;
-  --ink-3: #565766;
-  --line: #252630; /* border-subtle */
-  --line-2: #2e2f3a; /* border-default */
-  --line-3: #3a3b48; /* border-strong */
-  --accent: #4f8ff7;
-  --bubble: #2f6fed; /* the engineer's words, Messages blue */
-  --accent-dim: #3a6fd8;
-  --accent-soft: rgba(79, 143, 247, 0.15);
-  --accent-glow: rgba(79, 143, 247, 0.3);
-  --sea: #34d399;
-  --sea-soft: rgba(52, 211, 153, 0.12);
-  --warn: #fbbf24;
-  --warn-soft: rgba(251, 191, 36, 0.12);
-  --danger: #f87171;
-  --danger-soft: rgba(248, 113, 113, 0.1);
+  --paper: #0a0a0a; /* the chat panel */
+  --sidebar: #050505;
+  --panel: #111111;
+  --panel-2: #161616;
+  --panel-3: #1f1f1f;
+  --ink: #e6e6e6;
+  --ink-2: #8a8a8a; /* 5.7:1 on paper */
+  --ink-3: #6b6b6b;
+  --line: #222222;
+  --line-2: #2a2a2a;
+  --line-3: #3a3a3a;
+  --accent: #f2f2f2; /* primary buttons: white with black words */
+  --accent-ink: #000000;
+  --bubble: #1a1a1a; /* the engineer's words */
+  --accent-dim: #cfcfcf;
+  --accent-soft: rgba(255, 255, 255, 0.08);
+  --accent-glow: rgba(255, 255, 255, 0.18);
+  --sea: #6fbf8f;
+  --sea-soft: rgba(111, 191, 143, 0.12);
+  --warn: #d4a72c;
+  --warn-soft: rgba(212, 167, 44, 0.12);
+  --danger: #e5484d;
+  --danger-soft: rgba(229, 72, 77, 0.12);
   /* the one light surface: the approval card */
-  --inverse: #e8e9ed;
-  --inverse-2: #d3d5dc;
-  --inverse-ink: #0f1014;
-  --inverse-ink-2: #565766;
+  --inverse: #e6e6e6;
+  --inverse-2: #d0d0d0;
+  --inverse-ink: #0a0a0a;
+  --inverse-ink-2: #555555;
   --shadow-soft: 0 8px 24px -16px rgba(0, 0, 0, 0.7);
   --shadow-strong: 0 24px 48px -24px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.03);
 }
@@ -46,6 +48,7 @@
   --color-line: var(--line);
   --color-line-2: var(--line-2);
   --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
   --color-bubble: var(--bubble);
   --color-accent-soft: var(--accent-soft);
   --color-sea: var(--sea);
@@ -67,9 +70,9 @@
   --color-surface-2: var(--panel-2);
   --color-ok: var(--sea);
   --color-ok-soft: var(--sea-soft);
-  --font-display: 'Archivo', 'DM Sans', system-ui, sans-serif;
-  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'DM Sans', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', ui-monospace, monospace;
+  --font-display: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', Menlo, Consolas, ui-monospace, monospace;
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-xl: 10px;
@@ -92,19 +95,6 @@ body {
   background: var(--paper);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-/* The studio's faint drafting grid */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(var(--line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--line) 1px, transparent 1px);
-  background-size: 60px 60px;
-  opacity: 0.22;
-  z-index: 0;
 }
 #root {
   position: relative;
@@ -226,7 +216,7 @@ select.pill {
   max-width: 100%;
   overflow-x: auto;
 }
-/* Popover menus: the folder window's glass, a Mac-blue highlight, a check
+/* Popover menus: the folder window's glass, a grey highlight, a check
    on the chosen item. One look for the conversation, model, mode and skills. */
 .menu-btn {
   display: inline-flex;
@@ -252,8 +242,8 @@ select.pill {
 .menu-pop {
   padding: 5px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(40, 40, 45, 0.92);
+  border: 1px solid var(--line-2);
+  background: rgba(17, 17, 17, 0.96);
   backdrop-filter: blur(24px) saturate(1.4);
   -webkit-backdrop-filter: blur(24px) saturate(1.4);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55), 0 0 0 0.5px rgba(0, 0, 0, 0.6);
@@ -280,7 +270,7 @@ select.pill {
   text-align: left;
 }
 .menu-item.on {
-  background: var(--bubble);
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
 }
 .menu-check {
@@ -319,7 +309,7 @@ select.pill {
   display: grid;
   place-items: center;
   padding: 40px;
-  background: rgba(8, 9, 12, 0.78);
+  background: rgba(0, 0, 0, 0.8);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
@@ -389,12 +379,12 @@ select.pill {
   width: 30px;
   height: 30px;
   border-radius: 999px;
-  background: var(--bubble);
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-ink);
   transition: background 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
 }
 .sendbtn:hover:not(:disabled) {
-  background: #3b7bff;
+  background: #fff;
 }
 .sendbtn:disabled {
   opacity: 0.35;
@@ -437,7 +427,7 @@ select.pill {
 @keyframes viewing-flash {
   0%,
   35% {
-    background: var(--accent-soft, rgba(47, 111, 208, 0.28));
+    background: var(--accent-soft);
   }
   100% {
     background: transparent;
@@ -566,8 +556,8 @@ select.pill {
   box-shadow: none;
 }
 .focus-glow:focus-within {
-  border-color: var(--accent-dim);
-  box-shadow: 0 0 0 2px var(--accent-glow);
+  border-color: var(--line-3);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 /* A mark in a sentence — @C1 — as a pill. Click: the studio lights it up. */
@@ -578,10 +568,10 @@ select.pill {
   margin: 0 0.05em;
   padding: 0 0.5em;
   border-radius: 999px;
-  border: 1px solid rgba(79, 143, 247, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   background: var(--accent-soft);
   color: var(--accent);
-  font: 500 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 500 12px/1.55 var(--font-mono);
   cursor: pointer;
   transition: background 0.12s;
 }
@@ -623,7 +613,7 @@ select.pill {
 .mention-in {
   border-radius: 6px;
   background: var(--accent-soft);
-  box-shadow: 0 0 0 1px rgba(79, 143, 247, 0.35);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
   color: var(--accent);
   font-weight: 500;
 }
