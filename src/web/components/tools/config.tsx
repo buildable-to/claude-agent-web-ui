@@ -27,34 +27,34 @@ const icon = (node: ReactNode) => node;
 export function toolLook(name: string): ToolLook {
   switch (name) {
     case 'Read':
-      return { icon: icon(<FileText className="size-3.5" />), hue: 'text-emerald-400' };
+      return { icon: icon(<FileText className="size-3.5" />), hue: 'text-ink-2' };
     case 'Write':
-      return { icon: icon(<FilePen className="size-3.5" />), hue: 'text-emerald-400' };
+      return { icon: icon(<FilePen className="size-3.5" />), hue: 'text-ink-2' };
     case 'Edit':
     case 'MultiEdit':
-      return { icon: icon(<FilePenLine className="size-3.5" />), hue: 'text-emerald-400' };
+      return { icon: icon(<FilePenLine className="size-3.5" />), hue: 'text-ink-2' };
     case 'NotebookEdit':
-      return { icon: icon(<BookOpen className="size-3.5" />), hue: 'text-emerald-400' };
+      return { icon: icon(<BookOpen className="size-3.5" />), hue: 'text-ink-2' };
     case 'Bash':
     case 'BashOutput':
     case 'KillShell':
-      return { icon: icon(<Terminal className="size-3.5" />), hue: 'text-amber-400' };
+      return { icon: icon(<Terminal className="size-3.5" />), hue: 'text-ink-2' };
     case 'Grep':
-      return { icon: icon(<SearchCode className="size-3.5" />), hue: 'text-violet-400' };
+      return { icon: icon(<SearchCode className="size-3.5" />), hue: 'text-ink-2' };
     case 'Glob':
-      return { icon: icon(<Search className="size-3.5" />), hue: 'text-violet-400' };
+      return { icon: icon(<Search className="size-3.5" />), hue: 'text-ink-2' };
     case 'WebSearch':
     case 'web_search':
     case 'WebFetch':
     case 'web_fetch':
-      return { icon: icon(<Globe className="size-3.5" />), hue: 'text-cyan-400' };
+      return { icon: icon(<Globe className="size-3.5" />), hue: 'text-ink-2' };
     case 'Task':
     case 'Agent':
-      return { icon: icon(<Bot className="size-3.5" />), hue: 'text-indigo-400' };
+      return { icon: icon(<Bot className="size-3.5" />), hue: 'text-ink-2' };
     case 'TodoWrite':
-      return { icon: icon(<ListTodo className="size-3.5" />), hue: 'text-indigo-400' };
+      return { icon: icon(<ListTodo className="size-3.5" />), hue: 'text-ink-2' };
     case 'Skill':
-      return { icon: icon(<Sparkles className="size-3.5" />), hue: 'text-rose-400' };
+      return { icon: icon(<Sparkles className="size-3.5" />), hue: 'text-ink-2' };
     default:
       return { icon: icon(<Wrench className="size-3.5" />), hue: 'text-ink-2' };
   }

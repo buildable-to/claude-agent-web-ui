@@ -62,7 +62,7 @@ export const TurnView = memo(function TurnView({ turn }: TurnProps) {
             <span className="truncate">{viewing.replace(/ \[[^\]]+\]$/, '')}</span>
           </button>
         )}
-        <div className="max-w-[min(34rem,78%)] max-sm:max-w-[88%] rounded-[18px] rounded-br-[5px] bg-bubble px-3.5 py-2 text-[13.5px] leading-[1.5] whitespace-pre-wrap break-words text-white shadow-[0_1px_2px_rgba(0,0,0,.25)]">
+        <div className="max-w-[min(34rem,78%)] max-sm:max-w-[88%] rounded-[18px] rounded-br-[5px] border border-line-2 bg-bubble px-3.5 py-2 text-[13.5px] leading-[1.5] whitespace-pre-wrap break-words text-white shadow-[0_1px_2px_rgba(0,0,0,.25)]">
           {splitMentions(text).map((part, i) =>
             typeof part === 'string' ? part : <Mention key={i} token={part.mention} light />,
           )}
