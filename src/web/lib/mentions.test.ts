@@ -82,3 +82,24 @@ test("marks in the agent's words become pills — whole words, never inside code
   assert.ok(out.includes('\nC1 in code\n'));
   assert.ok(out.includes('C1x is not [C1](mention:C1).'));
 });
+
+test('a spacing is not a mention — a stirrup run survives the composer', () => {
+  // The run sentence an engineer types for a cage. Every "@" here is a
+  // spacing, not a mark, and the bubble must echo it back unchanged.
+  const run = 'closed Ø8 stirrups, run 12@100 | @200 | 12@100';
+  assert.deepEqual(splitMentions(run), [run]);
+
+  // the picker stays shut while that run is typed
+  assert.equal(mentionQuery('run 12@100', 10), null);
+  assert.equal(mentionQuery('run 12@100 | @200', 17), null);
+
+  // and marks still work, bare "@" still opens the picker to browse
+  assert.deepEqual(mentionQuery('stand it on @C', 14), { start: 12, query: 'C' });
+  assert.deepEqual(mentionQuery('stand it on @', 13), { start: 12, query: '' });
+  assert.deepEqual(splitMentions('@C1 at 200'), [{ mention: 'C1' }, ' at 200']);
+
+  // the agent's own words: a spacing stays text, a mark still becomes a pill
+  const out = linkMarks('B1 takes Ø8 @200 hoops.', ['B1']);
+  assert.ok(out.includes('[B1](mention:B1)'));
+  assert.ok(out.includes('Ø8 @200 hoops'));
+});
