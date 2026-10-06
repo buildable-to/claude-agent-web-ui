@@ -129,10 +129,25 @@ file of its own, so a scope can never be read as a project id); its list is
 those alone, whatever `?project=` says, and a page's `project` on `start` is
 dropped. Every other panel's list leaves them out: a project's, and a panel
 with no project (dev, standalone). Only the usage view lists every
-conversation. A conversation resumes only on the panel it was started on
-(a stamp one never on a project's, nor the reverse). With the list scoped,
-the embed's `?conversation=` opens a stamp conversation or, failing that,
-the newest one.
+conversation. A conversation is reached only from the panel it was started
+on (a stamp one never from a project's, nor the reverse): one check
+(`SessionManager.checkPanel`) guards every session id a client hands in —
+resume, and attach, send, permission, interrupt, mode and model on a
+running engine (judged by the scope it runs with), and the history, rename
+and delete routes (403). With the list scoped, the embed's `?conversation=`
+opens a stamp conversation or, failing that, the newest one.
+
+The tags fail closed. An unreadable `.agent-scopes.json` is left in place
+(logged as `SCOPE TAGS UNREADABLE`) and, until an operator repairs it, no
+panel lists that account's conversations, none is reopened from a panel,
+and no stamp conversation starts (503); a running engine keeps working for
+its own panel, and the usage view still lists everything. A new stamp
+conversation whose tag cannot be written is closed and refused.
+
+**Dev mode** (`--dev-auth`, `?account=<id>`) has no scope: every panel is a
+project-or-no-project panel, and a stamp panel needs a signed token. Its
+dev claim cannot ask for the stamp scope, so it can neither reach nor list
+a stamp conversation.
 
 **The page URL.** `?project=<id>` narrows the conversation list to that
 project and tags new conversations with it (kept in the folder's
@@ -157,8 +172,9 @@ the `make-stamp` skill and `stamp_door`; drafts never print, the engineer
 presses Save stamp). Its environment is an allowlist (`PATH`, `HOME`, locale,
 `PYTHONPATH`, `FREECAD_CMD`, `BUILDABLE_*`, `CLAUDE_*`, proxies) plus
 `BUILDABLE_ACCOUNT` and `BUILDABLE_PROJECT` (on the stamp panel
-`BUILDABLE_SCOPE=stamp` instead, and no project); the service's own secrets
-never reach it. On a shared server only the modes that
+`BUILDABLE_SCOPE=stamp` instead, and no project); a `BUILDABLE_PROJECT` or
+`BUILDABLE_SCOPE` the service itself was started with is dropped, never
+inherited; the service's own secrets never reach it. On a shared server only the modes that
 ask (`default`, `plan`) exist, and "Always allow" does not persist.
 
 **Messages to the parent page** (`window.parent.postMessage`, `source:
