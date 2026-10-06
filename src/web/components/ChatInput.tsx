@@ -23,6 +23,10 @@ type Props = {
   status: SessionStatus | 'connecting';
   onSend: (text: string) => void;
   onStop: () => void;
+  /** Sub-agents or backgrounded commands still run after the turn: Stop stays. */
+  backgroundWork?: boolean;
+  /** The line to the server is up; a Stop sent without it would fire later, on whatever runs then. */
+  connected?: boolean;
   commands: CommandInfo[];
   commandsLoading: boolean;
   autoFocus?: boolean;
@@ -58,6 +62,8 @@ export function ChatInput({
   value,
   onChange,
   status,
+  backgroundWork = false,
+  connected = true,
   onSend,
   onStop,
   commands,
@@ -81,6 +87,7 @@ export function ChatInput({
   const [caret, setCaret] = useState(0);
   const [pendingCaret, setPendingCaret] = useState<number | null>(null);
   const busy = status === 'running' || status === 'requires_action';
+  const stoppable = busy || backgroundWork;
   const disabled = status === 'connecting';
 
   const query = pickerQuery(value);
@@ -197,7 +204,7 @@ export function ChatInput({
   };
 
   // one set of metrics for the textarea and its mirror
-  const field = `py-[11px] ${busy ? 'pr-[5.25rem]' : 'pr-12'} pl-4 text-[13.5px] leading-relaxed`;
+  const field = `py-[11px] ${stoppable ? 'pr-[5.25rem]' : 'pr-12'} pl-4 text-[13.5px] leading-relaxed`;
   const hasMentions = /(^|\s)@[A-Za-z][^\s@]*/.test(value);
 
   const placeholder =
@@ -317,11 +324,18 @@ export function ChatInput({
           className={`relative block w-full resize-none bg-transparent outline-none placeholder:text-ink-3 disabled:opacity-60 ${field} ${hasMentions ? 'composer-clear' : 'text-ink'}`}
         />
         <div className="absolute right-[7px] bottom-[7px] flex items-center gap-1.5">
-          {busy && (
+          {stoppable && (
             <button
               type="button"
               onClick={onStop}
-              title="Stop the current turn"
+              disabled={!connected}
+              title={
+                !connected
+                  ? 'Reconnecting — Stop comes back when the connection does'
+                  : busy
+                    ? 'Stop the current turn'
+                    : 'Stop the work still running in the background'
+              }
               aria-label="Stop"
               className="sendbtn bg-panel-3 text-ink hover:bg-danger hover:text-white"
             >

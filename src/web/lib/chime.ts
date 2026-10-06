@@ -8,18 +8,54 @@
 // browser still refuses is dropped without a word — the title and the icon
 // carry it.
 
-import type { SessionStatus } from '@shared/protocol';
+import type { SessionStatus, StoppedWorkNotice } from '@shared/protocol';
 
 type Status = SessionStatus | 'connecting';
 
-/** A card came up during a live turn: sound it. A card found on arrival
- *  (attach replays a pending one when the page opens or a conversation is
- *  picked) is not news, so `connecting` and `idle` before it stay quiet.
+/** A card came up: sound it — during a turn the engineer started, a turn the
+ *  engine started by itself, or from a sub-agent after the turn ended. A card
+ *  found on arrival (attach replays a pending one when the page opens or a
+ *  conversation is picked) is not news, so `connecting` before it stays quiet.
  *  Status alone: a second card queued behind the first keeps the status and
  *  does not sound again — the engineer is already there, answering. */
 export function shouldChime(prev: Status, next: Status): boolean {
-  return next === 'requires_action' && (prev === 'running' || prev === 'starting');
+  return next === 'requires_action' && prev !== 'connecting' && prev !== 'requires_action';
 }
+
+type ChimeStorage = Pick<Storage, 'getItem' | 'setItem'>;
+
+function tabStorage(): ChimeStorage | undefined {
+  try {
+    return sessionStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Consume incident IDs even when muted. History and reconnect carry the same
+ *  IDs: each is news once per tab, including across reloads and conversation
+ *  switches. Storage may be disabled; memory still prevents repeat sounds. */
+export function stoppedWorkChime(storage: ChimeStorage | undefined = tabStorage()) {
+  const seen = new Set<string>();
+  return (notices: StoppedWorkNotice[], enabled: boolean): boolean => {
+    let fresh = false;
+    for (const notice of notices) {
+      const key = `chime:work-stopped:${notice.sessionId}:${notice.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      try {
+        if (storage?.getItem(key) === '1') continue;
+        storage?.setItem(key, '1');
+      } catch {
+        // The in-memory set still deduplicates while this page is open.
+      }
+      fresh = true;
+    }
+    return enabled && fresh;
+  };
+}
+
+export const shouldChimeForStoppedWork = stoppedWorkChime();
 
 const KEY = 'chime';
 

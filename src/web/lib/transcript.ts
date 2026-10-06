@@ -6,7 +6,7 @@
 // (history has no stream events, no result messages and no clock):
 // thinking blocks are dropped on both paths, and nothing here reads the time.
 
-import type { HistoryMessage, SDKMessage } from '@shared/protocol';
+import type { HistoryMessage, SDKMessage, StoppedWorkNotice } from '@shared/protocol';
 import { parsePartialJson } from './parsePartialJson';
 
 export type ToolImage = { mediaType: string; data: string };
@@ -51,6 +51,10 @@ export function isInFlight(block: ToolBlock): boolean {
   if (block.task) return block.task.status === 'running';
   return block.result === undefined;
 }
+
+/** Plumbing the engineer has no use for: a skill loading is not a step, nor
+ *  is the engine fetching one of its own tool definitions. */
+export const HIDDEN_TOOLS = new Set(['Skill', 'ToolSearch']);
 export type TextBlock = { type: 'text'; text: string };
 export type Block = TextBlock | ToolBlock;
 
@@ -60,7 +64,7 @@ export const NO_RESPONSE = 'No response requested.';
 export type Turn =
   | { kind: 'user'; id: string; text: string; images: number }
   | { kind: 'assistant'; id: string; blocks: Block[]; open: boolean }
-  | { kind: 'note'; id: string; level: 'info' | 'error'; text: string };
+  | { kind: 'note'; id: string; level: 'info' | 'error'; text: string; stoppedWork?: StoppedWorkNotice };
 
 type StreamState = {
   /** Rendered blocks in API order -> index into the open assistant turn's blocks. */
@@ -133,8 +137,17 @@ function withTurn(t: Transcript, index: number, turn: Turn): Transcript {
 function ensureOpenAssistant(t: Transcript, id: string): [Transcript, number] {
   const idx = lastAssistant(t);
   if (idx !== -1) return [t, idx];
+  // a turn left open above a follow-up the engineer sent mid-turn is done
+  // once the engine speaks after that follow-up
+  const turns = closeAll(t.turns);
   const turn: Turn = { kind: 'assistant', id, blocks: [], open: true };
-  return [{ ...t, turns: [...t.turns, turn] }, t.turns.length];
+  return [{ ...t, turns: [...turns, turn] }, turns.length];
+}
+
+function closeAll(turns: Turn[]): Turn[] {
+  return turns.some((x) => x.kind === 'assistant' && x.open)
+    ? turns.map((x) => (x.kind === 'assistant' && x.open ? { ...x, open: false } : x))
+    : turns;
 }
 
 function updateBlock(t: Transcript, turnIdx: number, blockIdx: number, fn: (b: Block) => Block): Transcript {
@@ -230,22 +243,77 @@ export function applyMessage(t: Transcript, msg: SDKMessage): Transcript {
 
 export function applyHistory(t: Transcript, history: HistoryMessage[]): Transcript {
   let next = t;
+  let lastMessageUuid: string | undefined;
   for (const h of history) {
     if (h.type === 'assistant') next = applyAssistant(next, h.uuid, h.message, h.parent_tool_use_id);
     else if (h.type === 'user') next = applyUser(next, h.uuid, h.message, h.parent_tool_use_id, false);
+    else if (h.stoppedWork) {
+      // Only a notice at its recorded position may stop preceding tasks.
+      // An unanchored fallback could follow work from a later resumed engine.
+      next = h.stoppedWork.afterMessageUuid && h.stoppedWork.afterMessageUuid === lastMessageUuid
+        ? closeStoppedWork(next, [h.stoppedWork])
+        : addStoppedWork(next, h.stoppedWork);
+    }
+    if (h.type === 'assistant' || h.type === 'user') lastMessageUuid = h.uuid;
   }
   return closeOpenTurn(next);
 }
 
+/** The engineer's own words, shown the moment they send. Sent mid-turn (a
+ *  follow-up that runs after the current step) they must not close the turn:
+ *  its step is still running, and its pill must keep saying so. */
 export function addLocalUserTurn(t: Transcript, id: string, text: string): Transcript {
   if (t.seen.has(id)) return t;
-  return addUserTurn({ ...t, seen: new Set(t.seen).add(id) }, id, text, 0);
+  const seen = new Set(t.seen).add(id);
+  const last = t.turns[t.turns.length - 1];
+  if (last && last.kind === 'user' && last.text === text && last.images === 0) return { ...t, seen };
+  return { ...t, seen, turns: [...t.turns, { kind: 'user', id, text, images: 0 }] };
 }
 
 export function addNote(t: Transcript, id: string, level: 'info' | 'error', text: string): Transcript {
   if (t.seen.has(id)) return t;
   const seen = new Set(t.seen).add(id);
   return { ...t, seen, turns: [...t.turns, { kind: 'note', id, level, text }] };
+}
+
+function stoppedWorkText(notice: StoppedWorkNotice): string {
+  const time = (at: number) => new Date(at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  const continueText = 'Type "continue" to pick up where it left off.';
+  if (notice.reason === 'service_restart') {
+    return `A restart interrupted your work (detected ${time(notice.detectedAt)}; last active ${time(notice.lastActiveAt)}). ${continueText}`;
+  }
+  const why = {
+    service_stop: 'when the service stopped',
+    engine_exit: 'when the agent exited',
+    user_stop: 'by a stop request',
+    idle_timeout: 'after the session timed out',
+  }[notice.reason];
+  return `Your work was stopped at ${time(notice.detectedAt)} ${why}. ${continueText}`;
+}
+
+/** Historical evidence only: adding a notice must not stop a resumed engine's tasks. */
+export function addStoppedWork(t: Transcript, notice: StoppedWorkNotice): Transcript {
+  const id = `work-stopped-${notice.sessionId}-${notice.id}`;
+  if (t.seen.has(id)) return t;
+  return {
+    ...t,
+    seen: new Set(t.seen).add(id),
+    turns: [...t.turns, { kind: 'note', id, level: 'info', text: stoppedWorkText(notice), stoppedWork: notice }],
+  };
+}
+
+export function stoppedWorkNotices(t: Transcript): StoppedWorkNotice[] {
+  return t.turns.flatMap((turn) => turn.kind === 'note' && turn.stoppedWork ? [turn.stoppedWork] : []);
+}
+
+/** The engine is known to be gone. Prefer its durable explanation to a guessed cut note. */
+export function closeStoppedWork(t: Transcript, notices: StoppedWorkNotice[]): Transcript {
+  let end = t.turns.length - 1;
+  while (end >= 0 && t.turns[end]!.kind === 'note') end--;
+  const turns = t.turns.filter((turn, index) => index <= end || turn.kind !== 'note' || turn.text !== CUT_TEXT);
+  let next = closeOpenTurn(stopOrphanTasks({ ...t, turns }));
+  for (const notice of notices) next = addStoppedWork(next, notice);
+  return next;
 }
 
 /** Said when the engine died under an unfinished turn (a restart, a crash). */
@@ -265,9 +333,41 @@ export function endedMidTurn(t: Transcript): boolean {
 
 /** The engine is gone under this conversation: close what was open and say so once. */
 export function markCut(t: Transcript, id: string): Transcript {
-  if (lastAssistant(t) === -1 && !endedMidTurn(t)) return t;
+  // any open turn counts: one may sit above a follow-up sent mid-turn
+  const open = t.turns.some((x) => x.kind === 'assistant' && x.open);
+  if (!open && !endedMidTurn(t)) return t;
   if (t.turns.some((x) => x.kind === 'note' && x.text === CUT_TEXT && x.id === id)) return t;
   return addNote(closeOpenTurn(t), id, 'info', CUT_TEXT);
+}
+
+/** What a sub-agent says when its conversation closed under it. */
+export const STOPPED_TEXT = 'Stopped: the conversation closed before this agent finished.';
+
+/** A conversation no engine holds any more (closed, reaped, the server
+ *  restarted) has no sub-agents running either: their tasks died with the
+ *  engine and no notification will ever come. Say so, instead of "running"
+ *  for ever (Maxima, 2026-09-24: six gutter drafters shown running two hours
+ *  after the conversation was closed). */
+export function stopOrphanTasks(t: Transcript): Transcript {
+  let changed = false;
+  const turns = t.turns.map((turn) => {
+    if (turn.kind !== 'assistant') return turn;
+    let mine = false;
+    const blocks = turn.blocks.map((b) => {
+      if (b.type !== 'tool_use') return b;
+      // History retains the launch placeholder even when its live task-start
+      // event was never persisted. A completion notification supplies task;
+      // without one, a vanished engine cannot still be running this builder.
+      const orphanedLaunch = !b.task && ASYNC_PLACEHOLDER.test(b.result ?? '');
+      if (b.task?.status !== 'running' && !orphanedLaunch) return b;
+      mine = true;
+      return { ...b, task: { ...b.task, status: 'stopped' as const, summary: STOPPED_TEXT } };
+    });
+    if (!mine) return turn;
+    changed = true;
+    return { ...turn, blocks };
+  });
+  return changed ? { ...t, turns } : t;
 }
 
 /** The engine is still working on the newest turn (a second tab attached
@@ -283,12 +383,8 @@ export function reopenLastTurn(t: Transcript): Transcript {
 }
 
 export function closeOpenTurn(t: Transcript): Transcript {
-  const idx = lastAssistant(t);
-  if (idx === -1) return { ...t, stream: null };
-  const turn = t.turns[idx]!;
-  if (turn.kind !== 'assistant') return { ...t, stream: null };
-  const closed = withTurn(t, idx, { ...turn, open: false });
-  return { ...closed, stream: null };
+  // every open turn: one may sit above a follow-up the engineer sent mid-turn
+  return { ...t, turns: closeAll(t.turns), stream: null };
 }
 
 /** The engineer said something. The same words twice in a row (the page's
@@ -597,6 +693,32 @@ export function runningAgents(t: Transcript): number {
     for (const b of turn.blocks) if (b.type === 'tool_use' && b.task?.status === 'running') n++;
   }
   return n;
+}
+
+/** The step the agent is on right now: the newest visible tool call of the
+ *  open turn that has no answer yet; failing that, the newest sub-agent or
+ *  backgrounded command still running from any turn (the turn that sent it
+ *  may have ended). None while it only thinks or writes. */
+export function currentStep(t: Transcript): ToolBlock | null {
+  // the newest open turn (it may sit above a follow-up sent mid-turn)
+  let i = t.turns.length - 1;
+  while (i >= 0 && !(t.turns[i]!.kind === 'assistant' && (t.turns[i] as { open: boolean }).open)) i--;
+  const turn = t.turns[i];
+  if (turn && turn.kind === 'assistant' && turn.open) {
+    for (let j = turn.blocks.length - 1; j >= 0; j--) {
+      const b = turn.blocks[j]!;
+      if (b.type === 'tool_use' && !HIDDEN_TOOLS.has(b.name) && isInFlight(b)) return b;
+    }
+  }
+  for (let k = t.turns.length - 1; k >= 0; k--) {
+    const tk = t.turns[k]!;
+    if (tk.kind !== 'assistant') continue;
+    for (let j = tk.blocks.length - 1; j >= 0; j--) {
+      const b = tk.blocks[j]!;
+      if (b.type === 'tool_use' && b.task?.status === 'running') return b;
+    }
+  }
+  return null;
 }
 
 /** The recorded form of a task_notification:

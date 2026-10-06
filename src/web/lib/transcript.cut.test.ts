@@ -72,3 +72,30 @@ test('attaching mid-turn continues the last turn instead of starting a second on
   assert.equal((reopenLastTurn(finished).turns[1] as Extract<Turn, { kind: 'assistant' }>).open, true);
   assert.equal(reopenLastTurn(emptyTranscript()).turns.length, 0);
 });
+
+test('a closed conversation has no sub-agent running: its open tasks read stopped', async () => {
+  const { stopOrphanTasks, STOPPED_TEXT, runningAgents } = await import('./transcript');
+  const t = {
+    turns: [
+      {
+        kind: 'assistant',
+        id: 'a1',
+        open: false,
+        blocks: [
+          { type: 'tool_use', id: 't1', name: 'Agent', input: {}, done: true, images: [], children: [],
+            task: { status: 'running', summary: 'Dry-apply probe edit' } },
+          { type: 'tool_use', id: 't2', name: 'Agent', input: {}, done: true, images: [], children: [],
+            task: { status: 'completed', summary: 'done' } },
+        ],
+      },
+    ],
+  } as any;
+  assert.equal(runningAgents(t), 1);
+  const s = stopOrphanTasks(t);
+  assert.equal(runningAgents(s), 0);
+  const blocks = (s.turns[0] as any).blocks;
+  assert.equal(blocks[0].task.status, 'stopped');
+  assert.equal(blocks[0].task.summary, STOPPED_TEXT);
+  assert.equal(blocks[1].task.status, 'completed', 'a finished agent keeps its finding');
+  assert.equal(stopOrphanTasks(s), s, 'nothing running: the same transcript');
+});

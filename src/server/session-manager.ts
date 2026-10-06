@@ -10,9 +10,28 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineInfo, HistoryMessage, SessionSummary } from '../shared/protocol.js';
 import { claudeConfigDir, installedSkills, probeEngine } from './commands.js';
-import { LiveSession } from './live-session.js';
+import { LiveSession, type LiveSessionOptions } from './live-session.js';
+import { WorkJournal } from './work-journal.js';
 
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
+/** How long a conversation with background work still running may go without
+ *  a message before it is closed anyway — a guard against a task that never
+ *  settles, never the normal way a long fan-out ends. */
+const BACKGROUND_IDLE_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+
+/** Whether the reaper closes this conversation now. A turn that ended with
+ *  sub-agents still at work is NOT idle: closing it killed them (Maxima,
+ *  2026-09-24: six gutter drafters stopped mid-work by "closing idle", and the
+ *  page went on showing them running). */
+export function shouldReap(
+  s: { status: string; lastActivity: number; backgroundWork: number },
+  now: number,
+): boolean {
+  if (s.status !== 'idle' && s.status !== 'closed') return false;
+  const quiet = now - s.lastActivity;
+  if (s.status === 'closed') return quiet > IDLE_TIMEOUT_MS;
+  return quiet > (s.backgroundWork > 0 ? BACKGROUND_IDLE_TIMEOUT_MS : IDLE_TIMEOUT_MS);
+}
 /** Which app project each conversation in this folder is about. */
 const PROJECTS_FILE = '.agent-projects.json';
 /** What each conversation has cost so far (the engine's running totals). */
@@ -46,19 +65,28 @@ export function titleFromPrompt(text: string | undefined, max = 120): string | u
 
 export class SessionManager {
   private readonly live = new Map<string, LiveSession>();
+  private readonly opening = new Map<string, Promise<LiveSession>>();
+  private pendingOpens = 0;
   private readonly info: SharedEngineInfo;
   private projects: Record<string, string>;
   private usage: Record<string, Usage>;
+  private readonly work: WorkJournal;
 
   constructor(
     readonly projectDir: string,
     /** The app account this folder belongs to (multi-account mode). */
     readonly accountId?: string,
     shared?: SharedEngineInfo,
+    private readonly dependencies: {
+      queryFactory?: LiveSessionOptions['queryFactory'];
+      getSessionInfo?: typeof getSessionInfo;
+      getSessionMessages?: typeof getSessionMessages;
+    } = {},
   ) {
     this.info = shared ?? { value: null, probe: null };
     this.projects = this.readJson<Record<string, string>>(PROJECTS_FILE);
     this.usage = this.readJson<Record<string, Usage>>(USAGE_FILE);
+    this.work = new WorkJournal(projectDir);
     setInterval(() => this.reapIdle(), 5 * 60 * 1000).unref();
   }
 
@@ -78,13 +106,34 @@ export class SessionManager {
     sessionId: string | null,
     opts: { model?: string; permissionMode?: PermissionMode; project?: string; firstPrompt?: string } = {},
   ): Promise<LiveSession> {
+    if (sessionId) {
+      const existing = this.get(sessionId);
+      if (existing) return existing;
+      const pending = this.opening.get(sessionId);
+      if (pending) return pending;
+    }
+    this.pendingOpens++;
+    const pending = this.openEngine(sessionId, opts);
+    if (sessionId) this.opening.set(sessionId, pending);
+    try {
+      return await pending;
+    } finally {
+      this.pendingOpens--;
+      if (sessionId) this.opening.delete(sessionId);
+    }
+  }
+
+  private async openEngine(
+    sessionId: string | null,
+    opts: { model?: string; permissionMode?: PermissionMode; project?: string; firstPrompt?: string },
+  ): Promise<LiveSession> {
     let title: string | undefined;
     if (sessionId) {
       const existing = this.get(sessionId);
       if (existing) return existing;
       // Only this folder's own conversations resume here. The engine would
       // otherwise find the id in ANY folder under the shared home.
-      const info = await getSessionInfo(sessionId, { dir: this.projectDir });
+      const info = await (this.dependencies.getSessionInfo ?? getSessionInfo)(sessionId, { dir: this.projectDir });
       if (!info) throw new Error('No such conversation in this account');
       title = sessionTitle(info);
     } else {
@@ -95,6 +144,11 @@ export class SessionManager {
     const only = await this.offeredCommands();
     const session = new LiveSession({
       cwd: this.projectDir,
+      queryFactory: this.dependencies.queryFactory,
+      recovery: sessionId ? this.work.recovery(sessionId) : undefined,
+      onStart: (state) => this.work.begin(state),
+      onActivity: (state) => this.work.update(state),
+      onStop: (state, reason) => this.work.stop(state, reason),
       ...(sessionId ? { resume: sessionId } : {}),
       // Engineers' default on the internal stage (ezdxf-flask#391): a
       // classifier judges the routine commands; the live apply and the memory
@@ -205,17 +259,34 @@ export class SessionManager {
   }
 
   async history(sessionId: string): Promise<HistoryMessage[]> {
-    const messages = await getSessionMessages(sessionId, {
+    const messages = await (this.dependencies.getSessionMessages ?? getSessionMessages)(sessionId, {
       dir: this.projectDir,
       includeSystemMessages: true,
     });
-    return messages.map((m) => ({
+    const history: HistoryMessage[] = messages.map((m) => ({
       type: m.type,
       uuid: m.uuid,
       session_id: m.session_id,
       message: m.message,
       parent_tool_use_id: m.parent_tool_use_id,
     }));
+    for (const notice of this.stoppedWork(sessionId)) {
+      const line: HistoryMessage = {
+        type: 'system', uuid: notice.id, session_id: sessionId,
+        message: {}, parent_tool_use_id: null, stoppedWork: notice,
+      };
+      let anchor = history.findIndex((m) => m.uuid === notice.afterMessageUuid);
+      if (anchor < 0) history.push(line);
+      else {
+        while (history[anchor + 1]?.stoppedWork?.afterMessageUuid === notice.afterMessageUuid) anchor++;
+        history.splice(anchor + 1, 0, line);
+      }
+    }
+    return history;
+  }
+
+  stoppedWork(sessionId: string) {
+    return this.work.notices(sessionId);
   }
 
   async rename(sessionId: string, title: string) {
@@ -226,6 +297,7 @@ export class SessionManager {
     this.get(sessionId)?.close();
     this.live.delete(sessionId);
     await deleteSession(sessionId, { dir: this.projectDir });
+    this.work.remove(sessionId);
     if (sessionId in this.projects) {
       delete this.projects[sessionId];
       this.writeJson(PROJECTS_FILE, this.projects);
@@ -237,17 +309,16 @@ export class SessionManager {
     return [...this.live.values()].filter((s) => s.status !== 'closed');
   }
 
-  /** Engines in the middle of a turn, or waiting on the engineer. */
+  /** Engines with foreground or background work, including permission waits. */
   busy(): number {
-    return this.liveSessions().filter((s) => s.status === 'running' || s.status === 'requires_action' || s.status === 'starting').length;
+    return this.pendingOpens + this.liveSessions().filter((s) => s.backgroundWork > 0 || s.status === 'running' || s.status === 'requires_action' || s.status === 'starting').length;
   }
 
-  /** Stop one conversation's engine: deny what it is waiting on, interrupt, close. */
+  /** Record the stop before teardown; interrupt alone may leave builders alive. */
   async stop(sessionId: string): Promise<boolean> {
     const s = this.get(sessionId);
     if (!s) return false;
-    await s.interrupt().catch(() => undefined);
-    s.close();
+    s.close('user_stop');
     this.live.delete(sessionId);
     return true;
   }
@@ -288,10 +359,9 @@ export class SessionManager {
   private reapIdle() {
     const now = Date.now();
     for (const [id, s] of this.live) {
-      const idle = s.status === 'idle' || s.status === 'closed';
-      if (idle && now - s.lastActivity > IDLE_TIMEOUT_MS) {
+      if (shouldReap(s, now)) {
         console.log(`[sessions] closing idle ${s.shortId}`);
-        s.close();
+        s.close('idle_timeout');
         this.live.delete(id);
       }
     }

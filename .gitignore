@@ -5,3 +5,5 @@ dist/
 *.log
 .DS_Store
 .eslintcache
+.agent-work.json
+.agent-work.json.*.tmp

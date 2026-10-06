@@ -8,6 +8,18 @@ export type { PermissionMode, SDKMessage };
 
 export type SessionStatus = 'starting' | 'idle' | 'running' | 'requires_action' | 'closed';
 
+/** A durable interruption, distinct from ordinary turn completion. */
+export type StoppedWorkNotice = {
+  id: string;
+  sessionId: string;
+  reason: 'service_restart' | 'service_stop' | 'engine_exit' | 'user_stop' | 'idle_timeout';
+  detectedAt: number;
+  /** Last persisted evidence of activity, not an inferred crash time. */
+  lastActiveAt: number;
+  /** Place the notice after this persisted turn when replaying history. */
+  afterMessageUuid?: string;
+};
+
 /** A permission question the engine is waiting on. */
 export type PermissionRequest = {
   requestId: string;
@@ -88,16 +100,20 @@ export type ServerMessage =
       sessionId: string;
       cwd: string;
       status: SessionStatus;
+      /** How long the engine has been on this turn (running or asking), in ms. */
+      busyForMs?: number;
       /** Messages the live process has produced so far (no stream events). */
       replay: SDKMessage[];
       pending: PermissionRequest[];
       meta: SessionMeta;
+      stoppedWork: StoppedWorkNotice[];
     }
-  | { type: 'not_live'; sessionId: string }
+  | { type: 'not_live'; sessionId: string; stoppedWork: StoppedWorkNotice[] }
+  | { type: 'work_stopped'; sessionId: string; notice: StoppedWorkNotice }
   | { type: 'message'; sessionId: string; message: SDKMessage }
   | { type: 'permission_request'; sessionId: string; request: PermissionRequest }
   | { type: 'permission_resolved'; sessionId: string; requestId: string }
-  | { type: 'status'; sessionId: string; status: SessionStatus }
+  | { type: 'status'; sessionId: string; status: SessionStatus; busyForMs?: number }
   | { type: 'meta'; sessionId: string; meta: SessionMeta }
   /** The agent just changed the app's project for real (a `--real` apply finished). */
   | { type: 'project_changed'; sessionId: string; project?: string }
@@ -129,6 +145,7 @@ export type HistoryMessage = {
   session_id: string;
   message: unknown;
   parent_tool_use_id: string | null;
+  stoppedWork?: StoppedWorkNotice;
 };
 
 export type ServerConfig = {

@@ -64,7 +64,10 @@ export function boardElapsed(agents: ToolBlock[], now: number): number | undefin
 
 export function AgentBoard({ agents, live }: { agents: ToolBlock[]; live: boolean }) {
   const running = agents.filter((a) => laneState(a, live) === 'running');
-  const failed = agents.filter((a) => laneState(a, live) === 'failed').length;
+  const failedAll = agents.filter((a) => laneState(a, live) === 'failed').length;
+  // stopped with their conversation, not failed at their work
+  const stopped = agents.filter((a) => a.task?.status === 'stopped').length;
+  const failed = failedAll - stopped;
   const done = agents.length - running.length;
   const busy = running.length > 0;
   const now = useClock(busy);
@@ -85,9 +88,10 @@ export function AgentBoard({ agents, live }: { agents: ToolBlock[]; live: boolea
     });
 
   const word = agents.length === 1 ? 'agent' : 'agents';
+  const trouble = `${failed ? ` · ${failed} failed` : ''}${stopped ? ` · ${stopped} stopped` : ''}`;
   const headline = busy
-    ? `${agents.length} ${word} · ${done} done${failed ? ` · ${failed} failed` : ''}`
-    : `${agents.length} ${word}${failed ? ` · ${failed} failed` : ''}`;
+    ? `${agents.length} ${word} · ${done} done${trouble}`
+    : `${agents.length} ${word}${trouble}`;
 
   // Running lanes first while it is busy; finished lanes beyond the screen fold.
   let lanes = agents;
@@ -109,7 +113,7 @@ export function AgentBoard({ agents, live }: { agents: ToolBlock[]; live: boolea
       >
         {busy ? (
           <span className="size-2 shrink-0 rounded-full bg-accent breathe" aria-hidden />
-        ) : failed ? (
+        ) : failedAll ? (
           <X className="size-3.5 shrink-0 text-warn" aria-hidden />
         ) : (
           <Check className="size-3.5 shrink-0 text-sea" aria-hidden />

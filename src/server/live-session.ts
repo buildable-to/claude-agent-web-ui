@@ -18,8 +18,10 @@ import type {
   ServerMessage,
   SessionMeta,
   SessionStatus,
+  StoppedWorkNotice,
 } from '../shared/protocol.js';
 import { toCommandInfo, toModelOptions } from './commands.js';
+import type { WorkState } from './work-journal.js';
 
 /** What an engine (and everything it runs) may see of the service's
  *  environment. The service's own secrets never cross this line. */
@@ -81,6 +83,12 @@ type Pending = {
 
 export type LiveSessionOptions = {
   cwd: string;
+  /** Process boundary, injectable for lifecycle tests without launching Claude. */
+  queryFactory?: typeof query;
+  recovery?: StoppedWorkNotice;
+  onStart?: (state: WorkState) => void;
+  onActivity?: (state: WorkState) => void;
+  onStop?: (state: WorkState, reason: StoppedWorkNotice['reason']) => StoppedWorkNotice | undefined;
   /** Called once the engine reports its slash commands, skills and models. */
   onInfo?: (info: EngineInfo) => void;
   /** Called after every turn with the running totals, for the usage record. */
@@ -110,8 +118,17 @@ export class LiveSession {
   readonly cwd: string;
   readonly project: string | undefined;
   status: SessionStatus = 'starting';
+  /** When the current turn began (running, or asking the engineer); null between turns. */
+  private busySince: number | null = null;
   meta: SessionMeta = {};
   lastActivity = Date.now();
+  /** Background tasks (sub-agents, backgrounded commands) the engine still
+   *  runs, housekeeping excluded — the SDK's own level signal
+   *  (`background_tasks_changed`). A conversation whose turn ended is still
+   *  working while this is above zero. */
+  backgroundWork = 0;
+  /** The ids behind backgroundWork, so Stop can stop them. */
+  private backgroundIds: string[] = [];
 
   private readonly input = new InputQueue();
   private readonly q: Query;
@@ -129,6 +146,10 @@ export class LiveSession {
   private readonly realApplies = new Set<string>();
   private perceives = new Map<string, PerceiveTarget>();
   private readonly persistAlways: boolean;
+  private readonly generation = randomUUID();
+  private lastMessageUuid: string | undefined;
+  private readonly onActivity: LiveSessionOptions['onActivity'];
+  private readonly onStop: LiveSessionOptions['onStop'];
 
   constructor(opts: LiveSessionOptions) {
     this.sessionId = opts.resume ?? randomUUID();
@@ -137,55 +158,69 @@ export class LiveSession {
     this.persistAlways = opts.persistAlways ?? true;
     this.onInfo = opts.onInfo;
     this.onResult = opts.onResult;
+    this.onActivity = opts.onActivity;
+    this.onStop = opts.onStop;
     this.onlyCommands = opts.onlyCommands ?? null;
     this.meta.permissionMode = opts.permissionMode ?? 'default';
     if (opts.model) this.meta.model = opts.model;
 
-    this.q = query({
-      prompt: this.input,
-      options: {
-        cwd: this.cwd,
-        ...(opts.resume ? { resume: opts.resume } : { sessionId: this.sessionId }),
-        ...(opts.model ? { model: opts.model } : {}),
-        // Use Claude Code's real system prompt (cwd, env, git status), not the SDK's bare default.
-        // A conversation about an app project carries that in the system prompt,
-        // where it neither breaks a leading slash command nor becomes the title.
-        systemPrompt: {
-          type: 'preset',
-          preset: 'claude_code',
-          ...(opts.project
-            ? {
-                // Context, not a brain: who reads the panel and how they talk.
-                // No URL here: the agent used to paste it back at the engineer
-                // who was already looking at the page.
-                append:
-                  `The engineer has project ${opts.project} open in Project Studio. ` +
-                  'Work in that project; do not create another one unless asked to in so many words. ' +
-                  'You are talking to a structural engineer inside their studio: call pieces by their marks and element names, not ids; ' +
-                  'name sheets by title; no revs, flags, command or tool names; never paste a link to the page they are on. ' +
-                  'End with what changed, what to look at, what to decide.',
-              }
-            : {}),
+    opts.onStart?.(this.workState());
+    try {
+      this.q = (opts.queryFactory ?? query)({
+        prompt: this.input,
+        options: {
+          cwd: this.cwd,
+          ...(opts.resume ? { resume: opts.resume } : { sessionId: this.sessionId }),
+          ...(opts.model ? { model: opts.model } : {}),
+          // Use Claude Code's real system prompt (cwd, env, git status), not the SDK's bare default.
+          // A conversation about an app project carries that in the system prompt,
+          // where it neither breaks a leading slash command nor becomes the title.
+          systemPrompt: {
+            type: 'preset',
+            preset: 'claude_code',
+            ...((opts.project || opts.recovery)
+              ? {
+                  // Context, not a brain: who reads the panel and how they talk.
+                  // No URL here: the agent used to paste it back at the engineer
+                  // who was already looking at the page.
+                  append:
+                    (opts.project ? `The engineer has project ${opts.project} open in Project Studio. ` +
+                    'Work in that project; do not create another one unless asked to in so many words. ' +
+                    'You are talking to a structural engineer inside their studio: call pieces by their marks and element names, not ids; ' +
+                    'name sheets by title; no revs, flags, command or tool names; never paste a link to the page they are on. ' +
+                    'End with what changed, what to look at, what to decide.' : '') +
+                    (opts.recovery ? '\nThe previous engine stopped while work was in flight. The engineer has now chosen to resume. Before restarting builders, inspect the conversation and current project/file state, reconcile writes that already landed, and continue only unfinished work. Do not blindly repeat completed operations.' : ''),
+                }
+              : {}),
+          },
+          permissionMode: opts.permissionMode ?? 'default',
+          allowDangerouslySkipPermissions: opts.permissionMode === 'bypassPermissions',
+          includePartialMessages: true,
+          // Load the same settings the terminal would: user + project + local,
+          // so CLAUDE.md files and existing allow rules apply here too.
+          settingSources: ['user', 'project', 'local'],
+          canUseTool: this.canUseTool,
+          abortController: this.abort,
+          env: engineEnv({
+            ...(opts.env ?? {}),
+            ...conversationEnv(this.sessionId, opts.title),
+            CLAUDE_AGENT_SDK_CLIENT_APP: 'claude-agent-web-ui/0.1.0',
+            // Without it the engine never says when a turn starts or ends
+            // (session_state_changed): a turn it starts by itself (a
+            // sub-agent came back, a background command finished) ran with
+            // the page, the studio and the deploy drain all reading idle.
+            CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
+          }),
+          stderr: (data) => {
+            const line = data.trim();
+            if (line) console.error(`[engine ${this.shortId}] ${line}`);
+          },
         },
-        permissionMode: opts.permissionMode ?? 'default',
-        allowDangerouslySkipPermissions: opts.permissionMode === 'bypassPermissions',
-        includePartialMessages: true,
-        // Load the same settings the terminal would: user + project + local,
-        // so CLAUDE.md files and existing allow rules apply here too.
-        settingSources: ['user', 'project', 'local'],
-        canUseTool: this.canUseTool,
-        abortController: this.abort,
-        env: engineEnv({
-          ...(opts.env ?? {}),
-          ...conversationEnv(this.sessionId, opts.title),
-          CLAUDE_AGENT_SDK_CLIENT_APP: 'claude-agent-web-ui/0.1.0',
-        }),
-        stderr: (data) => {
-          const line = data.trim();
-          if (line) console.error(`[engine ${this.shortId}] ${line}`);
-        },
-      },
-    });
+      });
+    } catch (err) {
+      this.close('engine_exit');
+      throw err;
+    }
     void this.pump();
   }
 
@@ -217,8 +252,16 @@ export class LiveSession {
       timestamp: new Date().toISOString(),
     };
     this.lastActivity = Date.now();
+    this.lastMessageUuid = message.uuid;
+    try {
+      // A queued turn can arrive while already running; persist it too.
+      if (this.status === 'running') this.onActivity?.(this.workState());
+      else this.setStatus('running');
+    } catch (err) {
+      this.close('engine_exit');
+      throw err;
+    }
     this.input.push(message);
-    this.setStatus('running');
   }
 
   answerPermission(
@@ -246,9 +289,19 @@ export class LiveSession {
   }
 
   async interrupt() {
-    // Deny anything still waiting on the user, then stop the turn.
+    // Deny anything still waiting on the user, then stop the turn — and the
+    // sub-agents and backgrounded commands it left running: the engineer has
+    // one Stop, and it stops the work, not only the part in the foreground.
     for (const id of [...this.pending.keys()]) this.answerPermission(id, 'deny');
-    await this.q.interrupt();
+    const background = this.backgroundIds;
+    if (this.status === 'running' || this.status === 'requires_action' || !background.length) await this.q.interrupt();
+    await Promise.all(
+      background.map((id) =>
+        this.q.stopTask(id).catch((err: unknown) => {
+          console.error(`[engine ${this.shortId}] stopTask ${id}: ${String(err)}`);
+        }),
+      ),
+    );
   }
 
   async setPermissionMode(mode: PermissionMode) {
@@ -263,8 +316,15 @@ export class LiveSession {
     this.broadcast({ type: 'meta', sessionId: this.sessionId, meta: this.meta });
   }
 
-  close() {
+  close(reason: StoppedWorkNotice['reason'] = 'service_stop') {
     if (this.closed) return;
+    try {
+      const notice = this.onStop?.(this.workState(), reason);
+      if (notice) this.broadcast({ type: 'work_stopped', sessionId: this.sessionId, notice });
+    } catch (err) {
+      console.error(`[engine ${this.shortId}] recovery write failed: ${String(err)}`);
+      this.broadcast({ type: 'error', sessionId: this.sessionId, message: 'Could not save the interruption notice. Work has stopped; reopen this conversation before continuing.' });
+    }
     this.closed = true;
     for (const id of [...this.pending.keys()]) this.answerPermission(id, 'deny');
     this.input.close();
@@ -300,6 +360,8 @@ export class LiveSession {
             sessionId: this.sessionId,
             requestId: opts.requestId,
           });
+          // the card is gone: "needs you" with nothing to answer is a lie
+          if (this.pending.size === 0 && this.status === 'requires_action') this.setStatus('running');
         }
       });
     });
@@ -315,14 +377,19 @@ export class LiveSession {
         this.broadcast({ type: 'error', sessionId: this.sessionId, message: text });
       }
     } finally {
-      this.closed = true;
-      this.input.close();
-      this.setStatus('closed');
+      this.close('engine_exit');
     }
   }
 
   private handle(message: SDKMessage) {
+    if (this.closed) return;
     this.lastActivity = Date.now();
+    if (message.type === 'user' || message.type === 'assistant') {
+      this.lastMessageUuid = message.uuid;
+      // Persist the history boundary as well as membership changes. Stream
+      // token deltas never write the journal.
+      this.onActivity?.(this.workState());
+    }
     if (message.type === 'system' && message.subtype === 'init') {
       this.meta = {
         ...this.meta,
@@ -340,6 +407,11 @@ export class LiveSession {
       if (this.status === 'starting') this.setStatus('idle');
       this.broadcast({ type: 'meta', sessionId: this.sessionId, meta: this.meta });
       void this.loadInitDetails();
+    } else if (message.type === 'system' && message.subtype === 'background_tasks_changed') {
+      const work = message.tasks.filter((t) => !t.ambient);
+      this.backgroundWork = work.length;
+      this.backgroundIds = work.map((t) => t.task_id);
+      this.onActivity?.(this.workState());
     } else if (message.type === 'system' && message.subtype === 'session_state_changed') {
       this.setStatus(message.state);
     } else if (message.type === 'system' && message.subtype === 'status' && message.permissionMode) {
@@ -413,11 +485,33 @@ export class LiveSession {
     }
   }
 
+  /** How long the current turn has run, so a page that attaches (or reloads)
+   *  mid-turn shows the real time on it, not 0:00. Sent as a duration, not a
+   *  timestamp: the page's clock need not agree with ours. */
+  get busyForMs(): number | undefined {
+    return this.busySince === null ? undefined : Date.now() - this.busySince;
+  }
+
   private setStatus(status: SessionStatus) {
     if (this.status === status) return;
     if (this.status === 'closed') return;
     this.status = status;
-    this.broadcast({ type: 'status', sessionId: this.sessionId, status });
+    const busy = status === 'running' || status === 'requires_action';
+    if (!busy) this.busySince = null;
+    else if (this.busySince === null) this.busySince = Date.now();
+    if (!this.closed) this.onActivity?.(this.workState());
+    const busyForMs = this.busyForMs;
+    this.broadcast({ type: 'status', sessionId: this.sessionId, status, ...(busyForMs !== undefined ? { busyForMs } : {}) });
+  }
+
+  private workState(): WorkState {
+    return {
+      sessionId: this.sessionId,
+      generation: this.generation,
+      active: this.backgroundWork > 0 || this.status === 'starting' || this.status === 'running' || this.status === 'requires_action',
+      lastActiveAt: this.lastActivity,
+      ...(this.lastMessageUuid ? { afterMessageUuid: this.lastMessageUuid } : {}),
+    };
   }
 
   private broadcast(message: ServerMessage) {

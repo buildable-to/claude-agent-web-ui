@@ -6,6 +6,7 @@ import express from 'express';
 import type { ServerConfig } from '../shared/protocol.js';
 import { Accounts, AuthError, defaultClaudeConfigPath, type Account } from './accounts.js';
 import { loadConfig, projectName } from './config.js';
+import { createDrainController } from './drain.js';
 import { SessionManager } from './session-manager.js';
 import { buildTree } from './tree.js';
 import { attachWebSocket, type Resolver } from './ws.js';
@@ -202,7 +203,7 @@ if (existsSync(webDist)) {
 }
 
 const server = createServer(app);
-attachWebSocket(server, resolveCtx, `${base}/ws`, { draining: () => draining });
+attachWebSocket(server, resolveCtx, `${base}/ws`, { draining: () => drain.draining });
 
 server.listen(config.port, config.host, () => {
   console.log(`claude-agent-web-ui listening on http://${config.host}:${config.port}${base}/`);
@@ -214,12 +215,9 @@ server.listen(config.port, config.host, () => {
 });
 
 // A stop (a deploy, a manual restart) drains: no new turn starts, running
-// turns and pending approvals get up to AGENT_DRAIN_MINUTES (default 25;
-// the unit's TimeoutStopSec must be longer) to finish, then the process
+// turns, pending approvals, and background builders get up to AGENT_DRAIN_MINUTES
+// (default 25; the unit's TimeoutStopSec must be longer) to finish, then the process
 // exits. Ctrl-C twice on a laptop skips the wait.
-const DRAIN_MS = Number(process.env.AGENT_DRAIN_MINUTES ?? 25) * 60 * 1000;
-let draining = false;
-const busy = () => (accounts ?? single)?.busy() ?? 0;
 function stopNow(reason: string) {
   console.log(reason);
   accounts?.closeAll();
@@ -227,32 +225,14 @@ function stopNow(reason: string) {
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 2000).unref();
 }
+const drain = createDrainController({
+  busy: () => (accounts ?? single)?.busy() ?? 0,
+  stop: stopNow,
+  log: console.log,
+  timeoutMs: Number(process.env.AGENT_DRAIN_MINUTES ?? 25) * 60 * 1000,
+});
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, () => {
-    if (draining) {
-      stopNow(`${signal} again: stopping now, ${busy()} turn(s) cut`);
-      return;
-    }
-    draining = true;
-    const n = busy();
-    if (n === 0) {
-      stopNow(`${signal}: no running turns, stopping`);
-      return;
-    }
-    console.log(`${signal}: ${n} turn(s) running, draining (up to ${DRAIN_MS / 60000} min; no new turns meanwhile)`);
-    const started = Date.now();
-    const tick = setInterval(() => {
-      const left = busy();
-      if (left === 0) {
-        clearInterval(tick);
-        stopNow('drained: no running turns, stopping');
-      } else if (Date.now() - started > DRAIN_MS) {
-        clearInterval(tick);
-        stopNow(`drain timed out: stopping with ${left} turn(s) still running`);
-      }
-    }, 1000);
-    tick.unref();
-  });
+  process.on(signal, () => drain.signal(signal));
 }
 
 function firstString(v: unknown): string | undefined {
