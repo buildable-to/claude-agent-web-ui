@@ -4,10 +4,11 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import type { ServerConfig } from '../shared/protocol.js';
-import { Accounts, AuthError, defaultClaudeConfigPath, type Account } from './accounts.js';
+import { Accounts, AuthError, defaultClaudeConfigPath } from './accounts.js';
 import { loadConfig, projectName } from './config.js';
 import { createDrainController } from './drain.js';
 import { SessionManager } from './session-manager.js';
+import { firstString, sessionRoutes, type Ctx } from './session-routes.js';
 import { buildTree } from './tree.js';
 import { attachWebSocket, type Resolver } from './ws.js';
 
@@ -30,8 +31,6 @@ const accounts = config.agentsRoot
     })
   : null;
 const single = accounts ? null : new SessionManager(config.projectDir);
-
-export type Ctx = { manager: SessionManager; dir: string; account?: Account };
 
 /** Who is asking, and which folder that means. Throws AuthError. */
 const resolveCtx: Resolver = (token, devAccount) => {
@@ -110,47 +109,7 @@ app.get(`${base}/api/tree`, async (_req, res, next) => {
   }
 });
 
-app.get(`${base}/api/sessions`, async (req, res, next) => {
-  try {
-    // A scoped token (/stamp) lists its scope alone, whatever the page asks;
-    // any other lists a project's, or every conversation not in a scope.
-    const { manager, account } = ctxOf(res);
-    res.json(await manager.list(account?.scope ? { scope: account.scope } : { project: firstString(req.query.project) }));
-  } catch (err) {
-    next(err);
-  }
-});
-
-app.get(`${base}/api/sessions/:id/messages`, async (req, res, next) => {
-  try {
-    res.json(await ctxOf(res).manager.history(String(req.params.id)));
-  } catch (err) {
-    next(err);
-  }
-});
-
-app.patch(`${base}/api/sessions/:id`, async (req, res, next) => {
-  try {
-    const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
-    if (!title) {
-      res.status(400).json({ error: 'title is required' });
-      return;
-    }
-    await ctxOf(res).manager.rename(String(req.params.id), title);
-    res.json({ ok: true });
-  } catch (err) {
-    next(err);
-  }
-});
-
-app.delete(`${base}/api/sessions/:id`, async (req, res, next) => {
-  try {
-    await ctxOf(res).manager.remove(String(req.params.id));
-    res.json({ ok: true });
-  } catch (err) {
-    next(err);
-  }
-});
+app.use(`${base}/api`, sessionRoutes());
 
 // --- the usage view (admin token only): every account's conversations, and Stop
 app.get(`${base}/api/admin/overview`, async (req, res) => {
@@ -235,10 +194,4 @@ const drain = createDrainController({
 });
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => drain.signal(signal));
-}
-
-function firstString(v: unknown): string | undefined {
-  if (typeof v === 'string') return v;
-  if (Array.isArray(v) && typeof v[0] === 'string') return v[0];
-  return undefined;
 }
