@@ -17,7 +17,8 @@
  *  FROM A [viewA]"). The fields say the same thing for a reader that wants
  *  fields; only the two strings are required. */
 export type Viewing = {
-  mode: '3d' | 'xray' | 'drawings' | 'element';
+  /** 'stamp': the panel on /stamp, where nothing is a piece or a sheet. */
+  mode: '3d' | 'xray' | 'drawings' | 'element' | 'stamp';
   text: string;
   line: string;
   mark?: string;
@@ -46,7 +47,7 @@ export function readViewing(m: Record<string, unknown>): Viewing | null {
   const text = typeof m.text === 'string' ? m.text.trim() : '';
   const line = typeof m.line === 'string' ? m.line.trim() : '';
   if (!text || !line.startsWith(LOOKING_AT)) return null;
-  const mode = m.mode === 'xray' || m.mode === 'drawings' || m.mode === 'element' ? m.mode : '3d';
+  const mode = m.mode === 'xray' || m.mode === 'drawings' || m.mode === 'element' || m.mode === 'stamp' ? m.mode : '3d';
   const out: Viewing = { mode, text, line };
   if (typeof m.mark === 'string' && m.mark) out.mark = m.mark;
   const e = m.element as Record<string, unknown> | undefined;
@@ -187,7 +188,8 @@ export type LinePoint = {
  *  may itself hold " · "); the sheet kind stands in for the label.
  *
  *  A line about the whole project, or a GA sheet, or an Elements tab with
- *  nothing on it, names nothing to show and reads as null. */
+ *  nothing on it, or a page ("Looking at /stamp · Draft · …"), names
+ *  nothing to show and reads as null. */
 export function parseLine(line: string): LinePoint | null {
   const t = line.trim().replace(/^Looking at /, '');
   const km = /\s\[([^\]]+)\]$/.exec(t);
@@ -202,7 +204,7 @@ export function parseLine(line: string): LinePoint | null {
     return { mark: null, element_id, sheet: keys[1] ?? null, view: keys[2] ?? null };
   }
   const mark = parts[0]?.trim() ?? '';
-  if (!mark || mark.startsWith('the ') || /^S-\d+$/.test(mark)) return null;
+  if (!mark || mark.startsWith('the ') || mark.startsWith('/') || /^S-\d+$/.test(mark)) return null;
   const sheet = parts.length > 1 ? (parts[1] ?? '').trim() : '';
   return { mark, element_id: null, sheet: sheet || null, view: bracket };
 }

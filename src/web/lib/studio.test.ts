@@ -180,3 +180,18 @@ test("an Elements tab line reads back to the element's id, the sheet kind and th
   assert.equal(parseLine('Looking at the Elements tab, nothing here yet'), null);
   assert.equal(parseLine('Looking at a new element, unsaved · Element Studio · 3D'), null);
 });
+
+test('/stamp is a mode of its own; its line names a page, nothing to point at', () => {
+  const v = readViewing({
+    source: 'buildable-studio',
+    type: 'viewing',
+    mode: 'stamp',
+    text: '/stamp · Draft · ELCRETE strip (v7) · GA tab · newest file: stamp.dxf',
+    line: 'Looking at /stamp · Draft · ELCRETE strip (v7) · GA tab · newest file: stamp.dxf',
+  });
+  assert.equal(v?.mode, 'stamp');
+  assert.equal(v?.mark, undefined);
+  assert.equal(parseLine('Looking at /stamp · Draft · ELCRETE strip (v7) · GA tab · newest file: stamp.dxf'), null);
+  // an unknown mode still reads as the 3D, as before
+  assert.equal(readViewing({ ...good, mode: 'stampx' })?.mode, '3d');
+});
