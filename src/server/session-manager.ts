@@ -10,6 +10,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineInfo, HistoryMessage, SessionSummary } from '../shared/protocol.js';
 import { claudeConfigDir, installedSkills, probeEngine } from './commands.js';
+import type { Scope } from './accounts.js';
 import { LiveSession, type LiveSessionOptions } from './live-session.js';
 import { WorkJournal } from './work-journal.js';
 
@@ -34,6 +35,9 @@ export function shouldReap(
 }
 /** Which app project each conversation in this folder is about. */
 const PROJECTS_FILE = '.agent-projects.json';
+/** Which conversations belong to a panel that is not about a project (/stamp's).
+ *  A file of its own, so a scope can never be mistaken for a project id. */
+const SCOPES_FILE = '.agent-scopes.json';
 /** What each conversation has cost so far (the engine's running totals). */
 const USAGE_FILE = '.agent-usage.json';
 
@@ -41,6 +45,19 @@ export type Usage = { totalCostUsd: number; numTurns: number; at: number };
 
 /** Commands/models are the same for every folder seeded from one template
  *  under one home; probe the engine once per process, not once per account. */
+/** Which conversations a panel lists: a project's (or, with no project, every
+ *  conversation not in a scope), or a scope's alone. */
+export type ListFilter = { project?: string } | { scope: Scope };
+
+/** What a conversation's engine is told about the account and what it is for.
+ *  A scoped conversation (/stamp) is about no project. */
+export function sessionEnv(accountId: string | undefined, project: string | undefined, scope: Scope | undefined): Record<string, string> {
+  return {
+    ...(accountId ? { BUILDABLE_ACCOUNT: accountId } : {}),
+    ...(scope ? { BUILDABLE_SCOPE: scope } : project ? { BUILDABLE_PROJECT: project } : {}),
+  };
+}
+
 export type SharedEngineInfo = { value: EngineInfo | null; probe: Promise<EngineInfo> | null };
 
 /** What a persisted conversation is called: the engineer's own name for it,
@@ -69,6 +86,7 @@ export class SessionManager {
   private pendingOpens = 0;
   private readonly info: SharedEngineInfo;
   private projects: Record<string, string>;
+  private scopes: Record<string, Scope>;
   private usage: Record<string, Usage>;
   private readonly work: WorkJournal;
 
@@ -81,10 +99,12 @@ export class SessionManager {
       queryFactory?: LiveSessionOptions['queryFactory'];
       getSessionInfo?: typeof getSessionInfo;
       getSessionMessages?: typeof getSessionMessages;
+      listSessions?: typeof listSessions;
     } = {},
   ) {
     this.info = shared ?? { value: null, probe: null };
     this.projects = this.readJson<Record<string, string>>(PROJECTS_FILE);
+    this.scopes = this.readJson<Record<string, Scope>>(SCOPES_FILE);
     this.usage = this.readJson<Record<string, Usage>>(USAGE_FILE);
     this.work = new WorkJournal(projectDir);
     setInterval(() => this.reapIdle(), 5 * 60 * 1000).unref();
@@ -104,7 +124,7 @@ export class SessionManager {
    *  line is the conversation's title until the engine has a better one. */
   async open(
     sessionId: string | null,
-    opts: { model?: string; permissionMode?: PermissionMode; project?: string; firstPrompt?: string } = {},
+    opts: { model?: string; permissionMode?: PermissionMode; project?: string; scope?: Scope; firstPrompt?: string } = {},
   ): Promise<LiveSession> {
     if (sessionId) {
       const existing = this.get(sessionId);
@@ -125,7 +145,7 @@ export class SessionManager {
 
   private async openEngine(
     sessionId: string | null,
-    opts: { model?: string; permissionMode?: PermissionMode; project?: string; firstPrompt?: string },
+    opts: { model?: string; permissionMode?: PermissionMode; project?: string; scope?: Scope; firstPrompt?: string },
   ): Promise<LiveSession> {
     let title: string | undefined;
     if (sessionId) {
@@ -135,12 +155,16 @@ export class SessionManager {
       // otherwise find the id in ANY folder under the shared home.
       const info = await (this.dependencies.getSessionInfo ?? getSessionInfo)(sessionId, { dir: this.projectDir });
       if (!info) throw new Error('No such conversation in this account');
+      // A conversation stays on the panel it was started on: /stamp's never
+      // resumes on a project's panel, nor a project's on /stamp.
+      if (this.scopes[sessionId] !== opts.scope) throw new Error('This conversation belongs to another panel');
       title = sessionTitle(info);
     } else {
       title = titleFromPrompt(opts.firstPrompt);
     }
-    const project = opts.project ?? (sessionId ? this.projects[sessionId] : undefined);
-    const { project: _p, firstPrompt: _f, ...rest } = opts;
+    const scope = opts.scope;
+    const project = scope ? undefined : (opts.project ?? (sessionId ? this.projects[sessionId] : undefined));
+    const { project: _p, scope: _s, firstPrompt: _f, ...rest } = opts;
     const only = await this.offeredCommands();
     const session = new LiveSession({
       cwd: this.projectDir,
@@ -156,14 +180,12 @@ export class SessionManager {
       ...(this.accountId ? { permissionMode: 'auto' as const } : {}),
       ...rest,
       ...(project ? { project } : {}),
+      ...(scope ? { scope } : {}),
       ...(title ? { title } : {}),
       ...(only ? { onlyCommands: only } : {}),
       // On a shared server one click must not rewrite a folder's rules for good.
       persistAlways: !this.accountId,
-      env: {
-        ...(this.accountId ? { BUILDABLE_ACCOUNT: this.accountId } : {}),
-        ...(project ? { BUILDABLE_PROJECT: project } : {}),
-      },
+      env: sessionEnv(this.accountId, project, scope),
       onInfo: (info) => {
         this.info.value = info;
       },
@@ -176,6 +198,10 @@ export class SessionManager {
     if (project && this.projects[session.sessionId] !== project) {
       this.projects[session.sessionId] = project;
       this.writeJson(PROJECTS_FILE, this.projects);
+    }
+    if (scope && this.scopes[session.sessionId] !== scope) {
+      this.scopes[session.sessionId] = scope;
+      this.writeJson(SCOPES_FILE, this.scopes);
     }
     console.log(
       `[sessions] ${sessionId ? 'resumed' : 'started'} ${session.shortId} in ${this.projectDir}`,
@@ -210,18 +236,23 @@ export class SessionManager {
     return this.info.probe;
   }
 
-  /** Every conversation in this folder, or only those about one app project.
-   *  The project case reads just the tagged ids: no folder scan, no cap. */
-  async list(project?: string): Promise<SessionSummary[]> {
+  /** What a panel lists (see ListFilter); with no filter, every conversation
+   *  in this folder (the usage view). A project or a scope reads just the
+   *  tagged ids: no folder scan, no cap. */
+  async list(filter?: ListFilter): Promise<SessionSummary[]> {
+    const project = filter && 'project' in filter ? filter.project : undefined;
+    const scope = filter && 'scope' in filter ? filter.scope : undefined;
     let persisted;
-    if (project) {
-      const ids = Object.entries(this.projects)
-        .filter(([, p]) => p === project)
+    if (project || scope) {
+      const tags: Record<string, string> = scope ? this.scopes : this.projects;
+      const ids = Object.entries(tags)
+        .filter(([, t]) => t === (scope ?? project))
         .map(([id]) => id);
-      const found = await Promise.all(ids.map((id) => getSessionInfo(id, { dir: this.projectDir })));
+      const info = this.dependencies.getSessionInfo ?? getSessionInfo;
+      const found = await Promise.all(ids.map((id) => info(id, { dir: this.projectDir })));
       persisted = found.filter((s): s is NonNullable<typeof s> => Boolean(s));
     } else {
-      persisted = await listSessions({ dir: this.projectDir, limit: 200 });
+      persisted = await (this.dependencies.listSessions ?? listSessions)({ dir: this.projectDir, limit: 200 });
     }
     const rows: SessionSummary[] = persisted.map((s) => {
       const live = this.get(s.sessionId);
@@ -255,7 +286,10 @@ export class SessionManager {
       });
     }
     rows.sort((a, b) => b.lastModified - a.lastModified);
-    return project ? rows.filter((r) => r.project === project) : rows;
+    if (!filter) return rows;
+    if (scope) return rows.filter((r) => this.scopes[r.sessionId] === scope);
+    const unscoped = rows.filter((r) => !this.scopes[r.sessionId]);
+    return project ? unscoped.filter((r) => r.project === project) : unscoped;
   }
 
   async history(sessionId: string): Promise<HistoryMessage[]> {
@@ -301,6 +335,10 @@ export class SessionManager {
     if (sessionId in this.projects) {
       delete this.projects[sessionId];
       this.writeJson(PROJECTS_FILE, this.projects);
+    }
+    if (sessionId in this.scopes) {
+      delete this.scopes[sessionId];
+      this.writeJson(SCOPES_FILE, this.scopes);
     }
   }
 

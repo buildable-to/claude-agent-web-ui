@@ -98,6 +98,9 @@ export function attachWebSocket(
           refuseUnlessAsking(msg.permissionMode);
           // The token's project is signed; the page's is not. A token that names
           // a project pins it, otherwise the page may say which one.
+          // A scoped token (/stamp) is about no project: open() drops the page's
+          // (an iframe may still hold a project it was opened on before).
+          const scope = ctx.account?.scope;
           const pinned = ctx.account?.project;
           if (pinned && msg.project && msg.project !== pinned) {
             throw new Error('This page was opened for a different project');
@@ -107,6 +110,7 @@ export function attachWebSocket(
             ...(msg.model ? { model: msg.model } : {}),
             ...(msg.permissionMode ? { permissionMode: msg.permissionMode } : {}),
             ...(project ? { project } : {}),
+            ...(scope ? { scope } : {}),
             ...(msg.sessionId ? {} : { firstPrompt: msg.text }),
           });
           if (state.draining()) {

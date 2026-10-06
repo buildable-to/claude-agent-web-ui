@@ -112,8 +112,10 @@ app.get(`${base}/api/tree`, async (_req, res, next) => {
 
 app.get(`${base}/api/sessions`, async (req, res, next) => {
   try {
-    const project = firstString(req.query.project);
-    res.json(await ctxOf(res).manager.list(project));
+    // A scoped token (/stamp) lists its scope alone, whatever the page asks;
+    // any other lists a project's, or every conversation not in a scope.
+    const { manager, account } = ctxOf(res);
+    res.json(await manager.list(account?.scope ? { scope: account.scope } : { project: firstString(req.query.project) }));
   } catch (err) {
     next(err);
   }

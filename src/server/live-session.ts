@@ -45,6 +45,33 @@ export function conversationEnv(sessionId: string, title?: string): Record<strin
   return { BUILDABLE_CONVERSATION: sessionId, ...(t ? { BUILDABLE_CONVERSATION_TITLE: t } : {}) };
 }
 
+/** What the panel appends to Claude Code's system prompt: what this
+ *  conversation is for (a project, or /stamp), and a resume note. Context,
+ *  not a brain: who reads the panel and how they talk. No URL here: the
+ *  agent used to paste it back at the engineer who was already looking at
+ *  the page. Empty: nothing to append. */
+export function systemAppend(opts: { project?: string; scope?: 'stamp'; recovery?: unknown }): string {
+  let out = '';
+  if (opts.scope === 'stamp') {
+    out =
+      "This conversation makes the account's company stamp on /stamp, with the make-stamp skill and stamp_door " +
+        '(python -m buildable.services.stamp_door). Drafts never print; the engineer presses Save stamp. ' +
+        "For anything about a project, the engineer uses Project Studio's panel.";
+  } else if (opts.project) {
+    out =
+      `The engineer has project ${opts.project} open in Project Studio. ` +
+        'Work in that project; do not create another one unless asked to in so many words. ' +
+        'You are talking to a structural engineer inside their studio: call pieces by their marks and element names, not ids; ' +
+        'name sheets by title; no revs, flags, command or tool names; never paste a link to the page they are on. ' +
+        'End with what changed, what to look at, what to decide.';
+  }
+  if (opts.recovery) {
+    out +=
+      '\nThe previous engine stopped while work was in flight. The engineer has now chosen to resume. Before restarting builders, inspect the conversation and current project/file state, reconcile writes that already landed, and continue only unfinished work. Do not blindly repeat completed operations.';
+  }
+  return out;
+}
+
 /** Push-based async iterable that feeds user turns into the engine. */
 class InputQueue implements AsyncIterable<SDKUserMessage> {
   private items: SDKUserMessage[] = [];
@@ -101,6 +128,8 @@ export type LiveSessionOptions = {
   env?: Record<string, string>;
   /** The app project this conversation is about. */
   project?: string;
+  /** A panel not about a project: 'stamp' is /stamp's. */
+  scope?: 'stamp';
   /** What this conversation is called, for the rows its elements make on the
    *  project's Elements tab (ezdxf-flask #469): "from “<title>”". */
   title?: string;
@@ -178,20 +207,10 @@ export class LiveSession {
           systemPrompt: {
             type: 'preset',
             preset: 'claude_code',
-            ...((opts.project || opts.recovery)
-              ? {
-                  // Context, not a brain: who reads the panel and how they talk.
-                  // No URL here: the agent used to paste it back at the engineer
-                  // who was already looking at the page.
-                  append:
-                    (opts.project ? `The engineer has project ${opts.project} open in Project Studio. ` +
-                    'Work in that project; do not create another one unless asked to in so many words. ' +
-                    'You are talking to a structural engineer inside their studio: call pieces by their marks and element names, not ids; ' +
-                    'name sheets by title; no revs, flags, command or tool names; never paste a link to the page they are on. ' +
-                    'End with what changed, what to look at, what to decide.' : '') +
-                    (opts.recovery ? '\nThe previous engine stopped while work was in flight. The engineer has now chosen to resume. Before restarting builders, inspect the conversation and current project/file state, reconcile writes that already landed, and continue only unfinished work. Do not blindly repeat completed operations.' : ''),
-                }
-              : {}),
+            ...(() => {
+              const append = systemAppend(opts);
+              return append ? { append } : {};
+            })(),
           },
           permissionMode: opts.permissionMode ?? 'default',
           allowDangerouslySkipPermissions: opts.permissionMode === 'bypassPermissions',

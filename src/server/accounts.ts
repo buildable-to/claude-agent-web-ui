@@ -1,6 +1,6 @@
 // Accounts: one folder per Buildable account under AGENTS_ROOT, chosen from a
 // signed token the app hands the page. The token is an HS256 JWT signed with
-// the app's own secret (PyJWT-compatible): { sub: accountId, email?, sid?, exp }.
+// the app's own secret (PyJWT-compatible): { sub: accountId, email?, sid?, scope?, exp }.
 // Without AGENTS_ROOT the server runs exactly as before: one --dir, no auth.
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -15,6 +15,8 @@ export type Account = {
   email?: string;
   /** The project session the page was opened on, if any. */
   project?: string;
+  /** A panel that is not about a project: 'stamp' is /stamp's (never with a project). */
+  scope?: Scope;
   dir: string;
 };
 
@@ -36,7 +38,10 @@ function fromB64url(s: string): Buffer {
   return Buffer.from(s, 'base64url');
 }
 
-export type TokenClaims = { sub: string; email?: string; sid?: string; exp?: number; role?: string };
+/** The panels that are not about a project. Only /stamp's so far. */
+export type Scope = 'stamp';
+
+export type TokenClaims = { sub: string; email?: string; sid?: string; scope?: string; exp?: number; role?: string };
 
 /** Verify an HS256 JWT and return its claims. Throws on any defect. */
 export function verifyToken(token: string, secret: string): TokenClaims {
@@ -60,6 +65,9 @@ export function verifyToken(token: string, secret: string): TokenClaims {
   if (typeof claims.sub !== 'string' || !claims.sub) throw new AuthError('token has no subject');
   if (typeof claims.exp !== 'number') throw new AuthError('token has no expiry');
   if (claims.exp * 1000 < Date.now()) throw new AuthError('token expired');
+  // A scope we do not know would otherwise open an unlimited panel; refuse it.
+  if (claims.scope !== undefined && claims.scope !== 'stamp') throw new AuthError('unknown token scope');
+  if (claims.scope && claims.sid) throw new AuthError('a scoped token names no project');
   return claims;
 }
 
@@ -103,6 +111,7 @@ export class Accounts {
       id: claims.sub,
       ...(claims.email ? { email: claims.email } : {}),
       ...(claims.sid ? { project: claims.sid } : {}),
+      ...(claims.scope === 'stamp' ? { scope: 'stamp' as const } : {}),
       dir,
     };
   }
