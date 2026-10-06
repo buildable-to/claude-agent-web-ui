@@ -23,7 +23,7 @@ export function Sidebar({ sessions, activeId, onSelect, onNew, onRename, onDelet
         <button
           type="button"
           onClick={onNew}
-          className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-accent-dim active:translate-y-px"
+          className="flex items-center gap-1 rounded-md bg-accent px-2.5 py-1.5 text-[12px] font-semibold text-accent-ink transition hover:bg-accent-dim active:translate-y-px"
         >
           <Plus className="size-3.5" /> New
         </button>

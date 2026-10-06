@@ -72,7 +72,7 @@ function QuestionCard({ request, queued, onAnswer }: Props) {
     <div className="mx-auto w-full max-w-3xl px-6 max-sm:px-3">
       <div className="rise rounded-xl bg-inverse p-4 text-inverse-ink shadow-strong">
         <div className="flex items-start gap-3">
-          <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-accent/25 text-accent">
+          <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-inverse-ink/10 text-inverse-ink">
             <MessageCircleQuestion className="size-4" />
           </span>
           <div className="min-w-0 flex-1">
@@ -100,7 +100,7 @@ function QuestionCard({ request, queued, onAnswer }: Props) {
                           aria-pressed={on}
                           className={`rounded-lg border px-3 py-2 text-left transition active:translate-y-px ${
                             on
-                              ? 'border-accent bg-accent/20'
+                              ? 'border-inverse-ink bg-inverse-ink/10'
                               : 'border-inverse-ink/15 hover:bg-inverse-ink/10'
                           }`}
                         >
@@ -119,7 +119,7 @@ function QuestionCard({ request, queued, onAnswer }: Props) {
                     value={other[q.question] ?? ''}
                     onChange={(e) => setOther((o) => ({ ...o, [q.question]: e.target.value }))}
                     placeholder="Other…"
-                    className="mt-1.5 h-8 w-full rounded-md border border-inverse-ink/15 bg-transparent px-2.5 text-[12.5px] text-inverse-ink placeholder:text-inverse-ink-2 outline-none focus:border-accent"
+                    className="mt-1.5 h-8 w-full rounded-md border border-inverse-ink/15 bg-transparent px-2.5 text-[12.5px] text-inverse-ink placeholder:text-inverse-ink-2 outline-none focus:border-inverse-ink"
                   />
                 </div>
               ))}
@@ -139,7 +139,7 @@ function QuestionCard({ request, queued, onAnswer }: Props) {
             type="button"
             onClick={submit}
             disabled={!complete}
-            className={`${btn} bg-accent text-white hover:bg-accent-dim disabled:cursor-not-allowed disabled:opacity-50`}
+            className={`${btn} bg-inverse-ink text-inverse hover:bg-inverse-ink/85 disabled:cursor-not-allowed disabled:opacity-50`}
           >
             Answer
           </button>
@@ -253,7 +253,7 @@ export function PermissionBanner({ request, queued, onAnswer }: Props) {
           <button
             type="button"
             onClick={() => onAnswer(request.requestId, 'allow')}
-            className={`${btn} bg-accent text-white hover:bg-accent-dim`}
+            className={`${btn} bg-inverse-ink text-inverse hover:bg-inverse-ink/85`}
           >
             Approve
           </button>
