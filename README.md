@@ -116,10 +116,23 @@ laptop dev mode, `?account=<id>`).
 
 **The token.** An HS256 JWT signed with the app's secret (PyJWT on the app
 side, verified here): `{ sub: <account id = folder name>, email?, sid?
-(project), exp (required), aud? (ignored here; the app uses it to keep the
-token out of its own API) }`. It arrives on the page URL as `?token=`, then as
-`Authorization: Bearer` on `/api/*` and `?token=` on the WebSocket handshake.
-Every defect answers 401. One connection speaks for one account.
+(project), scope? ("stamp"), exp (required), aud? (ignored here; the app uses
+it to keep the token out of its own API) }`. It arrives on the page URL as
+`?token=`, then as `Authorization: Bearer` on `/api/*` and `?token=` on the
+WebSocket handshake. Every defect answers 401, and so does a `scope` other
+than `"stamp"` (an unknown scope would otherwise open an unlimited panel) or
+a `scope` beside a `sid`. One connection speaks for one account.
+
+**The stamp panel.** `/stamp` mints its token with `scope: "stamp"` and no
+`sid`. Its conversations are tagged in the folder's `.agent-scopes.json` (a
+file of its own, so a scope can never be read as a project id); its list is
+those alone, whatever `?project=` says, and a page's `project` on `start` is
+dropped. Every other panel's list leaves them out: a project's, and a panel
+with no project (dev, standalone). Only the usage view lists every
+conversation. A conversation resumes only on the panel it was started on
+(a stamp one never on a project's, nor the reverse). With the list scoped,
+the embed's `?conversation=` opens a stamp conversation or, failing that,
+the newest one.
 
 **The page URL.** `?project=<id>` narrows the conversation list to that
 project and tags new conversations with it (kept in the folder's
@@ -138,10 +151,14 @@ account by construction; resume only accepts ids from this folder.
 
 **The engine.** Real Claude Code via the Agent SDK, cwd = the folder,
 settings from user + project + local, the `claude_code` system prompt plus
-one appended line naming the open project. Its environment is an allowlist
-(`PATH`, `HOME`, locale, `PYTHONPATH`, `FREECAD_CMD`, `BUILDABLE_*`,
-`CLAUDE_*`, proxies) plus `BUILDABLE_ACCOUNT` and `BUILDABLE_PROJECT`; the
-service's own secrets never reach it. On a shared server only the modes that
+one appended paragraph naming the open project (or, on the stamp panel,
+saying the conversation makes the account's company stamp on `/stamp` with
+the `make-stamp` skill and `stamp_door`; drafts never print, the engineer
+presses Save stamp). Its environment is an allowlist (`PATH`, `HOME`, locale,
+`PYTHONPATH`, `FREECAD_CMD`, `BUILDABLE_*`, `CLAUDE_*`, proxies) plus
+`BUILDABLE_ACCOUNT` and `BUILDABLE_PROJECT` (on the stamp panel
+`BUILDABLE_SCOPE=stamp` instead, and no project); the service's own secrets
+never reach it. On a shared server only the modes that
 ask (`default`, `plan`) exist, and "Always allow" does not persist.
 
 **Messages to the parent page** (`window.parent.postMessage`, `source:
@@ -166,7 +183,10 @@ element: {id, name, kind}, count, ids}` per piece mark) and `library`
 `@`. The studio posts it when the panel loads and after every change; the
 panel never asks the app for it. A pick lands in the sentence as `@C1` (a
 mark) or `@<element id>`; the text the agent receives is exactly that, and
-its standing note says how a tagged mark is read.
+its standing note says how a tagged mark is read. `viewing` with `mode`
+(`3d`, `xray`, `drawings`, `element`, or `stamp` from `/stamp`), `text` (the
+chip) and `line` (starts `Looking at `; it goes in front of the next
+message); a `/stamp` line names a page, so its grey line points at nothing.
 
 **Serving under a path.** `BASE_PATH=/agent` at build and at run time mounts
 the page, the API and the WebSocket under it, so a reverse proxy can route one
@@ -176,7 +196,8 @@ path here.
 `scripts/agent-dev.sh` sets all of the above and starts this server on :3456;
 run the app with `AGENT_UI_URL=http://localhost:3456` and open a project.
 
-**Tests:** `npm test` (the token contract, account folders, the engine env).
+**Tests:** `npm test` (the token contract, account folders, the engine env,
+the stamp scope).
 
 **Changing the contract.** Everything above is what the Buildable app relies
 on. Add rather than rename; deploy this side first when it offers something
