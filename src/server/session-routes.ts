@@ -1,6 +1,6 @@
 import express from 'express';
 import type { Account } from './accounts.js';
-import type { SessionManager } from './session-manager.js';
+import { PanelError, type SessionManager } from './session-manager.js';
 
 export type Ctx = { manager: SessionManager; dir: string; account?: Account };
 
@@ -30,7 +30,8 @@ export function sessionRoutes(): express.Router {
 
   r.get('/sessions/:id/messages', async (req, res, next) => {
     try {
-      res.json(await ctxOf(res).manager.history(String(req.params.id)));
+      const { manager, account } = ctxOf(res);
+      res.json(await manager.history(String(req.params.id), account?.scope));
     } catch (err) {
       next(err);
     }
@@ -43,7 +44,8 @@ export function sessionRoutes(): express.Router {
         res.status(400).json({ error: 'title is required' });
         return;
       }
-      await ctxOf(res).manager.rename(String(req.params.id), title);
+      const { manager, account } = ctxOf(res);
+      await manager.rename(String(req.params.id), title, account?.scope);
       res.json({ ok: true });
     } catch (err) {
       next(err);
@@ -52,11 +54,18 @@ export function sessionRoutes(): express.Router {
 
   r.delete('/sessions/:id', async (req, res, next) => {
     try {
-      await ctxOf(res).manager.remove(String(req.params.id));
+      const { manager, account } = ctxOf(res);
+      await manager.remove(String(req.params.id), account?.scope);
       res.json({ ok: true });
     } catch (err) {
       next(err);
     }
+  });
+
+  // another panel's conversation (403), or the tags unreadable (503)
+  r.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err instanceof PanelError) res.status(err.status).json({ error: err.message });
+    else next(err);
   });
 
   return r;

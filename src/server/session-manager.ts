@@ -41,6 +41,20 @@ const SCOPES_FILE = '.agent-scopes.json';
 /** What each conversation has cost so far (the engine's running totals). */
 const USAGE_FILE = '.agent-usage.json';
 
+/** The refusal for a conversation asked for from another panel. */
+export const CROSS_PANEL = 'This conversation belongs to another panel';
+/** The refusal while .agent-scopes.json cannot be read: no conversation's
+ *  panel can be told, so none is listed or reopened on a panel (fail closed). */
+export const TAGS_UNREADABLE =
+  'This account\'s conversation tags are unreadable (.agent-scopes.json); an operator must repair it';
+
+/** A refusal the HTTP routes answer with `status` (403 another panel, 503 tags unreadable). */
+export class PanelError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 export type Usage = { totalCostUsd: number; numTurns: number; at: number };
 
 /** Commands/models are the same for every folder seeded from one template
@@ -86,7 +100,9 @@ export class SessionManager {
   private pendingOpens = 0;
   private readonly info: SharedEngineInfo;
   private projects: Record<string, string>;
-  private scopes: Record<string, Scope>;
+  /** null: the file exists but cannot be read. Nothing is then known to be
+   *  outside a scope, so every check that needs a tag refuses (checkPanel). */
+  private scopes: Record<string, Scope> | null;
   private usage: Record<string, Usage>;
   private readonly work: WorkJournal;
 
@@ -100,11 +116,13 @@ export class SessionManager {
       getSessionInfo?: typeof getSessionInfo;
       getSessionMessages?: typeof getSessionMessages;
       listSessions?: typeof listSessions;
+      renameSession?: typeof renameSession;
+      deleteSession?: typeof deleteSession;
     } = {},
   ) {
     this.info = shared ?? { value: null, probe: null };
     this.projects = this.readJson<Record<string, string>>(PROJECTS_FILE);
-    this.scopes = this.readJson<Record<string, Scope>>(SCOPES_FILE);
+    this.scopes = this.readScopes();
     this.usage = this.readJson<Record<string, Usage>>(USAGE_FILE);
     this.work = new WorkJournal(projectDir);
     setInterval(() => this.reapIdle(), 5 * 60 * 1000).unref();
@@ -119,6 +137,23 @@ export class SessionManager {
     return s;
   }
 
+  /** THE panel check, for every session id a client hands in (socket and
+   *  HTTP alike): the conversation must be the asking panel's. `scope` is the
+   *  token's (undefined: a project's panel, or a panel with no project). A
+   *  running engine is judged by what it runs with; any other by its tag.
+   *  Throws PanelError. */
+  checkPanel(sessionId: string, scope: Scope | undefined): void {
+    const live = this.get(sessionId);
+    const tag = live ? live.scope : this.tags()[sessionId];
+    if (tag !== scope) throw new PanelError(CROSS_PANEL, 403);
+  }
+
+  /** The scope tags, or a refusal while they cannot be read. */
+  private tags(): Record<string, Scope> {
+    if (!this.scopes) throw new PanelError(TAGS_UNREADABLE, 503);
+    return this.scopes;
+  }
+
   /** Attach to a live session, resume a persisted one, or start fresh.
    *  `firstPrompt` is the message that starts a fresh conversation: its first
    *  line is the conversation's title until the engine has a better one. */
@@ -128,9 +163,16 @@ export class SessionManager {
   ): Promise<LiveSession> {
     if (sessionId) {
       const existing = this.get(sessionId);
-      if (existing) return existing;
+      if (existing) {
+        this.checkPanel(sessionId, opts.scope);
+        return existing;
+      }
       const pending = this.opening.get(sessionId);
-      if (pending) return pending;
+      if (pending) {
+        const session = await pending;
+        this.checkPanel(sessionId, opts.scope);
+        return session;
+      }
     }
     this.pendingOpens++;
     const pending = this.openEngine(sessionId, opts);
@@ -150,16 +192,21 @@ export class SessionManager {
     let title: string | undefined;
     if (sessionId) {
       const existing = this.get(sessionId);
-      if (existing) return existing;
+      if (existing) {
+        this.checkPanel(sessionId, opts.scope);
+        return existing;
+      }
       // Only this folder's own conversations resume here. The engine would
       // otherwise find the id in ANY folder under the shared home.
       const info = await (this.dependencies.getSessionInfo ?? getSessionInfo)(sessionId, { dir: this.projectDir });
       if (!info) throw new Error('No such conversation in this account');
       // A conversation stays on the panel it was started on: /stamp's never
       // resumes on a project's panel, nor a project's on /stamp.
-      if (this.scopes[sessionId] !== opts.scope) throw new Error('This conversation belongs to another panel');
+      this.checkPanel(sessionId, opts.scope);
       title = sessionTitle(info);
     } else {
+      // a stamp conversation must be tagged to stay on its panel
+      if (opts.scope) this.tags();
       title = titleFromPrompt(opts.firstPrompt);
     }
     const scope = opts.scope;
@@ -199,9 +246,16 @@ export class SessionManager {
       this.projects[session.sessionId] = project;
       this.writeJson(PROJECTS_FILE, this.projects);
     }
-    if (scope && this.scopes[session.sessionId] !== scope) {
-      this.scopes[session.sessionId] = scope;
-      this.writeJson(SCOPES_FILE, this.scopes);
+    const tags = scope ? this.tags() : undefined;
+    if (scope && tags && tags[session.sessionId] !== scope) {
+      tags[session.sessionId] = scope;
+      // Untagged on disk, it would read as a project's after a restart: refuse it.
+      if (!this.writeJson(SCOPES_FILE, tags)) {
+        delete tags[session.sessionId];
+        session.close();
+        this.live.delete(session.sessionId);
+        throw new PanelError('This conversation could not be tagged for its panel; try again', 503);
+      }
     }
     console.log(
       `[sessions] ${sessionId ? 'resumed' : 'started'} ${session.shortId} in ${this.projectDir}`,
@@ -242,9 +296,11 @@ export class SessionManager {
   async list(filter?: ListFilter): Promise<SessionSummary[]> {
     const project = filter && 'project' in filter ? filter.project : undefined;
     const scope = filter && 'scope' in filter ? filter.scope : undefined;
+    // a panel's list needs the scope tags; only the usage view (no filter) does without
+    const scopes = filter ? this.tags() : (this.scopes ?? {});
     let persisted;
     if (project || scope) {
-      const tags: Record<string, string> = scope ? this.scopes : this.projects;
+      const tags: Record<string, string> = scope ? scopes : this.projects;
       const ids = Object.entries(tags)
         .filter(([, t]) => t === (scope ?? project))
         .map(([id]) => id);
@@ -287,12 +343,14 @@ export class SessionManager {
     }
     rows.sort((a, b) => b.lastModified - a.lastModified);
     if (!filter) return rows;
-    if (scope) return rows.filter((r) => this.scopes[r.sessionId] === scope);
-    const unscoped = rows.filter((r) => !this.scopes[r.sessionId]);
+    if (scope) return rows.filter((r) => scopes[r.sessionId] === scope);
+    const unscoped = rows.filter((r) => !scopes[r.sessionId]);
     return project ? unscoped.filter((r) => r.project === project) : unscoped;
   }
 
-  async history(sessionId: string): Promise<HistoryMessage[]> {
+  /** `panel`: the asking token's scope; see checkPanel. */
+  async history(sessionId: string, panel: Scope | undefined): Promise<HistoryMessage[]> {
+    this.checkPanel(sessionId, panel);
     const messages = await (this.dependencies.getSessionMessages ?? getSessionMessages)(sessionId, {
       dir: this.projectDir,
       includeSystemMessages: true,
@@ -323,20 +381,22 @@ export class SessionManager {
     return this.work.notices(sessionId);
   }
 
-  async rename(sessionId: string, title: string) {
-    await renameSession(sessionId, title, { dir: this.projectDir });
+  async rename(sessionId: string, title: string, panel: Scope | undefined) {
+    this.checkPanel(sessionId, panel);
+    await (this.dependencies.renameSession ?? renameSession)(sessionId, title, { dir: this.projectDir });
   }
 
-  async remove(sessionId: string) {
+  async remove(sessionId: string, panel: Scope | undefined) {
+    this.checkPanel(sessionId, panel);
     this.get(sessionId)?.close();
     this.live.delete(sessionId);
-    await deleteSession(sessionId, { dir: this.projectDir });
+    await (this.dependencies.deleteSession ?? deleteSession)(sessionId, { dir: this.projectDir });
     this.work.remove(sessionId);
     if (sessionId in this.projects) {
       delete this.projects[sessionId];
       this.writeJson(PROJECTS_FILE, this.projects);
     }
-    if (sessionId in this.scopes) {
+    if (this.scopes && sessionId in this.scopes) {
       delete this.scopes[sessionId];
       this.writeJson(SCOPES_FILE, this.scopes);
     }
@@ -361,6 +421,22 @@ export class SessionManager {
     return true;
   }
 
+  /** The scope tags. Unlike the other files, an unreadable one is not set
+   *  aside for an empty one: with no tags every stamp conversation would read
+   *  as a project's. It stays for an operator, and the panels refuse (null). */
+  private readScopes(): Record<string, Scope> | null {
+    const path = join(this.projectDir, SCOPES_FILE);
+    if (!existsSync(path)) return {};
+    try {
+      const value: unknown = JSON.parse(readFileSync(path, 'utf8'));
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('not an object');
+      return value as Record<string, Scope>;
+    } catch (err) {
+      console.error(`[sessions] SCOPE TAGS UNREADABLE: ${path}: ${String(err)}. No conversation is listed or reopened on a panel until it is repaired.`);
+      return null;
+    }
+  }
+
   private readJson<T extends object>(name: string): T {
     const path = join(this.projectDir, name);
     if (!existsSync(path)) return {} as T;
@@ -378,14 +454,17 @@ export class SessionManager {
     }
   }
 
-  private writeJson(name: string, value: object) {
+  /** False (and logged) when the file could not be written. */
+  private writeJson(name: string, value: object): boolean {
     const path = join(this.projectDir, name);
     try {
       const tmp = `${path}.${process.pid}.tmp`;
       writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n');
       renameSync(tmp, path);
+      return true;
     } catch (err) {
       console.error(`[sessions] could not write ${name}: ${String(err)}`);
+      return false;
     }
   }
 

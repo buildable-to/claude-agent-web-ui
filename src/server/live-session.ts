@@ -32,6 +32,11 @@ export function engineEnv(extra: Record<string, string> = {}): Record<string, st
   for (const [k, v] of Object.entries(process.env)) {
     if (v !== undefined && ENV_ALLOW.test(k)) out[k] = v;
   }
+  // What a conversation is about is the session's alone: one the service
+  // itself was started with would put a stamp engine in a project, or a
+  // project engine under the stamp door policy.
+  delete out.BUILDABLE_PROJECT;
+  delete out.BUILDABLE_SCOPE;
   return { ...out, ...extra };
 }
 
@@ -146,6 +151,8 @@ export class LiveSession {
   readonly sessionId: string;
   readonly cwd: string;
   readonly project: string | undefined;
+  /** The panel this engine runs for ('stamp': BUILDABLE_SCOPE=stamp, no project). */
+  readonly scope: 'stamp' | undefined;
   status: SessionStatus = 'starting';
   /** When the current turn began (running, or asking the engineer); null between turns. */
   private busySince: number | null = null;
@@ -184,6 +191,7 @@ export class LiveSession {
     this.sessionId = opts.resume ?? randomUUID();
     this.cwd = opts.cwd;
     this.project = opts.project;
+    this.scope = opts.scope;
     this.persistAlways = opts.persistAlways ?? true;
     this.onInfo = opts.onInfo;
     this.onResult = opts.onResult;

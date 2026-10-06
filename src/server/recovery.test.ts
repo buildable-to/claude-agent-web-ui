@@ -157,7 +157,7 @@ test('lost service is detected on read; only the human resume starts a fresh eng
   });
   const notice = next.stoppedWork(session.sessionId)[0]!;
   assert.equal(notice.reason, 'service_restart');
-  assert.equal((await next.history(session.sessionId))[0]?.stoppedWork?.id, notice.id);
+  assert.equal((await next.history(session.sessionId, undefined))[0]?.stoppedWork?.id, notice.id);
   assert.equal(resumed.launches, 0);
   const continued = await next.open(session.sessionId);
   continued.send('continue');
@@ -274,11 +274,11 @@ test('history places repeated incidents in order before later resumed messages',
       type: 'user', uuid, session_id: 'session', parent_tool_use_id: null, parent_agent_id: null, message: { role: 'user', content: uuid },
     })),
   });
-  assert.deepEqual((await manager.history('session')).map((m) => m.uuid), ['anchor', 'first', 'second', 'resumed']);
-  assert.deepEqual(await manager.history('different-account-id'), [
+  assert.deepEqual((await manager.history('session', undefined)).map((m) => m.uuid), ['anchor', 'first', 'second', 'resumed']);
+  assert.deepEqual(await manager.history('different-account-id', undefined), [
     // The injected SDK store above supplies these records for any id, but
     // the journal must never append another session's interruption notices.
-    ...((await manager.history('session')).filter((m) => !m.stoppedWork)),
+    ...((await manager.history('session', undefined)).filter((m) => !m.stoppedWork)),
   ]);
 });
 

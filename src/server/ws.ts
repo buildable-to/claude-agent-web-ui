@@ -85,6 +85,7 @@ export function attachWebSocket(
     async function handle(msg: ClientMessage) {
       switch (msg.type) {
         case 'attach': {
+          sessions.checkPanel(msg.sessionId, ctx.account?.scope);
           const session = sessions.get(msg.sessionId);
           if (!session) {
             send({ type: 'not_live', sessionId: msg.sessionId, stoppedWork: sessions.stoppedWork(msg.sessionId) });
@@ -185,7 +186,9 @@ export function attachWebSocket(
       throw new Error(`Mode "${mode}" is not available on a shared server`);
     }
 
+    /** A running session this connection's panel may drive (see checkPanel). */
     function requireLive(sessionId: string) {
+      sessions.checkPanel(sessionId, ctx.account?.scope);
       const session = sessions.get(sessionId);
       if (!session) throw new Error('Session is not running. Reopen it to continue.');
       return session;
