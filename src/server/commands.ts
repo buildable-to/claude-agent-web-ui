@@ -11,8 +11,19 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { CommandInfo, EngineInfo, ModelOption } from '../shared/protocol.js';
 
+/**
+ * The engine lists its aliases (default, opus, sonnet, ...) and then older
+ * pinned versions (claude-opus-4-8, ...). The picker offers the aliases only,
+ * and not the one that names the same model as Default.
+ */
 export function toModelOptions(models: ModelInfo[]): ModelOption[] {
-  return models.map((m) => ({
+  const byDefault = models.find((m) => m.value === 'default')?.resolvedModel;
+  const current = models.filter(
+    (m) =>
+      !m.value.startsWith('claude-') &&
+      (m.value === 'default' || !byDefault || m.resolvedModel !== byDefault),
+  );
+  return current.map((m) => ({
     value: m.value,
     label: m.displayName,
     description: m.description,
