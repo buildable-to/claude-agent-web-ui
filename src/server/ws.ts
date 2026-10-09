@@ -90,7 +90,7 @@ export function attachWebSocket(
             send({ type: 'not_live', sessionId: msg.sessionId, stoppedWork: sessions.stoppedWork(msg.sessionId) });
             return;
           }
-          attach(session);
+          attach(session, msg.known);
           return;
         }
         case 'start': {
@@ -154,7 +154,7 @@ export function attachWebSocket(
       }
     }
 
-    function attach(session: LiveSession) {
+    function attach(session: LiveSession, known?: readonly string[]) {
       attachments.get(session.sessionId)?.unsubscribe();
       const unsubscribe = session.subscribe(send);
       attachments.set(session.sessionId, { unsubscribe });
@@ -164,7 +164,7 @@ export function attachWebSocket(
         cwd: session.cwd,
         status: session.status,
         ...(session.busyForMs !== undefined ? { busyForMs: session.busyForMs } : {}),
-        replay: session.replay,
+        replay: session.replay(known),
         pending: session.pendingRequests,
         meta: session.meta,
         stoppedWork: sessions.stoppedWork(session.sessionId),

@@ -5,6 +5,7 @@ import { page } from '@/lib/page';
 import { applyHistory, emptyTranscript } from '@/lib/transcript';
 import { initialSessionState, sessionReducer } from '@/lib/session-state';
 import { ws } from '@/lib/ws';
+import { rememberKnown } from '@/lib/known';
 
 export type { SessionState } from '@/lib/session-state';
 
@@ -23,6 +24,9 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
   const activeId = useRef<string | null>(requested);
   const attached = useRef(false);
   const awaitingNew = useRef(false);
+  /** The newest main-conversation uuids this page holds, sent with every
+   *  attach so the server replays only what is newer. */
+  const known = useRef<string[]>([]);
   const turnEnd = useRef(onTurnEnd);
   turnEnd.current = onTurnEnd;
 
@@ -31,6 +35,7 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
     activeId.current = requested;
     attached.current = false;
     awaitingNew.current = false;
+    known.current = [];
     dispatch({ type: 'reset', sessionId: requested });
 
     if (requested) {
@@ -38,12 +43,15 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
         try {
           const history = await api.history(requested);
           if (cancelled) return;
+          // history replaces the transcript, so it replaces what the page knows:
+          // a message that landed before it but is not in it is not on screen
+          known.current = rememberKnown([], history);
           dispatch({ type: 'history', transcript: applyHistory(emptyTranscript(), history) });
         } catch (err) {
           if (cancelled) return;
           dispatch({ type: 'error', message: err instanceof Error ? err.message : String(err) });
         }
-        if (!cancelled) ws.send({ type: 'attach', sessionId: requested });
+        if (!cancelled) ws.send({ type: 'attach', sessionId: requested, known: known.current });
       })();
     }
 
@@ -54,6 +62,7 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
           awaitingNew.current = false;
         } else if (m.sessionId !== activeId.current) return;
         attached.current = true;
+        known.current = rememberKnown(known.current, m.replay);
         dispatch({ type: 'server', message: m });
         return;
       }
@@ -61,6 +70,7 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
         if (m.type === 'error' && !m.sessionId) dispatch({ type: 'server', message: m });
         return;
       }
+      if (m.type === 'message') known.current = rememberKnown(known.current, [m.message]);
       if (m.type === 'not_live' || (m.type === 'status' && m.status === 'closed')) {
         attached.current = false;
       }
@@ -70,7 +80,7 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
     const unsubState = ws.onState((s) => {
       // After a reconnect, re-subscribe to the engine if we had one.
       if (s === 'open' && activeId.current && attached.current) {
-        ws.send({ type: 'attach', sessionId: activeId.current });
+        ws.send({ type: 'attach', sessionId: activeId.current, known: known.current });
       }
     });
 
