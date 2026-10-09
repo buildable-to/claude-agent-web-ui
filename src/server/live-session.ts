@@ -21,6 +21,7 @@ import type {
   StoppedWorkNotice,
 } from '../shared/protocol.js';
 import { toCommandInfo, toModelOptions } from './commands.js';
+import { forReplay, replaySince } from './replay.js';
 import type { WorkState } from './work-journal.js';
 
 /** What an engine (and everything it runs) may see of the service's
@@ -135,7 +136,8 @@ export class LiveSession {
   private readonly abort = new AbortController();
   private readonly subscribers = new Set<Subscriber>();
   private readonly pending = new Map<string, Pending>();
-  /** Everything the engine has emitted this process lifetime, minus stream events. */
+  /** Everything the engine has emitted this process lifetime, minus stream
+   *  events, as a page catching up needs it (replay.ts). */
   private readonly buffer: SDKMessage[] = [];
   private closed = false;
   private terminalOnlyCommands: string[] = [];
@@ -232,8 +234,9 @@ export class LiveSession {
     return [...this.pending.values()].map((p) => p.request);
   }
 
-  get replay(): SDKMessage[] {
-    return this.buffer;
+  /** What a page that already has `known` (its newest message uuids) lacks. */
+  replay(known?: readonly string[]): SDKMessage[] {
+    return replaySince(this.buffer, known);
   }
 
   subscribe(fn: Subscriber): () => void {
@@ -424,7 +427,7 @@ export class LiveSession {
       this.onResult?.({ totalCostUsd: message.total_cost_usd, numTurns: message.num_turns, at: Date.now() });
       if (this.pending.size === 0) this.setStatus('idle');
     }
-    if (message.type !== 'stream_event') this.buffer.push(message);
+    if (message.type !== 'stream_event') this.buffer.push(forReplay(message));
     this.broadcast({ type: 'message', sessionId: this.sessionId, message });
     this.watchRealApplies(message);
   }

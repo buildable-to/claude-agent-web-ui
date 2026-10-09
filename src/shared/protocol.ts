@@ -67,7 +67,13 @@ export type SessionMeta = {
 
 export type ClientMessage =
   /** Subscribe to a session that is already running. Answered with `attached` or `not_live`. */
-  | { type: 'attach'; sessionId: string }
+  | {
+      type: 'attach';
+      sessionId: string;
+      /** The newest message uuids the page already has (history, then live):
+       *  the replay skips the main conversation up to them. */
+      known?: string[];
+    }
   | { type: 'detach'; sessionId: string }
   /** Start (null) or resume (id) an engine and send the first message in one go. */
   | {
@@ -102,7 +108,8 @@ export type ServerMessage =
       status: SessionStatus;
       /** How long the engine has been on this turn (running or asking), in ms. */
       busyForMs?: number;
-      /** Messages the live process has produced so far (no stream events). */
+      /** Messages the live process has produced so far (no stream events),
+       *  minus what the page said it has and what it never draws. */
       replay: SDKMessage[];
       pending: PermissionRequest[];
       meta: SessionMeta;
