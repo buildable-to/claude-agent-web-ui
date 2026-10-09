@@ -43,7 +43,9 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
         try {
           const history = await api.history(requested);
           if (cancelled) return;
-          known.current = rememberKnown(known.current, history);
+          // history replaces the transcript, so it replaces what the page knows:
+          // a message that landed before it but is not in it is not on screen
+          known.current = rememberKnown([], history);
           dispatch({ type: 'history', transcript: applyHistory(emptyTranscript(), history) });
         } catch (err) {
           if (cancelled) return;
