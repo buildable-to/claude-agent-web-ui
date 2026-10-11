@@ -31,9 +31,55 @@ const ENV_ALLOW = /^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LANGUAGE|LC_[A-Z]+|TERM|T
 export function engineEnv(extra: Record<string, string> = {}): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined && ENV_ALLOW.test(k)) out[k] = v;
+    // the scope comes from a signed token, per conversation, never from the service
+    if (v !== undefined && ENV_ALLOW.test(k) && k !== 'BUILDABLE_SCOPE') out[k] = v;
   }
   return { ...out, ...extra };
+}
+
+/** What a library conversation's engine is told and refused. The app's doors
+ *  refuse project work under BUILDABLE_SCOPE=library; the engine is the second
+ *  lock: the two project doors are denied outright, whatever the folder's
+ *  allow rules say (deny beats allow). Rules in the style of the agent host's
+ *  settings.shared.json. */
+export const LIBRARY_DENIED_TOOLS: readonly string[] = ['perceive_project_v4', 'project_files_v4'].flatMap((door) =>
+  ['python', 'python3'].flatMap((py) => [
+    `Bash(${py} -m buildable.services.${door})`,
+    `Bash(${py} -m buildable.services.${door} *)`,
+  ]),
+);
+
+export function libraryEnv(env: Record<string, string>): Record<string, string> {
+  const { BUILDABLE_PROJECT: _p, ...rest } = env;
+  return { ...rest, BUILDABLE_SCOPE: 'library' };
+}
+
+export const LIBRARY_PROMPT =
+  "The engineer is building their element library in Buildable's Element Studio; no project is open. " +
+  'Work on library elements only — make, reinforce and draw elements; never create or change a project from this chat (the tools refuse). ' +
+  "Learn where you stand with `python -m buildable.services.library_v4` (the library's drawings, the account's rules, its elements and drafts). ";
+
+/** How the agent talks in the studio panel, project or library alike. */
+const COLLEAGUE_TONE =
+  'You are talking to a structural engineer inside their studio: call pieces by their marks and element names, not ids; ' +
+  'name sheets by title; no revs, flags, command or tool names; never paste a link to the page they are on. ' +
+  'End with what changed, what to look at, what to decide.';
+
+/** The system prompt's append: where the engineer stands, how to talk, and
+ *  a resume note after a stopped engine. Undefined when there is nothing to say. */
+export function promptAppend(opts: { project?: string; scope?: 'library'; recovery?: unknown }): string | undefined {
+  const where =
+    opts.scope === 'library'
+      ? LIBRARY_PROMPT + COLLEAGUE_TONE
+      : opts.project
+        ? `The engineer has project ${opts.project} open in Project Studio. ` +
+          'Work in that project; do not create another one unless asked to in so many words. ' +
+          COLLEAGUE_TONE
+        : '';
+  const resume = opts.recovery
+    ? '\nThe previous engine stopped while work was in flight. The engineer has now chosen to resume. Before restarting builders, inspect the conversation and current project/file state, reconcile writes that already landed, and continue only unfinished work. Do not blindly repeat completed operations.'
+    : '';
+  return where || resume ? where + resume : undefined;
 }
 
 /** Which conversation the engine — and every door it runs — speaks for. The
@@ -102,6 +148,9 @@ export type LiveSessionOptions = {
   env?: Record<string, string>;
   /** The app project this conversation is about. */
   project?: string;
+  /** About the account's element library (Element Studio): no project, the
+   *  project doors denied, BUILDABLE_SCOPE=library. Wins over `project`. */
+  scope?: 'library';
   /** What this conversation is called, for the rows its elements make on the
    *  project's Elements tab (ezdxf-flask #469): "from “<title>”". */
   title?: string;
@@ -118,6 +167,7 @@ export class LiveSession {
   readonly sessionId: string;
   readonly cwd: string;
   readonly project: string | undefined;
+  readonly scope: 'library' | undefined;
   status: SessionStatus = 'starting';
   /** When the current turn began (running, or asking the engineer); null between turns. */
   private busySince: number | null = null;
@@ -156,7 +206,8 @@ export class LiveSession {
   constructor(opts: LiveSessionOptions) {
     this.sessionId = opts.resume ?? randomUUID();
     this.cwd = opts.cwd;
-    this.project = opts.project;
+    this.scope = opts.scope;
+    this.project = this.scope === 'library' ? undefined : opts.project;
     this.persistAlways = opts.persistAlways ?? true;
     this.onInfo = opts.onInfo;
     this.onResult = opts.onResult;
@@ -166,6 +217,8 @@ export class LiveSession {
     this.meta.permissionMode = opts.permissionMode ?? 'default';
     if (opts.model) this.meta.model = opts.model;
 
+    const append = promptAppend({ project: this.project, scope: this.scope, recovery: opts.recovery });
+    const library = (env: Record<string, string>) => (this.scope === 'library' ? libraryEnv(env) : env);
     opts.onStart?.(this.workState());
     try {
       this.q = (opts.queryFactory ?? query)({
@@ -180,21 +233,12 @@ export class LiveSession {
           systemPrompt: {
             type: 'preset',
             preset: 'claude_code',
-            ...((opts.project || opts.recovery)
-              ? {
-                  // Context, not a brain: who reads the panel and how they talk.
-                  // No URL here: the agent used to paste it back at the engineer
-                  // who was already looking at the page.
-                  append:
-                    (opts.project ? `The engineer has project ${opts.project} open in Project Studio. ` +
-                    'Work in that project; do not create another one unless asked to in so many words. ' +
-                    'You are talking to a structural engineer inside their studio: call pieces by their marks and element names, not ids; ' +
-                    'name sheets by title; no revs, flags, command or tool names; never paste a link to the page they are on. ' +
-                    'End with what changed, what to look at, what to decide.' : '') +
-                    (opts.recovery ? '\nThe previous engine stopped while work was in flight. The engineer has now chosen to resume. Before restarting builders, inspect the conversation and current project/file state, reconcile writes that already landed, and continue only unfinished work. Do not blindly repeat completed operations.' : ''),
-                }
-              : {}),
+            // Context, not a brain: who reads the panel and how they talk.
+            // No URL here: the agent used to paste it back at the engineer
+            // who was already looking at the page.
+            ...(append ? { append } : {}),
           },
+          ...(this.scope === 'library' ? { disallowedTools: [...LIBRARY_DENIED_TOOLS] } : {}),
           permissionMode: opts.permissionMode ?? 'default',
           allowDangerouslySkipPermissions: opts.permissionMode === 'bypassPermissions',
           includePartialMessages: true,
@@ -203,7 +247,7 @@ export class LiveSession {
           settingSources: ['user', 'project', 'local'],
           canUseTool: this.canUseTool,
           abortController: this.abort,
-          env: engineEnv({
+          env: library(engineEnv({
             ...(opts.env ?? {}),
             ...conversationEnv(this.sessionId, opts.title),
             CLAUDE_AGENT_SDK_CLIENT_APP: 'claude-agent-web-ui/0.1.0',
@@ -212,7 +256,7 @@ export class LiveSession {
             // sub-agent came back, a background command finished) ran with
             // the page, the studio and the deploy drain all reading idle.
             CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
-          }),
+          })),
           stderr: (data) => {
             const line = data.trim();
             if (line) console.error(`[engine ${this.shortId}] ${line}`);

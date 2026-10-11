@@ -9,7 +9,7 @@ import { loadConfig, projectName } from './config.js';
 import { createDrainController } from './drain.js';
 import { SessionManager } from './session-manager.js';
 import { buildTree } from './tree.js';
-import { attachWebSocket, type Resolver } from './ws.js';
+import { attachWebSocket, scopeOf, type Resolver } from './ws.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const config = loadConfig();
@@ -34,9 +34,9 @@ const single = accounts ? null : new SessionManager(config.projectDir);
 export type Ctx = { manager: SessionManager; dir: string; account?: Account };
 
 /** Who is asking, and which folder that means. Throws AuthError. */
-const resolveCtx: Resolver = (token, devAccount) => {
+const resolveCtx: Resolver = (token, devAccount, devScope) => {
   if (!accounts) return { manager: single as SessionManager, dir: config.projectDir };
-  const account = accounts.resolve(token, devAccount);
+  const account = accounts.resolve(token, devAccount, devScope);
   return { manager: accounts.manager(account), dir: account.dir, account };
 };
 
@@ -70,7 +70,7 @@ app.use(`${base}/api`, (req, res, next) => {
   const auth = req.header('authorization');
   const token = auth?.startsWith('Bearer ') ? auth.slice(7) : firstString(req.query.token);
   try {
-    res.locals.ctx = resolveCtx(token, firstString(req.query.account));
+    res.locals.ctx = resolveCtx(token, firstString(req.query.account), firstString(req.query.scope));
     next();
   } catch (err) {
     const status = err instanceof AuthError ? 401 : 500;
@@ -90,6 +90,7 @@ app.get(`${base}/api/config`, (_req, res) => {
     version: '0.1.0',
     ...(account ? { account: { id: account.id, ...(account.email ? { email: account.email } : {}) } } : {}),
     ...(account?.project ? { project: account.project } : {}),
+    ...(account?.scope ? { scope: account.scope } : {}),
   };
   res.json(body);
 });
@@ -110,17 +111,33 @@ app.get(`${base}/api/tree`, async (_req, res, next) => {
   }
 });
 
+// The list is narrowed by the token: a library page sees only the library's
+// conversations, a project page only its project's (the page's own
+// `?project=` counts only where the token names none).
 app.get(`${base}/api/sessions`, async (req, res, next) => {
   try {
-    const project = firstString(req.query.project);
-    res.json(await ctxOf(res).manager.list(project));
+    const { manager, account } = ctxOf(res);
+    if (account?.scope === 'library') {
+      res.json(await manager.list(undefined, 'library'));
+      return;
+    }
+    res.json(await manager.list(account?.project ?? firstString(req.query.project)));
   } catch (err) {
     next(err);
   }
 });
 
+/** A conversation outside the page's scope is not read, renamed or deleted from it. */
+function refuseOutOfScope(req: express.Request, res: express.Response): boolean {
+  const { manager, account } = ctxOf(res);
+  const refused = manager.refusal(String(req.params.id), scopeOf(account));
+  if (refused) res.status(403).json({ error: refused });
+  return Boolean(refused);
+}
+
 app.get(`${base}/api/sessions/:id/messages`, async (req, res, next) => {
   try {
+    if (refuseOutOfScope(req, res)) return;
     res.json(await ctxOf(res).manager.history(String(req.params.id)));
   } catch (err) {
     next(err);
@@ -134,6 +151,7 @@ app.patch(`${base}/api/sessions/:id`, async (req, res, next) => {
       res.status(400).json({ error: 'title is required' });
       return;
     }
+    if (refuseOutOfScope(req, res)) return;
     await ctxOf(res).manager.rename(String(req.params.id), title);
     res.json({ ok: true });
   } catch (err) {
@@ -143,6 +161,7 @@ app.patch(`${base}/api/sessions/:id`, async (req, res, next) => {
 
 app.delete(`${base}/api/sessions/:id`, async (req, res, next) => {
   try {
+    if (refuseOutOfScope(req, res)) return;
     await ctxOf(res).manager.remove(String(req.params.id));
     res.json({ ok: true });
   } catch (err) {
