@@ -11,6 +11,7 @@ type Props = {
   onSuggest: (text: string) => void;
   /** Empty-state copy; the defaults suit a code project, Buildable passes its own. */
   kicker?: string;
+  title?: string;
   blurb?: string;
   suggestions?: string[];
 };
@@ -40,6 +41,7 @@ export function MessageList({
   projectName,
   onSuggest,
   kicker,
+  title = 'What are we building?',
   blurb,
   suggestions = SUGGESTIONS,
 }: Props) {
@@ -73,7 +75,7 @@ export function MessageList({
                 {kicker ?? `Claude Agent · ${projectName}`}
               </p>
               <h2 className="font-display mt-3 text-[26px] leading-tight font-semibold text-ink text-balance">
-                What are we building?
+                {title}
               </h2>
               <p className="mx-auto mt-3 max-w-md text-[13px] leading-relaxed text-ink-2">
                 {blurb ??

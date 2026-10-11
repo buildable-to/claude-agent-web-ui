@@ -1,5 +1,5 @@
 import type { DirectoryTree, EngineInfo, HistoryMessage, ServerConfig, SessionSummary } from '@shared/protocol';
-import { authHeaders, authQuery, BASE, page } from '@/lib/page';
+import { authHeaders, authQuery, BASE, withAccount } from '@/lib/page';
 
 export class ApiError extends Error {
   constructor(
@@ -8,11 +8,6 @@ export class ApiError extends Error {
   ) {
     super(message);
   }
-}
-
-function withAccount(path: string): string {
-  if (page.token || !page.account) return path;
-  return `${path}${path.includes('?') ? '&' : '?'}account=${encodeURIComponent(page.account)}`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
