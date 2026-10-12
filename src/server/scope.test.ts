@@ -187,3 +187,19 @@ test('over the socket: a library token ignores the page project and cannot attac
   assert.equal(cli.last.env?.BUILDABLE_SCOPE, 'library');
   assert.equal(cli.last.env?.BUILDABLE_PROJECT, undefined);
 });
+
+test("an element's page lists that element's library chats alone, and a chat moves with its draft", async (t) => {
+  const { manager, dir } = managerWith(t, { a: LIBRARY_TAG, b: LIBRARY_TAG, p: 'abc123' });
+  assert.equal(manager.setSubject('a', 'draft:76b82760'), null);
+  assert.equal(manager.setSubject('b', 'e119082a'), null);
+  assert.deepEqual((await manager.list(undefined, 'library', 'e119082a')).map((r) => r.sessionId), ['b']);
+  assert.deepEqual((await manager.list(undefined, 'library')).map((r) => r.sessionId).sort(), ['a', 'b']);
+  // the draft became element 37d802ad: its chat follows it there
+  assert.equal(manager.setSubject('a', '37d802ad'), null);
+  assert.deepEqual((await manager.list(undefined, 'library', '37d802ad')).map((r) => r.sessionId), ['a']);
+  assert.deepEqual((await manager.list(undefined, 'library', 'draft:76b82760')), []);
+  // a project's chat is never an element's; nonsense is refused
+  assert.notEqual(manager.setSubject('p', 'e119082a'), null);
+  assert.notEqual(manager.setSubject('a', '../etc'), null);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, '.agent-subjects.json'), 'utf8')), { a: '37d802ad', b: 'e119082a' });
+});

@@ -11,7 +11,7 @@ export function useSessions() {
 
   const refresh = useCallback(async () => {
     try {
-      setSessions(await api.sessions(page.project));
+      setSessions(await api.sessions(page.project, page.subject));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

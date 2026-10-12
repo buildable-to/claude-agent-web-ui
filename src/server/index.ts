@@ -118,7 +118,8 @@ app.get(`${base}/api/sessions`, async (req, res, next) => {
   try {
     const { manager, account } = ctxOf(res);
     if (account?.scope === 'library') {
-      res.json(await manager.list(undefined, 'library'));
+      const subject = firstString(req.query.subject);
+      res.json(await manager.list(undefined, 'library', subject || undefined));
       return;
     }
     res.json(await manager.list(account?.project ?? firstString(req.query.project)));
@@ -146,6 +147,17 @@ app.get(`${base}/api/sessions/:id/messages`, async (req, res, next) => {
 
 app.patch(`${base}/api/sessions/:id`, async (req, res, next) => {
   try {
+    // an element's page says which element a library conversation is about
+    if (typeof req.body?.subject === 'string') {
+      if (refuseOutOfScope(req, res)) return;
+      const refused = ctxOf(res).manager.setSubject(String(req.params.id), req.body.subject);
+      if (refused) {
+        res.status(400).json({ error: refused });
+        return;
+      }
+      res.json({ ok: true });
+      return;
+    }
     const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
     if (!title) {
       res.status(400).json({ error: 'title is required' });

@@ -35,6 +35,12 @@ export const page = {
    *  chat unless the link names one, never the account's latest, which may be
    *  another element's still working (ezdxf-flask #723). */
   fresh: new URLSearchParams(location.search).get('fresh') === '1',
+  /** `?subject=<element id | draft:<id>>`: the element's page — its chat list
+   *  holds that element's conversations alone (ezdxf-flask #723). */
+  subject: (() => {
+    const s = new URLSearchParams(location.search).get('subject');
+    return s && /^(draft:)?[A-Za-z0-9_-]{1,64}$/.test(s) ? s : null;
+  })(),
   /** Dev mode only (server started with --dev-auth): which folder to use. */
   account: read('account'),
 };

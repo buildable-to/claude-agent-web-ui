@@ -35,6 +35,10 @@ export function shouldReap(
 /** Which app project each conversation in this folder is about — or
  *  LIBRARY_TAG for one started from Element Studio, about no project. */
 const PROJECTS_FILE = '.agent-projects.json';
+/** A library conversation's element, by conversation id (ezdxf-flask #723). */
+const SUBJECTS_FILE = '.agent-subjects.json';
+/** What a subject may be: an element id, or `draft:<id>`. */
+export const SUBJECT_RE = /^(draft:)?[A-Za-z0-9_-]{1,64}$/;
 /** The tag of a library conversation. Never a project id (those are hex), so
  *  older code reading the file sees a project nobody opens. */
 export const LIBRARY_TAG = '@library';
@@ -90,6 +94,7 @@ export class SessionManager {
   private pendingOpens = 0;
   private readonly info: SharedEngineInfo;
   private projects: Record<string, string>;
+  private subjects: Record<string, string>;
   private usage: Record<string, Usage>;
   private readonly work: WorkJournal;
 
@@ -106,6 +111,7 @@ export class SessionManager {
   ) {
     this.info = shared ?? { value: null, probe: null };
     this.projects = this.readJson<Record<string, string>>(PROJECTS_FILE);
+    this.subjects = this.readJson<Record<string, string>>(SUBJECTS_FILE);
     this.usage = this.readJson<Record<string, Usage>>(USAGE_FILE);
     this.work = new WorkJournal(projectDir);
     setInterval(() => this.reapIdle(), 5 * 60 * 1000).unref();
@@ -248,7 +254,22 @@ export class SessionManager {
   /** Every conversation in this folder, or only those about one app project,
    *  or (`scope: 'library'`) only the element library's. The narrowed cases
    *  read just the tagged ids: no folder scan, no cap. */
-  async list(project?: string, scope?: 'library'): Promise<SessionSummary[]> {
+  /** Which element a library conversation is about — set by the element's
+   *  page (a new chat there, or a draft's chat following it into the element
+   *  it became). Library conversations only. */
+  setSubject(sessionId: string, subject: string): string | null {
+    if (!SUBJECT_RE.test(subject)) return 'not an element';
+    const tag = this.projects[sessionId];
+    const live = this.get(sessionId);
+    if (tag !== LIBRARY_TAG && live?.scope !== 'library') return 'not a library conversation';
+    if (this.subjects[sessionId] !== subject) {
+      this.subjects[sessionId] = subject;
+      this.writeJson(SUBJECTS_FILE, this.subjects);
+    }
+    return null;
+  }
+
+  async list(project?: string, scope?: 'library', subject?: string): Promise<SessionSummary[]> {
     let persisted;
     const want = scope === 'library' ? LIBRARY_TAG : project;
     if (want) {
@@ -275,6 +296,7 @@ export class SessionManager {
         live: Boolean(live),
         status: live?.status,
         ...(tag === LIBRARY_TAG ? { scope: 'library' as const } : tag ? { project: tag } : {}),
+        ...(this.subjects[s.sessionId] ? { subject: this.subjects[s.sessionId] } : {}),
         ...(u ? { costUsd: u.totalCostUsd, turns: u.numTurns } : {}),
       };
     });
@@ -291,10 +313,15 @@ export class SessionManager {
         status: s.status,
         ...(s.project ? { project: s.project } : {}),
         ...(s.scope ? { scope: s.scope } : {}),
+        ...(this.subjects[s.sessionId] ? { subject: this.subjects[s.sessionId] } : {}),
       });
     }
     rows.sort((a, b) => b.lastModified - a.lastModified);
-    if (scope === 'library') return rows.filter((r) => r.scope === 'library');
+    if (scope === 'library') {
+      const lib = rows.filter((r) => r.scope === 'library');
+      // an element's page lists that element's conversations alone
+      return subject ? lib.filter((r) => r.subject === subject) : lib;
+    }
     return project ? rows.filter((r) => r.project === project) : rows;
   }
 
@@ -341,6 +368,10 @@ export class SessionManager {
     if (sessionId in this.projects) {
       delete this.projects[sessionId];
       this.writeJson(PROJECTS_FILE, this.projects);
+    }
+    if (sessionId in this.subjects) {
+      delete this.subjects[sessionId];
+      this.writeJson(SUBJECTS_FILE, this.subjects);
     }
   }
 

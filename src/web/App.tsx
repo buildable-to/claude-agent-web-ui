@@ -123,6 +123,18 @@ export default function App() {
     autoPicked.current = true; // decided once, on the first list; "New" later means new
     if (selected.id !== null || state.transcript.turns.length > 0 || state.status !== 'idle') return;
     const named = page.conversation ? sessions.find((x) => x.sessionId === page.conversation) : undefined;
+    // an element's page: the chat its address names (a draft's chat that
+    // followed it into the element, not yet in this element's list) opens;
+    // else this element's own latest; else a new one (ezdxf-flask #723)
+    if (page.subject && page.conversation && !named) {
+      setSelected((s) => ({ id: page.conversation, nonce: s.nonce + 1 }));
+      return;
+    }
+    if (page.subject) {
+      const own = sessions[0];
+      if (own) setSelected((s) => ({ id: own.sessionId, nonce: s.nonce + 1 }));
+      return;
+    }
     // the library lists only its own chats: a link naming any other one
     // (a project's) opens a new library chat, not the latest
     if (page.scope === 'library' && page.conversation && !named) return;
@@ -136,6 +148,23 @@ export default function App() {
   // link lands on this exact conversation and Back/Forward walk between them.
   // A new conversation has no id until its first turn; it is told then.
   const openConversation = selected.id ?? state.sessionId ?? null;
+
+  // an element's page owns the conversation open on it: a new chat begun
+  // here, or a draft's chat that followed it into the element, is about this
+  // element from now on — its list shows it, other elements' do not
+  const subjected = useRef(new Set<string>());
+  useEffect(() => {
+    const id = openConversation;
+    if (!page.subject || !id || subjected.current.has(id)) return;
+    const row = sessions.find((x) => x.sessionId === id);
+    if (row && row.subject === page.subject) {
+      subjected.current.add(id);
+      return;
+    }
+    if (!row && !state.sessionId) return;            // not started yet: no id to tag
+    subjected.current.add(id);
+    void api.setSubject(id, page.subject).then(() => refresh()).catch(() => subjected.current.delete(id));
+  }, [openConversation, sessions, state.sessionId, refresh]);
   useEffect(() => {
     if (!embed) return;
     tellParent({ type: 'conversation', id: openConversation });

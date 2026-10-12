@@ -142,6 +142,9 @@ export type SessionSummary = {
   project?: string;
   /** Started from Element Studio: about the account's element library, no project. */
   scope?: 'library';
+  /** A library conversation's element (its id, or `draft:<id>` while it is a
+   *  draft): that element's page lists only its own conversations. */
+  subject?: string;
   /** Running totals from the engine, when a turn has finished. */
   costUsd?: number;
   turns?: number;
