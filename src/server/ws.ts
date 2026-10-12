@@ -3,15 +3,22 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, PermissionMode, ServerMessage } from '../shared/protocol.js';
 import type { Account } from './accounts.js';
 import type { LiveSession } from './live-session.js';
-import type { SessionManager } from './session-manager.js';
+import type { Scope, SessionManager } from './session-manager.js';
 
 type Attachment = { unsubscribe: () => void };
 
-/** Turns a token (or a dev-mode account id) into the folder's session manager. */
+/** Turns a token (or a dev-mode account id, and scope) into the folder's session manager. */
 export type Resolver = (
   token: string | undefined,
   devAccount: string | undefined,
+  devScope?: string,
 ) => { manager: SessionManager; dir: string; account?: Account };
+
+/** Where a connection stands, from its token alone. */
+export function scopeOf(account: Account | undefined): Scope {
+  if (account?.scope === 'library') return { library: true };
+  return account?.project ? { project: account.project } : {};
+}
 
 export type ServerState = {
   /** A restart is waiting for running turns: no new turn starts, the rest works. */
@@ -38,7 +45,11 @@ export function attachWebSocket(
     // One connection speaks for one account, decided at the handshake.
     let ctx: ReturnType<Resolver>;
     try {
-      ctx = resolveCtx(url.searchParams.get('token') ?? undefined, url.searchParams.get('account') ?? undefined);
+      ctx = resolveCtx(
+        url.searchParams.get('token') ?? undefined,
+        url.searchParams.get('account') ?? undefined,
+        url.searchParams.get('scope') ?? undefined,
+      );
     } catch (err) {
       socket.write(`HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n${err instanceof Error ? err.message : ''}`);
       socket.destroy();
@@ -85,6 +96,11 @@ export function attachWebSocket(
     async function handle(msg: ClientMessage) {
       switch (msg.type) {
         case 'attach': {
+          const refused = sessions.refusal(msg.sessionId, scopeOf(ctx.account));
+          if (refused) {
+            fail(refused, msg.sessionId);
+            return;
+          }
           const session = sessions.get(msg.sessionId);
           if (!session) {
             send({ type: 'not_live', sessionId: msg.sessionId, stoppedWork: sessions.stoppedWork(msg.sessionId) });
@@ -97,16 +113,19 @@ export function attachWebSocket(
           if (state.draining()) throw new Error(DRAINING_MESSAGE);
           refuseUnlessAsking(msg.permissionMode);
           // The token's project is signed; the page's is not. A token that names
-          // a project pins it, otherwise the page may say which one.
+          // a project pins it, otherwise the page may say which one. A library
+          // token has no project at all: whatever the page says is ignored.
+          const library = ctx.account?.scope === 'library';
           const pinned = ctx.account?.project;
-          if (pinned && msg.project && msg.project !== pinned) {
+          if (!library && pinned && msg.project && msg.project !== pinned) {
             throw new Error('This page was opened for a different project');
           }
-          const project = pinned ?? msg.project;
+          const project = library ? undefined : (pinned ?? msg.project);
           const session = await sessions.open(msg.sessionId, {
             ...(msg.model ? { model: msg.model } : {}),
             ...(msg.permissionMode ? { permissionMode: msg.permissionMode } : {}),
             ...(project ? { project } : {}),
+            ...(library ? { scope: 'library' as const } : {}),
             ...(msg.sessionId ? {} : { firstPrompt: msg.text }),
           });
           if (state.draining()) {

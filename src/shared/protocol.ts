@@ -140,6 +140,11 @@ export type SessionSummary = {
   status?: SessionStatus;
   /** The app project this conversation was started on, if any. */
   project?: string;
+  /** Started from Element Studio: about the account's element library, no project. */
+  scope?: 'library';
+  /** A library conversation's element (its id, or `draft:<id>` while it is a
+   *  draft): that element's page lists only its own conversations. */
+  subject?: string;
   /** Running totals from the engine, when a turn has finished. */
   costUsd?: number;
   turns?: number;
@@ -163,6 +168,8 @@ export type ServerConfig = {
   account?: { id: string; email?: string };
   /** The project session the page was opened on, if the token named one. */
   project?: string;
+  /** The token opened the element library (Element Studio), not a project. */
+  scope?: 'library';
 };
 
 /** Project folder listing for the files panel. */

@@ -1,5 +1,5 @@
 import type { DirectoryTree, EngineInfo, HistoryMessage, ServerConfig, SessionSummary } from '@shared/protocol';
-import { authHeaders, authQuery, BASE, page } from '@/lib/page';
+import { authHeaders, authQuery, BASE, withAccount } from '@/lib/page';
 
 export class ApiError extends Error {
   constructor(
@@ -8,11 +8,6 @@ export class ApiError extends Error {
   ) {
     super(message);
   }
-}
-
-function withAccount(path: string): string {
-  if (page.token || !page.account) return path;
-  return `${path}${path.includes('?') ? '&' : '?'}account=${encodeURIComponent(page.account)}`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -47,8 +42,12 @@ export { authQuery };
 
 export const api = {
   config: () => request<ServerConfig>('/api/config'),
-  sessions: (project?: string | null) =>
-    request<SessionSummary[]>(project ? `/api/sessions?project=${encodeURIComponent(project)}` : '/api/sessions'),
+  sessions: (project?: string | null, subject?: string | null) =>
+    request<SessionSummary[]>(project ? `/api/sessions?project=${encodeURIComponent(project)}`
+      : subject ? `/api/sessions?subject=${encodeURIComponent(subject)}` : '/api/sessions'),
+  /** Which element a library conversation is about (ezdxf-flask #723). */
+  setSubject: (id: string, subject: string) =>
+    request<{ ok: true }>(`/api/sessions/${id}`, { method: 'PATCH', body: JSON.stringify({ subject }) }),
   tree: () => request<DirectoryTree>('/api/tree'),
   engine: () => request<EngineInfo>('/api/engine'),
   history: (id: string) => request<HistoryMessage[]>(`/api/sessions/${id}/messages`),

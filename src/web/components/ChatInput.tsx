@@ -1,3 +1,4 @@
+import { page } from '@/lib/page';
 import { ArrowUp, AtSign, Bell, BellOff, Eye, EyeOff, SlashSquare, Square, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { CommandInfo, SessionStatus } from '@shared/protocol';
@@ -413,7 +414,9 @@ export function ChatInput({
               <span className="text-[11px] text-ink-3">Enter to send · Shift+Enter for a new line</span>
             )}
           </div>
-        {controls && controls.meta.totalCostUsd !== undefined && (
+        {/* no price inside a studio: the engineer is not shown what a chat
+            costs (ezdxf-flask #723, Luka 2026-10-12) */}
+        {controls && controls.meta.totalCostUsd !== undefined && !page.embed && (
           <span className="font-mono text-[10.5px] text-ink-3 max-sm:hidden" title="Estimated cost of this conversation">
             {money(controls.meta.totalCostUsd)}
           </span>

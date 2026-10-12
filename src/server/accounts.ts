@@ -1,6 +1,7 @@
 // Accounts: one folder per Buildable account under AGENTS_ROOT, chosen from a
 // signed token the app hands the page. The token is an HS256 JWT signed with
-// the app's own secret (PyJWT-compatible): { sub: accountId, email?, sid?, exp }.
+// the app's own secret (PyJWT-compatible): { sub: accountId, email?, sid?, exp }
+// for Project Studio, { sub, email?, scope: 'library', exp } for Element Studio.
 // Without AGENTS_ROOT the server runs exactly as before: one --dir, no auth.
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -15,6 +16,9 @@ export type Account = {
   email?: string;
   /** The project session the page was opened on, if any. */
   project?: string;
+  /** Opened from Element Studio (the account's element library): no project,
+   *  and none may be touched from this chat. Only ever from a signed claim. */
+  scope?: 'library';
   dir: string;
 };
 
@@ -36,7 +40,7 @@ function fromB64url(s: string): Buffer {
   return Buffer.from(s, 'base64url');
 }
 
-export type TokenClaims = { sub: string; email?: string; sid?: string; exp?: number; role?: string };
+export type TokenClaims = { sub: string; email?: string; sid?: string; scope?: string; exp?: number; role?: string };
 
 /** Verify an HS256 JWT and return its claims. Throws on any defect. */
 export function verifyToken(token: string, secret: string): TokenClaims {
@@ -85,17 +89,22 @@ export class Accounts {
     }
   }
 
-  /** The account a request speaks for, from its token (or `?account=` in dev mode). */
-  resolve(token: string | undefined, devAccount: string | undefined): Account {
+  /** The account a request speaks for, from its token (or `?account=` in dev
+   *  mode, where `?scope=library` stands in for the library claim). */
+  resolve(token: string | undefined, devAccount: string | undefined, devScope?: string): Account {
     let claims: TokenClaims;
     if (this.config.authSecret) {
       if (!token) throw new AuthError('missing token');
       claims = verifyToken(token, this.config.authSecret);
     } else {
       if (!devAccount) throw new AuthError('no account (dev mode: pass ?account=<id>)');
-      claims = { sub: devAccount };
+      claims = { sub: devAccount, ...(devScope === 'library' ? { scope: 'library' } : {}) };
     }
     if (!SAFE_ID.test(claims.sub)) throw new AuthError('bad account id');
+    const library = claims.scope === 'library';
+    // A library chat must never touch a project: a token that says both is
+    // the app's mistake, and guessing which it meant is not ours to do.
+    if (library && claims.sid) throw new AuthError('a library token must not name a project');
     const dir = resolve(this.config.root, claims.sub);
     this.ensureDir(dir);
     if (claims.email) this.remember(dir, claims.sub, claims.email);
@@ -103,6 +112,7 @@ export class Accounts {
       id: claims.sub,
       ...(claims.email ? { email: claims.email } : {}),
       ...(claims.sid ? { project: claims.sid } : {}),
+      ...(library ? { scope: 'library' as const } : {}),
       dir,
     };
   }

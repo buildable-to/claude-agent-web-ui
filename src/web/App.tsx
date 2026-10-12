@@ -48,6 +48,19 @@ const EMBED_COPY = {
   ],
 };
 
+// Embedded in Element Studio: the account's element library, no project.
+const LIBRARY_COPY = {
+  kicker: 'Buildable · element library',
+  title: 'Build your element library',
+  blurb:
+    'Drop your drawing set into Drawings and ask me to make your elements. I’ll say what I found before I build anything.',
+  suggestions: [
+    'Make the elements from my drawings',
+    'Reinforce this element to Eurocode 2',
+    'Tidy this element’s drawing',
+  ],
+};
+
 export default function App() {
   const [config, setConfig] = useState<ServerConfig | null>(null);
   const [connection, setConnection] = useState<ConnectionState>(ws.state);
@@ -110,6 +123,23 @@ export default function App() {
     autoPicked.current = true; // decided once, on the first list; "New" later means new
     if (selected.id !== null || state.transcript.turns.length > 0 || state.status !== 'idle') return;
     const named = page.conversation ? sessions.find((x) => x.sessionId === page.conversation) : undefined;
+    // an element's page: the chat its address names (a draft's chat that
+    // followed it into the element, not yet in this element's list) opens;
+    // else this element's own latest; else a new one (ezdxf-flask #723)
+    if (page.subject && page.conversation && !named) {
+      setSelected((s) => ({ id: page.conversation, nonce: s.nonce + 1 }));
+      return;
+    }
+    if (page.subject) {
+      const own = sessions[0];
+      if (own) setSelected((s) => ({ id: own.sessionId, nonce: s.nonce + 1 }));
+      return;
+    }
+    // the library lists only its own chats: a link naming any other one
+    // (a project's) opens a new library chat, not the latest
+    if (page.scope === 'library' && page.conversation && !named) return;
+    // one element's page starts its own chat; the others are in the list
+    if (page.fresh && !named) return;
     const open = named ?? sessions[0];
     if (open) setSelected((s) => ({ id: open.sessionId, nonce: s.nonce + 1 }));
   }, [sessionsLoaded, sessions, selected.id, state.transcript.turns.length, state.status]);
@@ -118,6 +148,23 @@ export default function App() {
   // link lands on this exact conversation and Back/Forward walk between them.
   // A new conversation has no id until its first turn; it is told then.
   const openConversation = selected.id ?? state.sessionId ?? null;
+
+  // an element's page owns the conversation open on it: a new chat begun
+  // here, or a draft's chat that followed it into the element, is about this
+  // element from now on — its list shows it, other elements' do not
+  const subjected = useRef(new Set<string>());
+  useEffect(() => {
+    const id = openConversation;
+    if (!page.subject || !id || subjected.current.has(id)) return;
+    const row = sessions.find((x) => x.sessionId === id);
+    if (row && row.subject === page.subject) {
+      subjected.current.add(id);
+      return;
+    }
+    if (!row && !state.sessionId) return;            // not started yet: no id to tag
+    subjected.current.add(id);
+    void api.setSubject(id, page.subject).then(() => refresh()).catch(() => subjected.current.delete(id));
+  }, [openConversation, sessions, state.sessionId, refresh]);
   useEffect(() => {
     if (!embed) return;
     tellParent({ type: 'conversation', id: openConversation });
@@ -282,7 +329,7 @@ export default function App() {
             setDraft(text);
             setFocusKey((k) => k + 1);
           }}
-          {...(embed ? EMBED_COPY : {})}
+          {...(embed ? (page.scope === 'library' ? LIBRARY_COPY : EMBED_COPY) : {})}
         />
         {dock.length > 0 && <AgentDock lanes={dock} />}
         <WorkLine
@@ -294,7 +341,7 @@ export default function App() {
         />
         {connection === 'expired' && (
           <p className="mx-auto w-full max-w-3xl px-6 text-[12.5px] text-warn">
-            This page’s access has expired. Reload the project to continue.
+            This page’s access has expired. Reload the {page.scope === 'library' ? 'page' : 'project'} to continue.
           </p>
         )}
         {pending && (

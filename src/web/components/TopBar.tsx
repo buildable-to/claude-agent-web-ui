@@ -2,7 +2,7 @@ import { PanelRight, Plus } from 'lucide-react';
 import { Menu } from './Menu';
 import type { ModelOption, PermissionMode, SessionMeta, SessionStatus, SessionSummary } from '@shared/protocol';
 import { money, shortPath, timeAgo } from '@/lib/format';
-import { BASE } from '@/lib/page';
+import { BASE, page } from '@/lib/page';
 import { SessionControls } from './SessionControls';
 
 type Props = {
@@ -130,7 +130,7 @@ export function TopBar({
         <span className={`size-2 rounded-full ${s.dot}`} />
         {s.text}
       </span>
-      {meta.totalCostUsd !== undefined && (
+      {meta.totalCostUsd !== undefined && !page.embed && (
         <span className="font-mono text-[11.5px] text-ink-3" title="Estimated cost this session">
           {money(meta.totalCostUsd)}
         </span>

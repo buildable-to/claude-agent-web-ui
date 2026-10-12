@@ -32,8 +32,33 @@ export function shouldReap(
   if (s.status === 'closed') return quiet > IDLE_TIMEOUT_MS;
   return quiet > (s.backgroundWork > 0 ? BACKGROUND_IDLE_TIMEOUT_MS : IDLE_TIMEOUT_MS);
 }
-/** Which app project each conversation in this folder is about. */
+/** Which app project each conversation in this folder is about — or
+ *  LIBRARY_TAG for one started from Element Studio, about no project. */
 const PROJECTS_FILE = '.agent-projects.json';
+/** A library conversation's element, by conversation id (ezdxf-flask #723). */
+const SUBJECTS_FILE = '.agent-subjects.json';
+/** What a subject may be: an element id, or `draft:<id>`. */
+export const SUBJECT_RE = /^(draft:)?[A-Za-z0-9_-]{1,64}$/;
+/** The tag of a library conversation. Never a project id (those are hex), so
+ *  older code reading the file sees a project nobody opens. */
+export const LIBRARY_TAG = '@library';
+
+/** Where a page stands: the element library, a project, or neither (the
+ *  standalone page). Decided by the token, never by what the page says. */
+export type Scope = { library?: boolean; project?: string };
+
+/** Why a conversation tagged `tag` may not be opened where the page stands,
+ *  or null when it may. A library page opens only library conversations; a
+ *  project page never opens one; the standalone page opens any. */
+export function scopeRefusal(tag: string | undefined, where: Scope): string | null {
+  if (where.library) {
+    return tag === LIBRARY_TAG ? null : 'That conversation is about a project; it cannot be opened from the element library. Start a new one here.';
+  }
+  if (where.project && tag === LIBRARY_TAG) {
+    return 'That conversation is about the element library; open it from Element Studio.';
+  }
+  return null;
+}
 /** What each conversation has cost so far (the engine's running totals). */
 const USAGE_FILE = '.agent-usage.json';
 
@@ -69,6 +94,7 @@ export class SessionManager {
   private pendingOpens = 0;
   private readonly info: SharedEngineInfo;
   private projects: Record<string, string>;
+  private subjects: Record<string, string>;
   private usage: Record<string, Usage>;
   private readonly work: WorkJournal;
 
@@ -85,6 +111,7 @@ export class SessionManager {
   ) {
     this.info = shared ?? { value: null, probe: null };
     this.projects = this.readJson<Record<string, string>>(PROJECTS_FILE);
+    this.subjects = this.readJson<Record<string, string>>(SUBJECTS_FILE);
     this.usage = this.readJson<Record<string, Usage>>(USAGE_FILE);
     this.work = new WorkJournal(projectDir);
     setInterval(() => this.reapIdle(), 5 * 60 * 1000).unref();
@@ -99,14 +126,23 @@ export class SessionManager {
     return s;
   }
 
+  /** Why this conversation may not be opened where the page stands, or null. */
+  refusal(sessionId: string, where: Scope): string | null {
+    return scopeRefusal(this.projects[sessionId], where);
+  }
+
   /** Attach to a live session, resume a persisted one, or start fresh.
    *  `firstPrompt` is the message that starts a fresh conversation: its first
-   *  line is the conversation's title until the engine has a better one. */
+   *  line is the conversation's title until the engine has a better one.
+   *  `scope: 'library'` is a conversation about the element library: it
+   *  resumes only library conversations, and never carries a project. */
   async open(
     sessionId: string | null,
-    opts: { model?: string; permissionMode?: PermissionMode; project?: string; firstPrompt?: string } = {},
+    opts: { model?: string; permissionMode?: PermissionMode; project?: string; scope?: 'library'; firstPrompt?: string } = {},
   ): Promise<LiveSession> {
     if (sessionId) {
+      const refused = this.refusal(sessionId, { library: opts.scope === 'library', project: opts.project });
+      if (refused) throw new Error(refused);
       const existing = this.get(sessionId);
       if (existing) return existing;
       const pending = this.opening.get(sessionId);
@@ -125,7 +161,7 @@ export class SessionManager {
 
   private async openEngine(
     sessionId: string | null,
-    opts: { model?: string; permissionMode?: PermissionMode; project?: string; firstPrompt?: string },
+    opts: { model?: string; permissionMode?: PermissionMode; project?: string; scope?: 'library'; firstPrompt?: string },
   ): Promise<LiveSession> {
     let title: string | undefined;
     if (sessionId) {
@@ -139,8 +175,11 @@ export class SessionManager {
     } else {
       title = titleFromPrompt(opts.firstPrompt);
     }
-    const project = opts.project ?? (sessionId ? this.projects[sessionId] : undefined);
-    const { project: _p, firstPrompt: _f, ...rest } = opts;
+    const tag = sessionId ? this.projects[sessionId] : undefined;
+    // a library conversation resumed anywhere is still about the library
+    const library = opts.scope === 'library' || tag === LIBRARY_TAG;
+    const project = library ? undefined : (opts.project ?? tag);
+    const { project: _p, scope: _s, firstPrompt: _f, ...rest } = opts;
     const only = await this.offeredCommands();
     const session = new LiveSession({
       cwd: this.projectDir,
@@ -156,6 +195,7 @@ export class SessionManager {
       ...(this.accountId ? { permissionMode: 'auto' as const } : {}),
       ...rest,
       ...(project ? { project } : {}),
+      ...(library ? { scope: 'library' as const } : {}),
       ...(title ? { title } : {}),
       ...(only ? { onlyCommands: only } : {}),
       // On a shared server one click must not rewrite a folder's rules for good.
@@ -173,8 +213,9 @@ export class SessionManager {
       },
     });
     this.live.set(session.sessionId, session);
-    if (project && this.projects[session.sessionId] !== project) {
-      this.projects[session.sessionId] = project;
+    const newTag = library ? LIBRARY_TAG : project;
+    if (newTag && this.projects[session.sessionId] !== newTag) {
+      this.projects[session.sessionId] = newTag;
       this.writeJson(PROJECTS_FILE, this.projects);
     }
     console.log(
@@ -210,15 +251,33 @@ export class SessionManager {
     return this.info.probe;
   }
 
-  /** Every conversation in this folder, or only those about one app project.
-   *  The project case reads just the tagged ids: no folder scan, no cap. */
-  async list(project?: string): Promise<SessionSummary[]> {
+  /** Every conversation in this folder, or only those about one app project,
+   *  or (`scope: 'library'`) only the element library's. The narrowed cases
+   *  read just the tagged ids: no folder scan, no cap. */
+  /** Which element a library conversation is about — set by the element's
+   *  page (a new chat there, or a draft's chat following it into the element
+   *  it became). Library conversations only. */
+  setSubject(sessionId: string, subject: string): string | null {
+    if (!SUBJECT_RE.test(subject)) return 'not an element';
+    const tag = this.projects[sessionId];
+    const live = this.get(sessionId);
+    if (tag !== LIBRARY_TAG && live?.scope !== 'library') return 'not a library conversation';
+    if (this.subjects[sessionId] !== subject) {
+      this.subjects[sessionId] = subject;
+      this.writeJson(SUBJECTS_FILE, this.subjects);
+    }
+    return null;
+  }
+
+  async list(project?: string, scope?: 'library', subject?: string): Promise<SessionSummary[]> {
     let persisted;
-    if (project) {
+    const want = scope === 'library' ? LIBRARY_TAG : project;
+    if (want) {
       const ids = Object.entries(this.projects)
-        .filter(([, p]) => p === project)
+        .filter(([, p]) => p === want)
         .map(([id]) => id);
-      const found = await Promise.all(ids.map((id) => getSessionInfo(id, { dir: this.projectDir })));
+      const info = this.dependencies.getSessionInfo ?? getSessionInfo;
+      const found = await Promise.all(ids.map((id) => info(id, { dir: this.projectDir })));
       persisted = found.filter((s): s is NonNullable<typeof s> => Boolean(s));
     } else {
       persisted = await listSessions({ dir: this.projectDir, limit: 200 });
@@ -236,7 +295,8 @@ export class SessionManager {
         gitBranch: s.gitBranch,
         live: Boolean(live),
         status: live?.status,
-        ...(tag ? { project: tag } : {}),
+        ...(tag === LIBRARY_TAG ? { scope: 'library' as const } : tag ? { project: tag } : {}),
+        ...(this.subjects[s.sessionId] ? { subject: this.subjects[s.sessionId] } : {}),
         ...(u ? { costUsd: u.totalCostUsd, turns: u.numTurns } : {}),
       };
     });
@@ -252,9 +312,16 @@ export class SessionManager {
         live: true,
         status: s.status,
         ...(s.project ? { project: s.project } : {}),
+        ...(s.scope ? { scope: s.scope } : {}),
+        ...(this.subjects[s.sessionId] ? { subject: this.subjects[s.sessionId] } : {}),
       });
     }
     rows.sort((a, b) => b.lastModified - a.lastModified);
+    if (scope === 'library') {
+      const lib = rows.filter((r) => r.scope === 'library');
+      // an element's page lists that element's conversations alone
+      return subject ? lib.filter((r) => r.subject === subject) : lib;
+    }
     return project ? rows.filter((r) => r.project === project) : rows;
   }
 
@@ -301,6 +368,10 @@ export class SessionManager {
     if (sessionId in this.projects) {
       delete this.projects[sessionId];
       this.writeJson(PROJECTS_FILE, this.projects);
+    }
+    if (sessionId in this.subjects) {
+      delete this.subjects[sessionId];
+      this.writeJson(SUBJECTS_FILE, this.subjects);
     }
   }
 
