@@ -111,6 +111,18 @@ export function splitMentions(text: string): Array<string | { mention: string }>
   return out;
 }
 
+/** A pill's token as written, from the link the markdown carries it in. The
+ *  renderer percent-encodes a link target, so a Georgian mark (სვ.9) arrives
+ *  as %E1%83%A1…; a malformed escape is left as it came. */
+export function hrefToken(href: string, prefix: string): string {
+  const raw = href.slice(prefix.length);
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 /** The pill's face: a mark as itself, an element id as the element's name. */
 export function mentionLabel(token: string, m: Mentions): { label: string; title: string; mark: string | null } {
   const mark = m.marks.find((x) => x.mark.toLowerCase() === token.toLowerCase());

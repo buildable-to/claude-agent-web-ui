@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { linkMarks } from '@/lib/mentions';
+import { hrefToken, linkMarks } from '@/lib/mentions';
 import { linkViews, type StudioView } from '@/lib/studio';
 import { Mention } from './Mention';
 import { ViewPill } from './ViewPill';
@@ -9,9 +9,9 @@ import { ViewPill } from './ViewPill';
 const components: Components = {
   a: ({ href, children, ...props }) => {
     // a mark the agent named: a pill, not a link
-    if (href && href.startsWith('mention:')) return <Mention token={href.slice('mention:'.length)} />;
+    if (href && href.startsWith('mention:')) return <Mention token={hrefToken(href, 'mention:')} />;
     // a view the agent named: a pill that frames it on the open sheet
-    if (href && href.startsWith('view:')) return <ViewPill token={href.slice('view:'.length)}>{children}</ViewPill>;
+    if (href && href.startsWith('view:')) return <ViewPill token={hrefToken(href, 'view:')}>{children}</ViewPill>;
     return (
       <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
         {children}

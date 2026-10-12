@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   compareMarks,
+  hrefToken,
   insertMention,
   linkMarks,
   matchMentions,
@@ -102,4 +103,10 @@ test('a spacing is not a mention — a stirrup run survives the composer', () =>
   const out = linkMarks('B1 takes Ø8 @200 hoops.', ['B1']);
   assert.ok(out.includes('[B1](mention:B1)'));
   assert.ok(out.includes('Ø8 @200 hoops'));
+});
+
+test('a Georgian mark comes back from its percent-encoded link', () => {
+  assert.equal(hrefToken('mention:%E1%83%A1%E1%83%95.9', 'mention:'), 'სვ.9');
+  assert.equal(hrefToken('mention:BR-1', 'mention:'), 'BR-1');
+  assert.equal(hrefToken('mention:50%', 'mention:'), '50%');
 });
