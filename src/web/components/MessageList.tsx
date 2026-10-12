@@ -63,9 +63,24 @@ export function MessageList({
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [turns, status]);
 
+  // …and when the content grows on its own while the engineer is at the
+  // bottom: a sheet picture the agent posted loads after its turn did, and
+  // the chat stayed up above it while the agent kept working (ezdxf-flask
+  // #723, Luka 2026-10-12)
+  const body = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current, inner = body.current;
+    if (!el || !inner || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <div ref={ref} className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-3xl space-y-5 px-6 py-6 max-sm:px-4">
+      <div ref={body} className="mx-auto max-w-3xl space-y-5 px-6 py-6 max-sm:px-4">
         {loading && <Skeleton />}
 
         {!loading && turns.length === 0 && (

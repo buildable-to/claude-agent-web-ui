@@ -126,6 +126,8 @@ export default function App() {
     // the library lists only its own chats: a link naming any other one
     // (a project's) opens a new library chat, not the latest
     if (page.scope === 'library' && page.conversation && !named) return;
+    // one element's page starts its own chat; the others are in the list
+    if (page.fresh && !named) return;
     const open = named ?? sessions[0];
     if (open) setSelected((s) => ({ id: open.sessionId, nonce: s.nonce + 1 }));
   }, [sessionsLoaded, sessions, selected.id, state.transcript.turns.length, state.status]);

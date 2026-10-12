@@ -31,6 +31,10 @@ export const page = {
   /** The conversation the link names (`?conversation=<id>`), read from the
    *  URL alone — a link decides, never the tab's remembered past. */
   conversation: new URLSearchParams(location.search).get('conversation'),
+  /** `?fresh=1`: the page is one element's (Element Studio) — open a new
+   *  chat unless the link names one, never the account's latest, which may be
+   *  another element's still working (ezdxf-flask #723). */
+  fresh: new URLSearchParams(location.search).get('fresh') === '1',
   /** Dev mode only (server started with --dev-auth): which folder to use. */
   account: read('account'),
 };
