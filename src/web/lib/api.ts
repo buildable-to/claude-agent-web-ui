@@ -1,4 +1,4 @@
-import type { DirectoryTree, EngineInfo, HistoryMessage, ServerConfig, SessionSummary } from '@shared/protocol';
+import type { Attachment, DirectoryTree, EngineInfo, HistoryMessage, ServerConfig, SessionSummary } from '@shared/protocol';
 import { authHeaders, authQuery, BASE, withAccount } from '@/lib/page';
 
 export class ApiError extends Error {
@@ -54,4 +54,11 @@ export const api = {
   rename: (id: string, title: string) =>
     request<{ ok: true }>(`/api/sessions/${id}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
   remove: (id: string) => request<{ ok: true }>(`/api/sessions/${id}`, { method: 'DELETE' }),
+  /** A file for the next message, into the desk's `attached/` folder. */
+  attach: (body: Blob, name: string) =>
+    request<Attachment>(`/api/attachments?name=${encodeURIComponent(name)}`, {
+      method: 'POST',
+      body,
+      headers: { 'content-type': body.type || 'application/octet-stream' },
+    }),
 };

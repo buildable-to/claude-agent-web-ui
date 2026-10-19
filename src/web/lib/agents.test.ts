@@ -183,5 +183,5 @@ test('the dock lists every sub-agent of a turn that still has one running, runni
 });
 
 function user(): Turn {
-  return { kind: 'user', id: 'u', text: 'hi', images: 0 };
+  return { kind: 'user', id: 'u', text: 'hi', images: [] };
 }

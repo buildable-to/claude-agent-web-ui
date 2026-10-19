@@ -1,7 +1,7 @@
 import type { PermissionMode, PermissionRequest, ServerMessage, SessionMeta, SessionStatus } from '@shared/protocol';
 import {
   addLocalUserTurn, addNote, addStoppedWork, applyMessage, closeStoppedWork, emptyTranscript, markCut,
-  reopenLastTurn, stoppedWorkNotices, stopOrphanTasks, type Transcript,
+  reopenLastTurn, stoppedWorkNotices, stopOrphanTasks, type ToolImage, type Transcript,
 } from './transcript';
 
 export type SessionState = {
@@ -46,7 +46,7 @@ type Action =
   | { type: 'reset'; sessionId: string | null }
   | { type: 'history'; transcript: Transcript }
   | { type: 'server'; message: ServerMessage }
-  | { type: 'local_user'; id: string; text: string }
+  | { type: 'local_user'; id: string; text: string; images?: ToolImage[] }
   | { type: 'starting' }
   | { type: 'choose'; model?: string | null; permissionMode?: PermissionMode }
   | { type: 'error'; message: string | null };
@@ -81,7 +81,7 @@ export function sessionReducer(state: SessionState, action: Action): SessionStat
       return { ...state, transcript, loadingHistory: false };
     }
     case 'local_user':
-      return { ...state, transcript: addLocalUserTurn(state.transcript, action.id, action.text) };
+      return { ...state, transcript: addLocalUserTurn(state.transcript, action.id, action.text, action.images) };
     case 'starting':
       return { ...state, status: 'starting', error: null, stopNotified: false, busySince: Date.now() };
     case 'choose':

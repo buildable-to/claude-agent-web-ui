@@ -1,15 +1,17 @@
-import { AlertTriangle, Eye, Info } from 'lucide-react';
-import { memo } from 'react';
+import { AlertTriangle, Eye, FileText, Info } from 'lucide-react';
+import { memo, useState } from 'react';
 import { splitMentions } from '@/lib/mentions';
 import { useMentions } from '@/lib/mentionsLive';
+import { isPicturePath, splitAttachments } from '@/lib/attachments';
 import { splitViewing } from '@/lib/studio';
 import { showLine, useViewing } from '@/lib/viewingLive';
-import { HIDDEN_TOOLS, NO_RESPONSE, type Block, type ToolBlock, type Turn } from '@/lib/transcript';
+import { HIDDEN_TOOLS, NO_RESPONSE, type Block, type ToolBlock, type ToolImage, type Turn } from '@/lib/transcript';
 import Markdown from './Markdown';
 import { Mention } from './Mention';
 import { FanOut } from './AgentBoard';
 import { isFanOut } from '@/lib/agents';
 import { Steps } from './Steps';
+import { Lightbox } from './Lightbox';
 
 type Piece = { kind: 'text'; text: string } | { kind: 'steps'; blocks: ToolBlock[] };
 
@@ -35,6 +37,33 @@ function groupBlocks(blocks: Block[]): Piece[] {
   return pieces;
 }
 
+/** The pictures the engineer sent, small in their bubble; click for large. */
+function SentPictures({ images, below }: { images: ToolImage[]; below: boolean }) {
+  const [shown, setShown] = useState<number | null>(null);
+  return (
+    <div className={`flex flex-wrap gap-1.5 ${below ? 'mt-2' : ''}`}>
+      {images.map((im, i) => (
+        <button
+          key={i}
+          type="button"
+          onClick={() => setShown(i)}
+          title="See the picture"
+          className="block h-24 max-w-48 overflow-hidden rounded-[10px] border border-white/15 bg-black/20"
+        >
+          {im.data ? (
+            <img src={`data:${im.mediaType};base64,${im.data}`} alt="" className="h-full w-auto object-cover" />
+          ) : (
+            <span className="flex h-full items-center px-3 text-[12px] text-white/70">picture</span>
+          )}
+        </button>
+      ))}
+      {shown !== null && (
+        <Lightbox pictures={images.map((image) => ({ image }))} index={shown} onClose={() => setShown(null)} />
+      )}
+    </div>
+  );
+}
+
 type TurnProps = {
   turn: Turn;
 };
@@ -48,7 +77,11 @@ export const TurnView = memo(function TurnView({ turn }: TurnProps) {
     // the looking-at line the composer put in front of the words is folded
     // back off: a small grey line above the bubble says what the agent was
     // told the engineer was looking at, and the bubble holds only their words
-    const { viewing, text } = splitViewing(turn.text);
+    // and the attached files' lines off the end: the pictures show as
+    // themselves, any other file as its name
+    const { viewing, text: said } = splitViewing(turn.text);
+    const { text, files } = splitAttachments(said);
+    const others = files.filter((f) => !isPicturePath(f));
     return (
       <div className="rise flex flex-col items-end pl-10">
         {viewing && (
@@ -66,9 +99,19 @@ export const TurnView = memo(function TurnView({ turn }: TurnProps) {
           {splitMentions(text).map((part, i) =>
             typeof part === 'string' ? part : <Mention key={i} token={part.mention} light />,
           )}
-          {turn.images > 0 && (
-            <div className="mt-1 text-[12px] text-white/70">
-              {turn.images} image{turn.images === 1 ? '' : 's'} attached
+          {turn.images.length > 0 && <SentPictures images={turn.images} below={!!text} />}
+          {others.length > 0 && (
+            <div className={`flex flex-wrap gap-1.5 ${text || turn.images.length ? 'mt-2' : ''}`}>
+              {others.map((f) => (
+                <span
+                  key={f}
+                  title={f}
+                  className="flex max-w-full items-center gap-1.5 rounded-[10px] border border-white/15 bg-black/20 px-2.5 py-1.5 text-[12px]"
+                >
+                  <FileText className="size-3.5 shrink-0 text-white/70" />
+                  <span className="truncate">{f.slice(f.lastIndexOf('/') + 1)}</span>
+                </span>
+              ))}
             </div>
           )}
         </div>

@@ -1,7 +1,11 @@
 import { page } from '@/lib/page';
-import { ArrowUp, AtSign, Bell, BellOff, Eye, EyeOff, SlashSquare, Square, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import type { CommandInfo, SessionStatus } from '@shared/protocol';
+import { ArrowUp, AtSign, Bell, BellOff, Eye, EyeOff, FileText, Loader2, Paperclip, SlashSquare, Square, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
+import type { Attachment, CommandInfo, SessionStatus } from '@shared/protocol';
+import { api } from '@/lib/api';
+import { fileSize, MAX_FILE_BYTES, MAX_FILES, shrinkPicture, transferFiles } from '@/lib/attachments';
+import type { ToolImage } from '@/lib/transcript';
+import { Lightbox } from './Lightbox';
 import { money } from '@/lib/format';
 import type { Viewing } from '@/lib/studio';
 import {
@@ -22,7 +26,9 @@ type Props = {
   value: string;
   onChange: (value: string) => void;
   status: SessionStatus | 'connecting';
-  onSend: (text: string) => void;
+  /** The words, the files attached beside them (already uploaded), and how
+   *  the pictures among them look. */
+  onSend: (text: string, files: Attachment[], pictures: ToolImage[]) => void;
   onStop: () => void;
   /** Sub-agents or backgrounded commands still run after the turn: Stop stays. */
   backgroundWork?: boolean;
@@ -51,6 +57,9 @@ type Props = {
   chime?: boolean;
   onChime?: () => void;
 };
+
+/** A file on its way into the next message. */
+type Attached = { key: string; name: string; size: number; picture?: ToolImage; file?: Attachment };
 
 /** The picker is open while the draft is a lone "/word" with no space yet. */
 function pickerQuery(value: string): string | null {
@@ -87,6 +96,15 @@ export function ChatInput({
   const [active, setActive] = useState(0);
   const [caret, setCaret] = useState(0);
   const [pendingCaret, setPendingCaret] = useState<number | null>(null);
+  /** Files for the next message, in the order attached; `file` is set once
+   *  the upload is done, and Send waits for every one. */
+  const [attached, setAttached] = useState<Attached[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [shown, setShown] = useState<number | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const uploading = attached.some((a) => !a.file);
+  const pictures = attached.filter((a) => a.picture).map((a) => a.picture!);
   const busy = status === 'running' || status === 'requires_action';
   const stoppable = busy || backgroundWork;
   const disabled = status === 'connecting';
@@ -129,10 +147,45 @@ export function ChatInput({
 
   const submit = () => {
     const t = value.trim();
-    if (!t || disabled) return;
-    onSend(t);
+    if ((!t && !attached.length) || disabled || uploading) return;
+    onSend(t, attached.map((a) => a.file!), pictures);
     onChange('');
+    setAttached([]);
+    setAttachError(null);
   };
+
+  const attach = (files: File[]) => {
+    setAttachError(null);
+    const room = MAX_FILES - attached.length;
+    if (files.length > room) setAttachError(`At most ${MAX_FILES} files in one message`);
+    for (const file of files.slice(0, Math.max(0, room))) {
+      if (file.size > MAX_FILE_BYTES) {
+        setAttachError(`${file.name} is too large to attach (95 MB at most)`);
+        continue;
+      }
+      const key = crypto.randomUUID();
+      setAttached((as) => [...as, { key, name: file.name || 'file', size: file.size }]);
+      void (async () => {
+        try {
+          const shrunk = file.type.startsWith('image/') ? await shrinkPicture(file) : null;
+          const body = shrunk?.blob ?? file;
+          const name = shrunk?.name ?? (file.name || 'file');
+          if (shrunk) {
+            const picture = { mediaType: shrunk.mediaType, data: shrunk.data };
+            setAttached((as) => as.map((a) => (a.key === key ? { ...a, picture } : a)));
+          }
+          const uploaded = await api.attach(body, name);
+          setAttached((as) => as.map((a) => (a.key === key ? { ...a, file: uploaded } : a)));
+        } catch (err) {
+          setAttached((as) => as.filter((a) => a.key !== key));
+          setAttachError(`${file.name || 'The file'} could not be attached: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      })();
+    }
+    ref.current?.focus();
+  };
+
+  const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer.types).includes('Files');
 
   const pick = (c: CommandInfo) => {
     onChange(`/${c.name} `);
@@ -217,7 +270,25 @@ export function ChatInput({
 
   return (
     <div className="mx-auto w-full max-w-3xl px-5 pt-2 pb-3 max-sm:px-3">
-      <div className="focus-glow relative rounded-[22px] border border-line-2 bg-panel shadow-strong transition">
+      <div
+        className={`focus-glow relative rounded-[22px] border bg-panel shadow-strong transition ${dragging ? 'border-ink-2' : 'border-line-2'}`}
+        onDragOver={(e) => {
+          if (!hasFiles(e)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          setDragging(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+        }}
+        onDrop={(e) => {
+          if (!hasFiles(e)) return;
+          e.preventDefault();
+          setDragging(false);
+          const files = transferFiles(e.dataTransfer);
+          if (files.length) attach(files);
+        }}
+      >
         {pickerOpen && (
           <CommandPicker
             commands={commands}
@@ -283,6 +354,60 @@ export function ChatInput({
             </button>
           </div>
         )}
+        {/* Files attached (paperclip, Ctrl+V or a drop) ride with the next
+            message. Pictures show as themselves — click one to see it large;
+            other files as their name and size. */}
+        {(attached.length > 0 || attachError) && (
+          <div className="flex flex-wrap items-center gap-2 px-3 pt-2.5">
+            {attached.map((a) => (
+              <span key={a.key} className="relative">
+                {a.picture ? (
+                  <button
+                    type="button"
+                    onClick={() => setShown(pictures.indexOf(a.picture!))}
+                    title={a.name}
+                    className="block size-14 overflow-hidden rounded-lg border border-line-2 bg-panel-2"
+                  >
+                    <img src={`data:${a.picture.mediaType};base64,${a.picture.data}`} alt={a.name} className="size-full object-cover" />
+                  </button>
+                ) : (
+                  <span
+                    title={a.name}
+                    className="flex h-14 max-w-56 items-center gap-2 rounded-lg border border-line-2 bg-panel-2 pr-3 pl-2.5"
+                  >
+                    <FileText className="size-4 shrink-0 text-ink-3" />
+                    <span className="min-w-0">
+                      <span className="block truncate text-[12px] font-medium text-ink">{a.name}</span>
+                      <span className="block text-[11px] text-ink-3">{fileSize(a.size)}</span>
+                    </span>
+                  </span>
+                )}
+                {!a.file && (
+                  <span className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/45 text-white">
+                    <Loader2 className="size-4 animate-spin" />
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setAttached((as) => as.filter((x) => x.key !== a.key))}
+                  title="Leave this file out"
+                  aria-label={`Leave ${a.name} out`}
+                  className="absolute -top-1.5 -right-1.5 rounded-full border border-line-2 bg-panel-3 p-0.5 text-ink-2 hover:text-ink"
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            ))}
+            {attachError && <span className="text-[11.5px] text-danger">{attachError}</span>}
+          </div>
+        )}
+        {shown !== null && pictures.length > 0 && (
+          <Lightbox
+            pictures={pictures.map((image) => ({ image }))}
+            index={Math.min(Math.max(0, shown), pictures.length - 1)}
+            onClose={() => setShown(null)}
+          />
+        )}
         {/* A chosen mark should look chosen while you type, not only after
             sending. A textarea cannot colour a word, so a mirror behind it
             paints the same text with every "@mark" as a pill; the textarea's
@@ -310,6 +435,12 @@ export function ChatInput({
             setCaret(e.target.selectionStart ?? e.target.value.length);
           }}
           onKeyDown={onKey}
+          onPaste={(e) => {
+            const files = transferFiles(e.clipboardData, true);
+            if (!files.length) return;
+            e.preventDefault();
+            attach(files);
+          }}
           onKeyUp={trackCaret}
           onClick={trackCaret}
           onSelect={trackCaret}
@@ -346,7 +477,7 @@ export function ChatInput({
           <button
             type="button"
             onClick={submit}
-            disabled={disabled || !value.trim()}
+            disabled={disabled || uploading || (!value.trim() && !attached.length)}
             title={busy ? 'Send a follow-up — it runs after the current step' : 'Send'}
             aria-label="Send"
             className="sendbtn active:translate-y-px"
@@ -371,6 +502,25 @@ export function ChatInput({
               <SlashSquare className="size-3.5" /> Skills
               {commands.length > 0 && <span className="text-ink-3">{commands.length}</span>}
             </button>
+            <button
+              type="button"
+              onClick={() => fileInput.current?.click()}
+              className="flex h-7 items-center gap-1 rounded-md px-2 text-[11.5px] font-medium text-ink-2 hover:bg-panel-2 hover:text-ink"
+              title="Attach files — or paste with Ctrl+V, or drop them on the box"
+            >
+              <Paperclip className="size-3.5" /> Attach
+            </button>
+            <input
+              ref={fileInput}
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => {
+                const files = Array.from(e.currentTarget.files ?? []);
+                e.currentTarget.value = '';
+                if (files.length) attach(files);
+              }}
+            />
             {items.length > 0 && (
               <button
                 type="button"

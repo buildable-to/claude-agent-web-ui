@@ -202,3 +202,20 @@ test('an engine that dies under a follow-up sent mid-turn closes the turn above 
   assert.equal(assistantTurn(cut, 0).open, false);
   assert.ok(cut.turns.some((x) => x.kind === 'note' && x.text === CUT_TEXT));
 });
+
+test('pictures the engineer sent show in their bubble, live and after a reload', () => {
+  const shot = { mediaType: 'image/png', data: 'AAAA' };
+  const sent = addLocalUserTurn(emptyTranscript(), 'u1', 'this clash', [shot]);
+  assert.deepEqual((sent.turns[0] as Extract<Turn, { kind: 'user' }>).images, [shot]);
+
+  const reloaded = applyHistory(emptyTranscript(), [
+    hist('user', 'u1', { role: 'user', content: [png, { type: 'text', text: 'this clash' }] }),
+    hist('user', 'u2', { role: 'user', content: [png] }),
+  ]);
+  const turns = reloaded.turns as Array<Extract<Turn, { kind: 'user' }>>;
+  assert.equal(turns.length, 2);
+  assert.deepEqual(turns[0]!.images, [shot]);
+  assert.equal(turns[0]!.text, 'this clash');
+  // a picture alone, no words, is still the engineer speaking
+  assert.equal(turns[1]!.images.length, 1);
+});
