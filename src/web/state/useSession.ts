@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
-import type { PermissionMode } from '@shared/protocol';
+import type { Attachment, PermissionMode } from '@shared/protocol';
+import type { ToolImage } from '@/lib/transcript';
 import { api } from '@/lib/api';
 import { page } from '@/lib/page';
 import { applyHistory, emptyTranscript } from '@/lib/transcript';
@@ -93,11 +94,13 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requested, nonce]);
 
-  const send = useCallback((text: string) => {
+  /** `pictures`: what the attached pictures look like, for the bubble at once. */
+  const send = useCallback((text: string, files: Attachment[] = [], pictures: ToolImage[] = []) => {
     const uuid = crypto.randomUUID();
-    dispatch({ type: 'local_user', id: uuid, text });
+    dispatch({ type: 'local_user', id: uuid, text, images: pictures });
+    const withFiles = files.length ? { files } : {};
     if (attached.current && activeId.current) {
-      ws.send({ type: 'send', sessionId: activeId.current, text, uuid });
+      ws.send({ type: 'send', sessionId: activeId.current, text, uuid, ...withFiles });
       return;
     }
     if (activeId.current === null) awaitingNew.current = true;
@@ -107,6 +110,7 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
       sessionId: activeId.current,
       text,
       uuid,
+      ...withFiles,
       ...chosen.current,
       ...(page.project ? { project: page.project } : {}),
     });

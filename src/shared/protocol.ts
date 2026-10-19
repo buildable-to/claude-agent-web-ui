@@ -65,6 +65,16 @@ export type SessionMeta = {
   totalCostUsd?: number;
 };
 
+/** A file the engineer attached to a message: already uploaded
+ *  (POST /api/attachments) into the desk's `attached/` folder. */
+export type Attachment = {
+  name: string;
+  /** Relative to the desk folder, e.g. `attached/2026-10-19/beam.dxf`. */
+  path: string;
+  mediaType: string;
+  size: number;
+};
+
 export type ClientMessage =
   /** Subscribe to a session that is already running. Answered with `attached` or `not_live`. */
   | {
@@ -80,13 +90,14 @@ export type ClientMessage =
       type: 'start';
       sessionId: string | null;
       text: string;
+      files?: Attachment[];
       uuid?: string;
       model?: string;
       permissionMode?: PermissionMode;
       /** The app project this conversation is about (a project session id). */
       project?: string;
     }
-  | { type: 'send'; sessionId: string; text: string; uuid?: string }
+  | { type: 'send'; sessionId: string; text: string; files?: Attachment[]; uuid?: string }
   | {
       type: 'permission';
       sessionId: string;

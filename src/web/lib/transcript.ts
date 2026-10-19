@@ -62,7 +62,7 @@ export type Block = TextBlock | ToolBlock;
 export const NO_RESPONSE = 'No response requested.';
 
 export type Turn =
-  | { kind: 'user'; id: string; text: string; images: number }
+  | { kind: 'user'; id: string; text: string; images: ToolImage[] }
   | { kind: 'assistant'; id: string; blocks: Block[]; open: boolean }
   | { kind: 'note'; id: string; level: 'info' | 'error'; text: string; stoppedWork?: StoppedWorkNotice };
 
@@ -262,12 +262,12 @@ export function applyHistory(t: Transcript, history: HistoryMessage[]): Transcri
 /** The engineer's own words, shown the moment they send. Sent mid-turn (a
  *  follow-up that runs after the current step) they must not close the turn:
  *  its step is still running, and its pill must keep saying so. */
-export function addLocalUserTurn(t: Transcript, id: string, text: string): Transcript {
+export function addLocalUserTurn(t: Transcript, id: string, text: string, images: ToolImage[] = []): Transcript {
   if (t.seen.has(id)) return t;
   const seen = new Set(t.seen).add(id);
   const last = t.turns[t.turns.length - 1];
-  if (last && last.kind === 'user' && last.text === text && last.images === 0) return { ...t, seen };
-  return { ...t, seen, turns: [...t.turns, { kind: 'user', id, text, images: 0 }] };
+  if (last && last.kind === 'user' && last.text === text && !last.images.length && !images.length) return { ...t, seen };
+  return { ...t, seen, turns: [...t.turns, { kind: 'user', id, text, images }] };
 }
 
 export function addNote(t: Transcript, id: string, level: 'info' | 'error', text: string): Transcript {
@@ -389,9 +389,9 @@ export function closeOpenTurn(t: Transcript): Transcript {
 
 /** The engineer said something. The same words twice in a row (the page's
  *  own echo, then the engine's record of the command) show once. */
-function addUserTurn(t: Transcript, id: string, text: string, images: number): Transcript {
+function addUserTurn(t: Transcript, id: string, text: string, images: ToolImage[]): Transcript {
   const last = t.turns[t.turns.length - 1];
-  if (last && last.kind === 'user' && last.text === text && last.images === images) return t;
+  if (last && last.kind === 'user' && last.text === text && last.images.length === images.length) return t;
   const closed = closeOpenTurn(t);
   return { ...closed, turns: [...closed.turns, { kind: 'user', id, text, images }] };
 }
@@ -564,14 +564,14 @@ function applyUser(
     .filter((r) => r.type === 'text')
     .map((r) => String(r.text ?? ''))
     .join('\n');
-  const images = raws.filter((r) => r.type === 'image').length;
+  const { images } = resultParts(raws);
 
   // Claude Code records a slash command the engineer typed as a tagged user
   // message; show it as their own words. Its local output is a note.
   const command = /<command-name>([^<]*)<\/command-name>(?:.*?<command-args>([^<]*)<\/command-args>)?/s.exec(rawText);
   if (command) {
     const line = `${command[1]!.trim()} ${(command[2] ?? '').trim()}`.trim();
-    return addUserTurn({ ...t, seen }, uuid, line.startsWith('/') ? line : `/${line}`, 0);
+    return addUserTurn({ ...t, seen }, uuid, line.startsWith('/') ? line : `/${line}`, []);
   }
   const stdout = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(rawText);
   if (stdout) {
@@ -589,7 +589,7 @@ function applyUser(
 
   // Injected context (system reminders etc.) is not something the user typed.
   const text = rawText.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim();
-  if (!text && !images) return { ...t, seen };
+  if (!text && !images.length) return { ...t, seen };
 
   // An interruption is worth a note. Anything else the engine adds in the
   // user's voice (a skill's text after "Launching skill", other context) is

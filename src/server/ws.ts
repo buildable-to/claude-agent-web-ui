@@ -2,6 +2,7 @@ import type { IncomingMessage, Server } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, PermissionMode, ServerMessage } from '../shared/protocol.js';
 import type { Account } from './accounts.js';
+import { checkAttachments } from './attachments.js';
 import type { LiveSession } from './live-session.js';
 import type { Scope, SessionManager } from './session-manager.js';
 
@@ -112,6 +113,7 @@ export function attachWebSocket(
         case 'start': {
           if (state.draining()) throw new Error(DRAINING_MESSAGE);
           refuseUnlessAsking(msg.permissionMode);
+          const files = checkAttachments(ctx.dir, msg.files);
           // The token's project is signed; the page's is not. A token that names
           // a project pins it, otherwise the page may say which one. A library
           // token has no project at all: whatever the page says is ignored.
@@ -134,7 +136,7 @@ export function attachWebSocket(
           }
           attach(session);
           const text = msg.text.trim();
-          if (text) session.send(text, msg.uuid);
+          if (text || files.length) session.send(text, msg.uuid, files);
           return;
         }
         case 'detach': {
@@ -145,9 +147,10 @@ export function attachWebSocket(
         case 'send': {
           if (state.draining()) throw new Error(DRAINING_MESSAGE);
           const session = requireLive(msg.sessionId);
+          const files = checkAttachments(ctx.dir, msg.files);
           const text = msg.text.trim();
-          if (!text) return;
-          session.send(text, msg.uuid);
+          if (!text && !files.length) return;
+          session.send(text, msg.uuid, files);
           return;
         }
         case 'permission': {

@@ -9,6 +9,7 @@ import { loadConfig, projectName } from './config.js';
 import { createDrainController } from './drain.js';
 import { SessionManager } from './session-manager.js';
 import { buildTree } from './tree.js';
+import { MAX_FILE_BYTES, saveAttachment } from './attachments.js';
 import { attachWebSocket, scopeOf, type Resolver } from './ws.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -81,6 +82,26 @@ app.use(`${base}/api`, (req, res, next) => {
 app.use(`${base}/api`, express.json({ limit: '2mb' }));
 
 const ctxOf = (res: express.Response) => res.locals.ctx as Ctx;
+
+// A file the engineer attaches to a message, sent as its raw bytes before
+// the message itself; the message then names what this returns.
+app.post(
+  `${base}/api/attachments`,
+  express.raw({ type: () => true, limit: MAX_FILE_BYTES }),
+  (req, res, next) => {
+    try {
+      const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      const name = firstString(req.query.name) ?? 'file';
+      res.json(saveAttachment(ctxOf(res).dir, name, req.header('content-type') ?? '', body));
+    } catch (err) {
+      if (err instanceof Error && /too large|empty/.test(err.message)) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      next(err);
+    }
+  },
+);
 
 app.get(`${base}/api/config`, (_req, res) => {
   const { dir, account } = ctxOf(res);

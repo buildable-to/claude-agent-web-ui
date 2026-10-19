@@ -82,6 +82,18 @@ requested." (its reply to a terminal command) is not the agent speaking.
 A conversation renders the same live and after a reload: nothing on the page
 depends on the clock or on the live stream, only on what the transcript keeps.
 
+## Attaching files
+
+**Attach** under the composer, Ctrl+V (a screenshot, a copied picture or file), or a drop on
+the box puts files in the next message — any kind, 95 MB each, ten at most. Each
+is uploaded at once into the folder's `attached/<day>/` and the message ends with
+one `Attached file: attached/<day>/<name>` line per file, so the agent opens it
+like any file there (a DXF, a PDF, a spreadsheet). Pictures are shrunk in the
+browser to 2048 px on the long side and also ride inline, in front of the words,
+so the agent sees them without a step. A paste of pictures that also carries plain
+text (Excel copies a range as text and a picture) pastes the text. The bubble shows the
+pictures and each other file by name.
+
 ## Skills
 
 Type `/` in the composer (or click **Skills**) to pick a skill. The list comes

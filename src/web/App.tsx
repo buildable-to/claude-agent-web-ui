@@ -21,6 +21,7 @@ import { ws, type ConnectionState } from './lib/ws';
 import { useEngineInfo } from './state/useEngineInfo';
 import { useSession } from './state/useSession';
 import { useSessions } from './state/useSessions';
+import { withAttachments } from './lib/attachments';
 
 ws.connect();
 
@@ -356,13 +357,13 @@ export default function App() {
           value={draft}
           onChange={setDraft}
           status={state.status}
-          onSend={(text) => {
+          onSend={(text, files, pictures) => {
             // the page that embeds us keeps the first thing the engineer says
             // on an empty project as its brief (Buildable issue #405) — the
             // brief is what the ENGINEER wrote, so the looking-at line stays
             // out of it and goes only to the engine, in front of the words
-            tellParent({ type: 'user_message', text });
-            session.send(withViewing(text, viewingOn));
+            if (text) tellParent({ type: 'user_message', text });
+            session.send(withViewing(withAttachments(text, files), viewingOn), files, pictures);
           }}
           onStop={session.interrupt}
           backgroundWork={background}

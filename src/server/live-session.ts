@@ -14,6 +14,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import type {
   EngineInfo,
+  Attachment,
   PermissionRequest,
   ServerMessage,
   SessionMeta,
@@ -21,6 +22,7 @@ import type {
   StoppedWorkNotice,
 } from '../shared/protocol.js';
 import { toCommandInfo, toModelOptions } from './commands.js';
+import { userContent } from './attachments.js';
 import { forReplay, replaySince } from './replay.js';
 import type { WorkState } from './work-journal.js';
 
@@ -288,11 +290,11 @@ export class LiveSession {
     return () => this.subscribers.delete(fn);
   }
 
-  send(text: string, uuid?: string) {
+  send(text: string, uuid?: string, files: readonly Attachment[] = []) {
     if (this.closed) throw new Error('Session is closed');
     const message: SDKUserMessage = {
       type: 'user',
-      message: { role: 'user', content: text },
+      message: { role: 'user', content: userContent(this.cwd, text, files) },
       parent_tool_use_id: null,
       session_id: this.sessionId,
       uuid: (uuid ?? randomUUID()) as SDKUserMessage['uuid'],
