@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { installedSkills, toCommandInfo, toModelOptions } from './commands.js';
+import { installedSkills, skillCommands, toCommandInfo, toModelOptions } from './commands.js';
 
 test('installed skills come from <claude dir>/skills, the frontmatter name first', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'skills-'));
@@ -14,6 +14,19 @@ test('installed skills come from <claude dir>/skills, the frontmatter name first
   await mkdir(join(dir, '.claude/skills/not-a-skill'), { recursive: true });
   const names = await installedSkills([join(dir, '.claude'), join(dir, 'missing')]);
   assert.deepEqual([...names].sort(), ['compose-project', 'edit-drawing']);
+});
+
+test("a skill's description: plain, quoted or a folded block", async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'skills-'));
+  const put = async (name: string, head: string) => {
+    await mkdir(join(dir, 'skills', name), { recursive: true });
+    await writeFile(join(dir, 'skills', name, 'SKILL.md'), `---\nname: ${name}\n${head}\n---\nbody`);
+  };
+  await put('a', 'description: Plain words');
+  await put('b', 'description: "Quoted, \\"with\\" marks"');
+  await put('c', 'description: >-\n  Folded over\n  two lines.\nmetadata: x');
+  const got = Object.fromEntries((await skillCommands([dir])).map((c) => [c.name, c.description]));
+  assert.deepEqual(got, { a: 'Plain words', b: 'Quoted, "with" marks', c: 'Folded over two lines.' });
 });
 
 test('the composer offers only the installed skills when told so', () => {

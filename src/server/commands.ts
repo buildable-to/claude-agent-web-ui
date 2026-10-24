@@ -67,12 +67,13 @@ export function claudeConfigDir(): string {
 }
 
 /**
- * Names of the skills installed under each Claude dir: `<dir>/skills/<folder>/SKILL.md`,
- * named by the frontmatter `name:` when there is one, else the folder (as Claude Code does).
- * Dirs without skills are skipped.
+ * The skills installed under each Claude dir: `<dir>/skills/<folder>/SKILL.md`,
+ * named by the frontmatter `name:` when there is one, else the folder (as
+ * Claude Code does), with the frontmatter's `description:`. Dirs without
+ * skills are skipped.
  */
-export async function installedSkills(dirs: string[]): Promise<Set<string>> {
-  const names = new Set<string>();
+export async function skillCommands(dirs: string[]): Promise<CommandInfo[]> {
+  const out: CommandInfo[] = [];
   for (const dir of dirs) {
     const root = join(dir, 'skills');
     let folders: string[];
@@ -90,10 +91,37 @@ export async function installedSkills(dirs: string[]): Promise<Set<string>> {
       }
       const frontmatter = /^---\s*\n([\s\S]*?)\n---/.exec(text)?.[1] ?? '';
       const name = /^name:\s*(.+)$/m.exec(frontmatter)?.[1]?.trim().replace(/^["']|["']$/g, '');
-      names.add(name || folder);
+      out.push({ name: name || folder, description: frontmatterText(frontmatter, 'description') });
     }
   }
-  return names;
+  return out;
+}
+
+/** One frontmatter field as plain text: a plain, quoted or block (`>-`) value. */
+function frontmatterText(frontmatter: string, key: string): string {
+  const m = new RegExp(`^${key}:[ \\t]*(.*)$`, 'm').exec(frontmatter);
+  if (!m) return '';
+  const v = (m[1] ?? '').trim();
+  if (v.startsWith('>') || v.startsWith('|')) {
+    const lines: string[] = [];
+    for (const line of frontmatter.slice(m.index + m[0].length).split('\n').slice(1)) {
+      if (line && !/^\s/.test(line)) break;
+      if (line.trim()) lines.push(line.trim());
+    }
+    return lines.join(' ');
+  }
+  if (v.startsWith('"')) {
+    try {
+      return String(JSON.parse(v));
+    } catch {
+      // not JSON: take it as written
+    }
+  }
+  return v.replace(/^["']|["']$/g, '');
+}
+
+export async function installedSkills(dirs: string[]): Promise<Set<string>> {
+  return new Set((await skillCommands(dirs)).map((c) => c.name));
 }
 
 const never: AsyncIterable<SDKUserMessage> = {

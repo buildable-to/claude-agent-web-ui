@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { sessionTitle, shouldReap, titleFromPrompt } from './session-manager.js';
+import { SessionManager, sessionTitle, shouldReap, titleFromPrompt, type SharedEngineInfo } from './session-manager.js';
 
 test("a conversation's title: the engineer's name for it, else the summary, else how it began", () => {
   assert.equal(sessionTitle({ customTitle: 'Gutters', summary: 'Making gutters', firstPrompt: 'make the gutter' }), 'Gutters');
@@ -35,4 +38,43 @@ test('a conversation whose sub-agents still work is not reaped as idle', () => {
   assert.equal(shouldReap({ status: 'idle', lastActivity: hours(6.5), backgroundWork: 6 }, now), true);
   // a turn in flight is never reaped
   assert.equal(shouldReap({ status: 'running', lastActivity: hours(9), backgroundWork: 0 }, now), false);
+});
+
+async function skill(dir: string, name: string, description: string) {
+  await mkdir(join(dir, 'skills', name), { recursive: true });
+  await writeFile(join(dir, 'skills', name, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\nbody`);
+}
+
+test("each account is offered Buildable's skills and its own, never another account's (ezdxf-flask#807)", async () => {
+  const root = await mkdtemp(join(tmpdir(), 'accounts-'));
+  const home = join(root, 'home');
+  await skill(home, 'make-element', 'Make an element');
+  await skill(join(root, 'a', '.claude'), 'our-hollow-core', '"HC slabs"');
+  await mkdir(join(root, 'b'), { recursive: true });
+  const was = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = home;
+  try {
+    const shared: SharedEngineInfo = { value: null, probe: null };
+    const a = new SessionManager(join(root, 'a'), 'a', shared);
+    const b = new SessionManager(join(root, 'b'), 'b', shared);
+    // account a's engine reports its own skill: what is shared drops it
+    await (a as unknown as { shareInfo(i: unknown): Promise<void> }).shareInfo({
+      commands: [
+        { name: 'make-element', description: 'Make an element' },
+        { name: 'our-hollow-core', description: 'HC slabs' },
+      ],
+      models: [],
+    });
+    assert.deepEqual((await b.engineInfo()).commands.map((c) => c.name), ['make-element']);
+    assert.deepEqual((await a.engineInfo()).commands, [
+      { name: 'make-element', description: 'Make an element' },
+      { name: 'our-hollow-core', description: 'HC slabs' },
+    ]);
+    // a skill b writes now is offered on b's next ask, with no new engine
+    await skill(join(root, 'b', '.claude'), 'b-rules', 'Our rules');
+    assert.deepEqual((await b.engineInfo()).commands.map((c) => c.name), ['b-rules', 'make-element']);
+  } finally {
+    if (was === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = was;
+  }
 });
