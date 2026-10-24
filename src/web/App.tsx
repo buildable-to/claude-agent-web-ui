@@ -14,7 +14,8 @@ import { api } from './lib/api';
 import { armChime, chime, readChimeOn, shouldChime, shouldChimeForStoppedWork, writeChimeOn } from './lib/chime';
 import { EMPTY_MENTIONS, type Mentions } from './lib/mentions';
 import { listenForMentions, MentionsProvider } from './lib/mentionsLive';
-import { BASE, page, tellParent } from './lib/page';
+import { BASE, page, tabStore, tellParent } from './lib/page';
+import { firstAsk, withoutAsk } from './lib/ask';
 import { hearParent, readViewing, withViewing, type Viewing } from './lib/studio';
 import { canShow, showViewing, ViewingProvider } from './lib/viewingLive';
 import { ws, type ConnectionState } from './lib/ws';
@@ -123,6 +124,22 @@ export default function App() {
     if (!embed || autoPicked.current || !sessionsLoaded) return;
     autoPicked.current = true; // decided once, on the first list; "New" later means new
     if (selected.id !== null || state.transcript.turns.length > 0 || state.status !== 'idle') return;
+    // a stranger's request, typed before the project existed (ezdxf-flask
+    // #809): a new chat starts on it at once. The address loses it first,
+    // so a reload of the panel alone opens the latest chat instead.
+    if (page.ask) {
+      const text = page.ask;
+      try {
+        history.replaceState(history.state, '', withoutAsk(location.href));
+      } catch {
+        // the guard below still holds
+      }
+      if (firstAsk(text, page.project, tabStore())) {
+        tellParent({ type: 'user_message', text });
+        session.send(text);
+        return;
+      }
+    }
     const named = page.conversation ? sessions.find((x) => x.sessionId === page.conversation) : undefined;
     // an element's page: the chat its address names (a draft's chat that
     // followed it into the element, not yet in this element's list) opens;

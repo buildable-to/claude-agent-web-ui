@@ -4,14 +4,17 @@
 // and an empty `project=` instead. Standalone use has none of these.
 
 import { readParam, readScope, type Store } from '@/lib/scope';
+import { readAsk } from '@/lib/ask';
 
-function session(): Store | null {
+/** The tab's own storage, or null in a window that refuses it. */
+export function tabStore(): Store | null {
   try {
     return sessionStorage;
   } catch {
     return null;
   }
 }
+const session = tabStore;
 
 function read(name: string): string | null {
   return readParam(location.search, name, session());
@@ -41,6 +44,10 @@ export const page = {
     const s = new URLSearchParams(location.search).get('subject');
     return s && /^(draft:)?[A-Za-z0-9_-]{1,64}$/.test(s) ? s : null;
   })(),
+  /** `?ask=<words>`: the request typed before the project existed
+   *  (ezdxf-flask #809) — sent once as a new chat's first message. Never
+   *  with a conversation named. */
+  ask: readAsk(location.search),
   /** Dev mode only (server started with --dev-auth): which folder to use. */
   account: read('account'),
 };
