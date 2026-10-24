@@ -9,7 +9,7 @@ import {
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineInfo, HistoryMessage, SessionSummary } from '../shared/protocol.js';
-import { claudeConfigDir, installedSkills, probeEngine } from './commands.js';
+import { claudeConfigDir, installedSkills, probeEngine, skillCommands } from './commands.js';
 import { LiveSession, type LiveSessionOptions } from './live-session.js';
 import { WorkJournal } from './work-journal.js';
 
@@ -64,8 +64,10 @@ const USAGE_FILE = '.agent-usage.json';
 
 export type Usage = { totalCostUsd: number; numTurns: number; at: number };
 
-/** Commands/models are the same for every folder seeded from one template
- *  under one home; probe the engine once per process, not once per account. */
+/** Models and Buildable's own skills are the same for every folder seeded
+ *  from one template under one home; probe the engine once per process, not
+ *  once per account. An account's own skills (`<folder>/.claude/skills`,
+ *  ezdxf-flask#807) are never in it: each account adds its own, read fresh. */
 export type SharedEngineInfo = { value: EngineInfo | null; probe: Promise<EngineInfo> | null };
 
 /** What a persisted conversation is called: the engineer's own name for it,
@@ -205,7 +207,7 @@ export class SessionManager {
         ...(project ? { BUILDABLE_PROJECT: project } : {}),
       },
       onInfo: (info) => {
-        this.info.value = info;
+        void this.shareInfo(info);
       },
       onResult: (u) => {
         this.usage[session.sessionId] = u;
@@ -233,16 +235,38 @@ export class SessionManager {
     return installedSkills([claudeConfigDir(), join(this.projectDir, '.claude')]);
   }
 
-  /** Commands, skills and models for this project, from a live engine or a one-off probe. */
+  /** What every account may see of one engine's lists: in accounts mode only
+   *  the home's skills, never the account's own (another account would be
+   *  offered them). */
+  private async shareInfo(info: EngineInfo): Promise<void> {
+    if (!this.accountId) {
+      this.info.value = info;
+      return;
+    }
+    const home = await installedSkills([claudeConfigDir()]);
+    this.info.value = { ...info, commands: info.commands.filter((c) => home.has(c.name)) };
+  }
+
+  /** Commands, skills and models for this project, from a live engine or a
+   *  one-off probe; in accounts mode with the folder's own skills as they
+   *  are on disk now, so a skill the engineer just wrote is offered. */
   async engineInfo(): Promise<EngineInfo> {
+    const shared = await this.sharedInfo();
+    if (!this.accountId) return shared;
+    const seen = new Set(shared.commands.map((c) => c.name));
+    const own = (await skillCommands([join(this.projectDir, '.claude')], true)).filter((c) => !seen.has(c.name));
+    return { ...shared, commands: [...shared.commands, ...own].sort((a, b) => a.name.localeCompare(b.name)) };
+  }
+
+  private async sharedInfo(): Promise<EngineInfo> {
     if (this.info.value) return this.info.value;
     if (!this.info.probe) {
       this.info.probe = this.offeredCommands()
         .then((only) => probeEngine(this.projectDir, only))
-        .then((info) => {
-          this.info.value = info;
+        .then(async (info) => {
+          await this.shareInfo(info);
           console.log(`[sessions] discovered ${info.commands.length} commands, ${info.models.length} models`);
-          return info;
+          return this.info.value ?? info;
         })
         .finally(() => {
           this.info.probe = null;
