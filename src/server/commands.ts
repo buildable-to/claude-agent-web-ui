@@ -6,7 +6,7 @@ import {
   type SDKUserMessage,
   type SlashCommand,
 } from '@anthropic-ai/claude-agent-sdk';
-import { readdir, readFile } from 'node:fs/promises';
+import { lstat, readdir, readFile, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { CommandInfo, EngineInfo, ModelOption } from '../shared/protocol.js';
@@ -70,14 +70,17 @@ export function claudeConfigDir(): string {
  * The skills installed under each Claude dir: `<dir>/skills/<folder>/SKILL.md`,
  * named by the frontmatter `name:` when there is one, else the folder (as
  * Claude Code does), with the frontmatter's `description:`. Dirs without
- * skills are skipped.
+ * skills are skipped. `noLinks`: an account's folder, where its agent writes —
+ * a link anywhere on the way (`.claude/skills` pointing at another account's)
+ * is skipped, never followed.
  */
-export async function skillCommands(dirs: string[]): Promise<CommandInfo[]> {
+export async function skillCommands(dirs: string[], noLinks = false): Promise<CommandInfo[]> {
   const out: CommandInfo[] = [];
   for (const dir of dirs) {
     const root = join(dir, 'skills');
     let folders: string[];
     try {
+      if (noLinks && (await realpath(root)) !== join(await realpath(join(dir, '..')), '.claude', 'skills')) continue;
       folders = await readdir(root);
     } catch {
       continue;
@@ -85,6 +88,10 @@ export async function skillCommands(dirs: string[]): Promise<CommandInfo[]> {
     for (const folder of folders) {
       let text: string;
       try {
+        if (noLinks) {
+          const [d, f] = await Promise.all([lstat(join(root, folder)), lstat(join(root, folder, 'SKILL.md'))]);
+          if (!d.isDirectory() || !f.isFile()) continue;
+        }
         text = await readFile(join(root, folder, 'SKILL.md'), 'utf8');
       } catch {
         continue;

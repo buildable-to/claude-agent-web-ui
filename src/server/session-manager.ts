@@ -254,7 +254,7 @@ export class SessionManager {
     const shared = await this.sharedInfo();
     if (!this.accountId) return shared;
     const seen = new Set(shared.commands.map((c) => c.name));
-    const own = (await skillCommands([join(this.projectDir, '.claude')])).filter((c) => !seen.has(c.name));
+    const own = (await skillCommands([join(this.projectDir, '.claude')], true)).filter((c) => !seen.has(c.name));
     return { ...shared, commands: [...shared.commands, ...own].sort((a, b) => a.name.localeCompare(b.name)) };
   }
 

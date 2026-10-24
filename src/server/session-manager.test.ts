@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -73,6 +73,10 @@ test("each account is offered Buildable's skills and its own, never another acco
     // a skill b writes now is offered on b's next ask, with no new engine
     await skill(join(root, 'b', '.claude'), 'b-rules', 'Our rules');
     assert.deepEqual((await b.engineInfo()).commands.map((c) => c.name), ['b-rules', 'make-element']);
+    // a's agent links its skills folder to b's: refused, not followed
+    await rm(join(root, 'a', '.claude', 'skills'), { recursive: true });
+    await symlink(join(root, 'b', '.claude', 'skills'), join(root, 'a', '.claude', 'skills'));
+    assert.deepEqual((await a.engineInfo()).commands.map((c) => c.name), ['make-element']);
   } finally {
     if (was === undefined) delete process.env.CLAUDE_CONFIG_DIR;
     else process.env.CLAUDE_CONFIG_DIR = was;
