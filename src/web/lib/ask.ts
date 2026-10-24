@@ -8,11 +8,15 @@ import type { Store } from './scope';
 export const ASK_CHARS = 4000;
 
 /** The request in the address, or null. Read from the URL alone: a
- *  remembered one must never send again. A link that names a conversation
- *  opens that conversation and never sends. */
+ *  remembered one must never send again. Only the studio's own embed sends
+ *  it — `embed=1`, the project and the signed token all in this same
+ *  address — never a bare link that leans on a token the tab remembers
+ *  (that link would run someone else's words in this account). A link
+ *  that names a conversation opens that conversation and never sends. */
 export function readAsk(search: string): string | null {
   const params = new URLSearchParams(search);
   if (params.get('conversation')) return null;
+  if (params.get('embed') !== '1' || !params.get('project') || !params.get('token')) return null;
   const v = (params.get('ask') ?? '').trim();
   return v ? v.slice(0, ASK_CHARS) : null;
 }
