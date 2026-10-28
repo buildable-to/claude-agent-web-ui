@@ -24,7 +24,7 @@ export function ElementCard({ id, name, children }: { id: string; name?: string;
     return onAnswers(() => setAnswer(answerOf(id)));
   }, [id, title]);
   const origin = parentOrigin();
-  const thumb = origin ? `${origin}/element-v4/saved/${encodeURIComponent(id)}/thumb.svg?view=section` : null;
+  const thumb = origin ? `${origin}/element-v4/saved/${encodeURIComponent(id)}/thumb.svg?view=side` : null;
   const open = () => {
     if (origin && window.parent !== window) tellParent({ type: 'element', id, title: name || title, facts });
     else if (origin) window.open(`${origin}/element-v4/saved/${encodeURIComponent(id)}/drawings`, '_blank');
