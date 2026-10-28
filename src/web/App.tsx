@@ -23,6 +23,7 @@ import { useEngineInfo } from './state/useEngineInfo';
 import { useSession } from './state/useSession';
 import { useSessions } from './state/useSessions';
 import { withAttachments } from './lib/attachments';
+import { setSender } from './lib/sendBus';
 
 ws.connect();
 
@@ -307,6 +308,12 @@ export default function App() {
   const projectName = config?.projectName ?? '…';
   const projectDir = config?.projectDir ?? '';
   const pending = state.pending[0];
+
+  // an element card's Use / Make new answers the agent as typed words (#942)
+  useEffect(() => {
+    setSender((text) => session.send(withViewing(text, viewingOn), [], []));
+    return () => setSender(null);
+  }, [session, viewingOn]);
 
   return (
     <MentionsProvider value={mentions}>

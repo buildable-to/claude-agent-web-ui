@@ -5,6 +5,7 @@ import { hrefToken, linkMarks } from '@/lib/mentions';
 import { linkViews, type StudioView } from '@/lib/studio';
 import { Mention } from './Mention';
 import { ViewPill } from './ViewPill';
+import { ElementCard } from './ElementCard';
 
 const components: Components = {
   a: ({ href, children, ...props }) => {
@@ -12,6 +13,8 @@ const components: Components = {
     if (href && href.startsWith('mention:')) return <Mention token={hrefToken(href, 'mention:')} />;
     // a view the agent named: a pill that frames it on the open sheet
     if (href && href.startsWith('view:')) return <ViewPill token={hrefToken(href, 'view:')}>{children}</ViewPill>;
+    // an element the agent found in the library: a card — View, Use, Make new (#942)
+    if (href && href.startsWith('element:')) return <ElementCard id={hrefToken(href, 'element:')}>{children}</ElementCard>;
     return (
       <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
         {children}
@@ -40,7 +43,7 @@ export default function Markdown({
         components={components}
         // react-markdown drops hrefs on protocols it does not know; a mark's
         // "mention:" href must survive to reach the pill above
-        urlTransform={(url) => (url.startsWith('mention:') || url.startsWith('view:') ? url : defaultUrlTransform(url))}
+        urlTransform={(url) => (url.startsWith('mention:') || url.startsWith('view:') || url.startsWith('element:') ? url : defaultUrlTransform(url))}
       >
         {text}
       </ReactMarkdown>
