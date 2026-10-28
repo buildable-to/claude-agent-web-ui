@@ -14,7 +14,8 @@ const components: Components = {
     // a view the agent named: a pill that frames it on the open sheet
     if (href && href.startsWith('view:')) return <ViewPill token={hrefToken(href, 'view:')}>{children}</ViewPill>;
     // an element the agent found in the library: a card — View, Use, Make new (#942)
-    if (href && href.startsWith('element:')) return <ElementCard id={hrefToken(href, 'element:')}>{children}</ElementCard>;
+    if (href && href.startsWith('element:'))
+      return <ElementCard id={hrefToken(href, 'element:')} name={typeof props.title === 'string' ? props.title : undefined}>{children}</ElementCard>;
     return (
       <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
         {children}
