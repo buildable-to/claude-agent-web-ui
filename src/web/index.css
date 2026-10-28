@@ -642,7 +642,7 @@ select.pill {
 }
 .el-row-main:focus-visible, .el-row-actions button:focus-visible { outline: 2px solid #e6e6e6; outline-offset: 2px; border-radius: 6px; }
 .el-row-pic {
-  flex: none; width: 44px; height: 36px;
+  flex: none; width: 44px; height: 52px;
   display: grid; place-items: center;
   border: 1px solid #222; border-radius: 6px; background: #000; overflow: hidden;
 }
