@@ -23,7 +23,7 @@ import { useEngineInfo } from './state/useEngineInfo';
 import { useSession } from './state/useSession';
 import { useSessions } from './state/useSessions';
 import { withAttachments } from './lib/attachments';
-import { setSender } from './lib/sendBus';
+import { answerElement, setSender } from './lib/sendBus';
 
 ws.connect();
 
@@ -114,6 +114,9 @@ export default function App() {
     return hearParent((m) => {
       const v = readViewing(m);
       if (v) setViewing(v);
+      // the studio's element popup answered Use this / Make new (#942)
+      if (m.type === 'element_answer' && typeof m.id === 'string' && (m.kind === 'use' || m.kind === 'new'))
+        answerElement(m.id, m.kind);
     });
   }, []);
   const viewingOn = viewing && viewing.text !== viewingOff ? viewing : null;
