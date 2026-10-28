@@ -1,7 +1,7 @@
 // An element the agent found in the library (Buildable #942), as a library
 // row: a framed outline, its name, one line of size. The row opens it (the
-// studio shows its drawings over the page, with Use this / Make new); Use and
-// New answer the agent here. The agent writes it as a link:
+// studio shows its drawings over the page, with Use this); Use answers the
+// agent here: the project places its own copy of it. The agent writes it as a link:
 // [title · size · used](element:<id> "full name").
 import { Box, Check } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -40,11 +40,8 @@ export function ElementCard({ id, name, children }: { id: string; name?: string;
       </button>
       {answer === 'use' ? (
         <span className="el-row-chosen"><Check className="size-3.5" /> Using</span>
-      ) : answer === 'new' ? (
-        <span className="el-row-chosen muted">New asked</span>
       ) : (
         <span className="el-row-actions">
-          <button type="button" className="new" onClick={() => answerElement(id, 'new')} title="Make a new element instead">New</button>
           <button type="button" className="use" onClick={() => answerElement(id, 'use')}>Use</button>
         </span>
       )}
