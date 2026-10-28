@@ -23,7 +23,7 @@ import { useEngineInfo } from './state/useEngineInfo';
 import { useSession } from './state/useSession';
 import { useSessions } from './state/useSessions';
 import { withAttachments } from './lib/attachments';
-import { answerElement, setSender } from './lib/sendBus';
+import { setSender, chooseElement } from './lib/sendBus';
 
 ws.connect();
 
@@ -114,9 +114,8 @@ export default function App() {
     return hearParent((m) => {
       const v = readViewing(m);
       if (v) setViewing(v);
-      // the studio's element popup answered Use this / Make new (#942)
-      if (m.type === 'element_answer' && typeof m.id === 'string' && (m.kind === 'use' || m.kind === 'new'))
-        answerElement(m.id, m.kind);
+      // the studio's element popup answered Use this (#942)
+      if (m.type === 'element_answer' && typeof m.id === 'string' && m.kind === 'use') chooseElement(m.id);
     });
   }, []);
   const viewingOn = viewing && viewing.text !== viewingOff ? viewing : null;
@@ -312,7 +311,7 @@ export default function App() {
   const projectDir = config?.projectDir ?? '';
   const pending = state.pending[0];
 
-  // an element card's Use / Make new answers the agent as typed words (#942)
+  // an element card's Use answers the agent as typed words (#942)
   useEffect(() => {
     setSender((text) => session.send(withViewing(text, viewingOn), [], []));
     return () => setSender(null);

@@ -6,11 +6,15 @@
 import { Box, Check } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { parentOrigin, tellParent } from '@/lib/page';
-import { answerElement, answerOf, knowElement, onAnswers } from '@/lib/sendBus';
+import { isUsed, knowElement, onAnswers, chooseElement } from '@/lib/sendBus';
 
-function text(children: React.ReactNode): string {
-  if (typeof children === 'string') return children;
-  if (Array.isArray(children)) return children.map(text).join('');
+// the link's words as plain text — an emphasis or code inside a name is
+// still its words
+function text(node: React.ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(text).join('');
+  if (node && typeof node === 'object' && 'props' in node)
+    return text((node as { props: { children?: React.ReactNode } }).props.children);
   return '';
 }
 
@@ -18,10 +22,10 @@ export function ElementCard({ id, name, children }: { id: string; name?: string;
   const [first, ...rest] = (text(children) || id).split(' · ');
   const title = first ?? id;
   const facts = rest.join(' · ');
-  const [answer, setAnswer] = useState(answerOf(id));
+  const [used, setUsed] = useState(isUsed(id));
   useEffect(() => {
     knowElement(id, title);
-    return onAnswers(() => setAnswer(answerOf(id)));
+    return onAnswers(() => setUsed(isUsed(id)));
   }, [id, title]);
   const origin = parentOrigin();
   const thumb = origin ? `${origin}/element-v4/saved/${encodeURIComponent(id)}/thumb.svg?view=side` : null;
@@ -30,7 +34,7 @@ export function ElementCard({ id, name, children }: { id: string; name?: string;
     else if (origin) window.open(`${origin}/element-v4/saved/${encodeURIComponent(id)}/drawings`, '_blank');
   };
   return (
-    <span className={`el-row ${answer ? `is-${answer}` : ''}`}>
+    <span className={`el-row ${used ? 'is-use' : ''}`}>
       <button type="button" className="el-row-main" onClick={open} title={`${name || title} — open its drawings`}>
         <span className="el-row-pic">{thumb ? <img src={thumb} alt="" loading="lazy" /> : <Box className="size-4" />}</span>
         <span className="el-row-words">
@@ -38,11 +42,11 @@ export function ElementCard({ id, name, children }: { id: string; name?: string;
           {facts && <span className="el-row-facts">{facts}</span>}
         </span>
       </button>
-      {answer === 'use' ? (
+      {used ? (
         <span className="el-row-chosen"><Check className="size-3.5" /> Using</span>
       ) : (
         <span className="el-row-actions">
-          <button type="button" className="use" onClick={() => answerElement(id, 'use')}>Use</button>
+          <button type="button" className="use" onClick={() => chooseElement(id)}>Use</button>
         </span>
       )}
     </span>
