@@ -62,8 +62,9 @@ export type Block = TextBlock | ToolBlock;
 export const NO_RESPONSE = 'No response requested.';
 
 export type Turn =
-  | { kind: 'user'; id: string; text: string; images: ToolImage[] }
-  | { kind: 'assistant'; id: string; blocks: Block[]; open: boolean }
+  /** `at`: when it was said (ms), if known */
+  | { kind: 'user'; id: string; text: string; images: ToolImage[]; at?: number }
+  | { kind: 'assistant'; id: string; blocks: Block[]; open: boolean; at?: number }
   | { kind: 'note'; id: string; level: 'info' | 'error'; text: string; stoppedWork?: StoppedWorkNotice };
 
 type StreamState = {
@@ -134,13 +135,13 @@ function withTurn(t: Transcript, index: number, turn: Turn): Transcript {
   return { ...t, turns };
 }
 
-function ensureOpenAssistant(t: Transcript, id: string): [Transcript, number] {
+function ensureOpenAssistant(t: Transcript, id: string, at?: number): [Transcript, number] {
   const idx = lastAssistant(t);
   if (idx !== -1) return [t, idx];
   // a turn left open above a follow-up the engineer sent mid-turn is done
   // once the engine speaks after that follow-up
   const turns = closeAll(t.turns);
-  const turn: Turn = { kind: 'assistant', id, blocks: [], open: true };
+  const turn: Turn = { kind: 'assistant', id, blocks: [], open: true, ...(at ? { at } : {}) };
   return [{ ...t, turns: [...turns, turn] }, turns.length];
 }
 
@@ -221,11 +222,11 @@ function serverToolResult(raw: AnyRecord): { id: string; text: string } | null {
 export function applyMessage(t: Transcript, msg: SDKMessage): Transcript {
   switch (msg.type) {
     case 'stream_event':
-      return msg.parent_tool_use_id ? t : applyStreamEvent(t, msg.event as unknown as AnyRecord, msg.uuid);
+      return msg.parent_tool_use_id ? t : applyStreamEvent(t, msg.event as unknown as AnyRecord, msg.uuid, Date.now());
     case 'assistant':
-      return applyAssistant(t, msg.uuid, msg.message as unknown, msg.parent_tool_use_id);
+      return applyAssistant(t, msg.uuid, msg.message as unknown, msg.parent_tool_use_id, saidAt(msg));
     case 'user':
-      return applyUser(t, msg.uuid ?? cryptoId(), msg.message as unknown, msg.parent_tool_use_id, msg.isSynthetic);
+      return applyUser(t, msg.uuid ?? cryptoId(), msg.message as unknown, msg.parent_tool_use_id, msg.isSynthetic, saidAt(msg));
     case 'result':
       return applyResult(t, msg);
     case 'system':
@@ -245,8 +246,9 @@ export function applyHistory(t: Transcript, history: HistoryMessage[]): Transcri
   let next = t;
   let lastMessageUuid: string | undefined;
   for (const h of history) {
-    if (h.type === 'assistant') next = applyAssistant(next, h.uuid, h.message, h.parent_tool_use_id);
-    else if (h.type === 'user') next = applyUser(next, h.uuid, h.message, h.parent_tool_use_id, false);
+    const at = saidAt(h);
+    if (h.type === 'assistant') next = applyAssistant(next, h.uuid, h.message, h.parent_tool_use_id, at);
+    else if (h.type === 'user') next = applyUser(next, h.uuid, h.message, h.parent_tool_use_id, false, at);
     else if (h.stoppedWork) {
       // Only a notice at its recorded position may stop preceding tasks.
       // An unanchored fallback could follow work from a later resumed engine.
@@ -267,7 +269,13 @@ export function addLocalUserTurn(t: Transcript, id: string, text: string, images
   const seen = new Set(t.seen).add(id);
   const last = t.turns[t.turns.length - 1];
   if (last && last.kind === 'user' && last.text === text && !last.images.length && !images.length) return { ...t, seen };
-  return { ...t, seen, turns: [...t.turns, { kind: 'user', id, text, images }] };
+  return { ...t, seen, turns: [...t.turns, { kind: 'user', id, text, images, at: Date.now() }] };
+}
+
+/** When a message was said (the server stamps live ones; history reads the saved time). */
+function saidAt(msg: { timestamp?: unknown }): number | undefined {
+  const at = typeof msg.timestamp === 'string' ? Date.parse(msg.timestamp) : NaN;
+  return Number.isFinite(at) ? at : undefined;
 }
 
 export function addNote(t: Transcript, id: string, level: 'info' | 'error', text: string): Transcript {
@@ -389,11 +397,11 @@ export function closeOpenTurn(t: Transcript): Transcript {
 
 /** The engineer said something. The same words twice in a row (the page's
  *  own echo, then the engine's record of the command) show once. */
-function addUserTurn(t: Transcript, id: string, text: string, images: ToolImage[]): Transcript {
+function addUserTurn(t: Transcript, id: string, text: string, images: ToolImage[], at?: number): Transcript {
   const last = t.turns[t.turns.length - 1];
   if (last && last.kind === 'user' && last.text === text && last.images.length === images.length) return t;
   const closed = closeOpenTurn(t);
-  return { ...closed, turns: [...closed.turns, { kind: 'user', id, text, images }] };
+  return { ...closed, turns: [...closed.turns, { kind: 'user', id, text, images, ...(at ? { at } : {}) }] };
 }
 
 function stripAnsi(s: string): string {
@@ -407,10 +415,10 @@ function cryptoId() {
     : Math.random().toString(36).slice(2);
 }
 
-function applyStreamEvent(t: Transcript, ev: AnyRecord, uuid: string): Transcript {
+function applyStreamEvent(t: Transcript, ev: AnyRecord, uuid: string, saidAtMs?: number): Transcript {
   switch (ev.type) {
     case 'message_start': {
-      const [next, idx] = ensureOpenAssistant(t, `turn-${uuid}`);
+      const [next, idx] = ensureOpenAssistant(t, `turn-${uuid}`, saidAtMs);
       const turn = next.turns[idx]!;
       if (turn.kind !== 'assistant') return next;
       return {
@@ -422,7 +430,7 @@ function applyStreamEvent(t: Transcript, ev: AnyRecord, uuid: string): Transcrip
       const raw = isRecord(ev.content_block) ? ev.content_block : null;
       const index = typeof ev.index === 'number' ? ev.index : -1;
       if (!raw || index < 0) return t;
-      const [next, idx] = ensureOpenAssistant(t, `turn-${uuid}`);
+      const [next, idx] = ensureOpenAssistant(t, `turn-${uuid}`, saidAtMs);
       const stream = next.stream ?? { positions: [], byIndex: {}, finalized: 0 };
       let block = toBlock(raw);
       if (!block) return next;
@@ -472,7 +480,7 @@ function applyStreamEvent(t: Transcript, ev: AnyRecord, uuid: string): Transcrip
   }
 }
 
-function applyAssistant(t: Transcript, uuid: string, message: unknown, parentToolUseId: string | null): Transcript {
+function applyAssistant(t: Transcript, uuid: string, message: unknown, parentToolUseId: string | null, at?: number): Transcript {
   if (t.seen.has(uuid)) return t;
   const seen = new Set(t.seen).add(uuid);
   const raws = contentBlocks(message);
@@ -493,7 +501,7 @@ function applyAssistant(t: Transcript, uuid: string, message: unknown, parentToo
     return next;
   }
 
-  let [next, idx] = ensureOpenAssistant({ ...t, seen }, `turn-${uuid}`);
+  let [next, idx] = ensureOpenAssistant({ ...t, seen }, `turn-${uuid}`, at);
   for (const raw of raws) {
     const serverResult = serverToolResult(raw);
     if (serverResult) {
@@ -541,6 +549,7 @@ function applyUser(
   message: unknown,
   parentToolUseId: string | null,
   isSynthetic: boolean | undefined,
+  at?: number,
 ): Transcript {
   if (t.seen.has(uuid)) return t;
   const seen = new Set(t.seen).add(uuid);
@@ -571,7 +580,7 @@ function applyUser(
   const command = /<command-name>([^<]*)<\/command-name>(?:.*?<command-args>([^<]*)<\/command-args>)?/s.exec(rawText);
   if (command) {
     const line = `${command[1]!.trim()} ${(command[2] ?? '').trim()}`.trim();
-    return addUserTurn({ ...t, seen }, uuid, line.startsWith('/') ? line : `/${line}`, []);
+    return addUserTurn({ ...t, seen }, uuid, line.startsWith('/') ? line : `/${line}`, [], at);
   }
   const stdout = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(rawText);
   if (stdout) {
@@ -598,7 +607,7 @@ function applyUser(
     return addNote(t, uuid, 'info', text.replace(/^\[|\]$/g, ''));
   }
   if (isSynthetic || /^Base directory for this skill:/.test(text)) return { ...t, seen };
-  return addUserTurn({ ...t, seen }, uuid, text, images);
+  return addUserTurn({ ...t, seen }, uuid, text, images, at);
 }
 
 function applyResult(t: Transcript, msg: Extract<SDKMessage, { type: 'result' }>): Transcript {

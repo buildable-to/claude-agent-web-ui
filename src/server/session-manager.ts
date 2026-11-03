@@ -109,6 +109,7 @@ export class SessionManager {
       queryFactory?: LiveSessionOptions['queryFactory'];
       getSessionInfo?: typeof getSessionInfo;
       getSessionMessages?: typeof getSessionMessages;
+      sessionTimes?: typeof sessionTimes;
     } = {},
   ) {
     this.info = shared ?? { value: null, probe: null };
@@ -354,12 +355,14 @@ export class SessionManager {
       dir: this.projectDir,
       includeSystemMessages: true,
     });
+    const times = (this.dependencies.sessionTimes ?? sessionTimes)(this.projectDir, sessionId);
     const history: HistoryMessage[] = messages.map((m) => ({
       type: m.type,
       uuid: m.uuid,
       session_id: m.session_id,
       message: m.message,
       parent_tool_use_id: m.parent_tool_use_id,
+      ...(times.has(m.uuid) ? { timestamp: times.get(m.uuid) } : {}),
     }));
     for (const notice of this.stoppedWork(sessionId)) {
       const line: HistoryMessage = {
@@ -461,4 +464,28 @@ export class SessionManager {
       }
     }
   }
+}
+
+/** When each message of a saved conversation was said, by uuid. The SDK's
+ *  history leaves the time out; the engine's own file has it on every line. */
+export function sessionTimes(projectDir: string, sessionId: string): Map<string, string> {
+  const times = new Map<string, string>();
+  if (!/^[A-Za-z0-9-]+$/.test(sessionId)) return times;
+  const file = join(claudeConfigDir(), 'projects', projectDir.replace(/[^A-Za-z0-9]/g, '-'), `${sessionId}.jsonl`);
+  let text: string;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch {
+    return times;
+  }
+  for (const line of text.split('\n')) {
+    if (!line) continue;
+    try {
+      const row = JSON.parse(line) as { uuid?: unknown; timestamp?: unknown };
+      if (typeof row.uuid === 'string' && typeof row.timestamp === 'string') times.set(row.uuid, row.timestamp);
+    } catch {
+      // a torn last line while the engine writes
+    }
+  }
+  return times;
 }

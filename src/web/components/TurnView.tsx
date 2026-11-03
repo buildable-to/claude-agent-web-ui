@@ -12,6 +12,7 @@ import { FanOut } from './AgentBoard';
 import { isFanOut } from '@/lib/agents';
 import { Steps } from './Steps';
 import { Lightbox } from './Lightbox';
+import { saidAtLabel } from '@/lib/saidAt';
 
 type Piece = { kind: 'text'; text: string } | { kind: 'steps'; blocks: ToolBlock[] };
 
@@ -68,6 +69,14 @@ type TurnProps = {
   turn: Turn;
 };
 
+function SaidAt({ at, className = '' }: { at: number; className?: string }) {
+  return (
+    <time dateTime={new Date(at).toISOString()} title={new Date(at).toLocaleString()} className={`text-[11px] text-ink-3 ${className}`}>
+      {saidAtLabel(at)}
+    </time>
+  );
+}
+
 export const TurnView = memo(function TurnView({ turn }: TurnProps) {
   const mentions = useMentions();
   const marks = mentions.marks.map((m) => m.mark);
@@ -115,6 +124,7 @@ export const TurnView = memo(function TurnView({ turn }: TurnProps) {
             </div>
           )}
         </div>
+        {turn.at && <SaidAt at={turn.at} className="mt-1" />}
       </div>
     );
   }
@@ -150,6 +160,7 @@ export const TurnView = memo(function TurnView({ turn }: TurnProps) {
         </svg>
       </span>
       <div className="min-w-0 flex-1 space-y-2.5">
+        {turn.at && <SaidAt at={turn.at} className="-mb-1.5 block" />}
         {pieces.map((piece, i) => {
           if (piece.kind === 'text') {
             const streamingText = turn.open && i === pieces.length - 1;
