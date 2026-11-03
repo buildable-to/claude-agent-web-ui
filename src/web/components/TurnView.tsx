@@ -160,7 +160,6 @@ export const TurnView = memo(function TurnView({ turn }: TurnProps) {
         </svg>
       </span>
       <div className="min-w-0 flex-1 space-y-2.5">
-        {turn.at && <SaidAt at={turn.at} className="-mb-1.5 block" />}
         {pieces.map((piece, i) => {
           if (piece.kind === 'text') {
             const streamingText = turn.open && i === pieces.length - 1;
@@ -178,6 +177,7 @@ export const TurnView = memo(function TurnView({ turn }: TurnProps) {
           if (isFanOut(piece.blocks)) return <FanOut key={i} blocks={piece.blocks} live={turn.open} />;
           return <Steps key={i} blocks={piece.blocks} live={turn.open} />;
         })}
+        {turn.at && !turn.open && <SaidAt at={turn.at} className="block" />}
       </div>
     </div>
   );

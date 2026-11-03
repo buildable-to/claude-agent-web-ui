@@ -219,3 +219,13 @@ test('pictures the engineer sent show in their bubble, live and after a reload',
   // a picture alone, no words, is still the engineer speaking
   assert.equal(turns[1]!.images.length, 1);
 });
+
+test('a reply carries the time it finished; the engineer’s words the time they were sent', () => {
+  const t = applyHistory(emptyTranscript(), [
+    { ...hist('user', 'u1', { role: 'user', content: 'check it' }), timestamp: '2026-11-03T10:00:00Z' },
+    { ...hist('assistant', 'a1', { role: 'assistant', content: [{ type: 'text', text: 'looking' }] }), timestamp: '2026-11-03T10:00:05Z' },
+    { ...hist('assistant', 'a2', { role: 'assistant', content: [{ type: 'text', text: 'done' }] }), timestamp: '2026-11-03T10:04:00Z' },
+  ]);
+  assert.equal((t.turns[0] as Extract<Turn, { kind: 'user' }>).at, Date.parse('2026-11-03T10:00:00Z'));
+  assert.equal(assistantTurn(t, 1).at, Date.parse('2026-11-03T10:04:00Z'));
+});
