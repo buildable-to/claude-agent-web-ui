@@ -78,6 +78,14 @@ app.use(`${base}/api`, (req, res, next) => {
     res.status(status).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
+// a view-only page (an admin reading an account's chats) reads, never writes
+app.use(`${base}/api`, (req, res, next) => {
+  if (!req.path.startsWith('/admin/') && (res.locals.ctx as Ctx | undefined)?.account?.viewOnly && req.method !== 'GET') {
+    res.status(403).json({ error: 'This chat is view only' });
+    return;
+  }
+  next();
+});
 // bodies are read only for callers who passed the token check
 app.use(`${base}/api`, express.json({ limit: '2mb' }));
 
@@ -112,6 +120,7 @@ app.get(`${base}/api/config`, (_req, res) => {
     ...(account ? { account: { id: account.id, ...(account.email ? { email: account.email } : {}) } } : {}),
     ...(account?.project ? { project: account.project } : {}),
     ...(account?.scope ? { scope: account.scope } : {}),
+    ...(account?.viewOnly ? { viewOnly: true } : {}),
   };
   res.json(body);
 });

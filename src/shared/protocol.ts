@@ -181,6 +181,8 @@ export type ServerConfig = {
   project?: string;
   /** The token opened the element library (Element Studio), not a project. */
   scope?: 'library';
+  /** An admin reading this account's chats: no composer, nothing sent. */
+  viewOnly?: boolean;
 };
 
 /** Project folder listing for the files panel. */

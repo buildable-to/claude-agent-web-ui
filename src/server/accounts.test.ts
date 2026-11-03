@@ -85,3 +85,19 @@ test('dev mode picks the folder from ?account= only when there is no secret', ()
   const prod = new Accounts({ root, authSecret: SECRET, claudeConfigPath: join(root, 'claude.json') });
   assert.throws(() => prod.resolve(undefined, 'luka'), AuthError);
 });
+
+test('a view token reads one project of the account and never rewrites whose desk it is', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agents-'));
+  const accounts = new Accounts({ root, authSecret: SECRET, claudeConfigPath: join(root, 'claude.json') });
+  accounts.resolve(signToken({ sub: 'u1', email: 'owner@example.com', exp: now() + 60 }, SECRET), undefined);
+  const v = accounts.resolve(
+    signToken({ sub: 'u1', email: 'admin@example.com', sid: 'p1', view: true, exp: now() + 60 }, SECRET),
+    undefined,
+  );
+  assert.equal(v.viewOnly, true);
+  assert.equal(v.project, 'p1');
+  assert.deepEqual(JSON.parse(readFileSync(join(v.dir, '.account.json'), 'utf8')), { id: 'u1', email: 'owner@example.com' });
+  // a view token names a project; the owner's own token is not view only
+  assert.throws(() => accounts.resolve(signToken({ sub: 'u1', view: true, exp: now() + 60 }, SECRET), undefined), AuthError);
+  assert.equal(accounts.resolve(signToken({ sub: 'u1', sid: 'p1', exp: now() + 60 }, SECRET), undefined).viewOnly, undefined);
+});
