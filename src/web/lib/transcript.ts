@@ -62,7 +62,7 @@ export type Block = TextBlock | ToolBlock;
 export const NO_RESPONSE = 'No response requested.';
 
 export type Turn =
-  /** `at`: when it was said (ms), if known */
+  /** `at`: when it was said (ms), if known; a reply's is its last message's */
   | { kind: 'user'; id: string; text: string; images: ToolImage[]; at?: number }
   | { kind: 'assistant'; id: string; blocks: Block[]; open: boolean; at?: number }
   | { kind: 'note'; id: string; level: 'info' | 'error'; text: string; stoppedWork?: StoppedWorkNotice };
@@ -502,6 +502,9 @@ function applyAssistant(t: Transcript, uuid: string, message: unknown, parentToo
   }
 
   let [next, idx] = ensureOpenAssistant({ ...t, seen }, `turn-${uuid}`, at);
+  // a reply's time is its LAST message's: when the agent finished saying it
+  const opened = next.turns[idx];
+  if (at && opened?.kind === 'assistant' && opened.at !== at) next = withTurn(next, idx, { ...opened, at });
   for (const raw of raws) {
     const serverResult = serverToolResult(raw);
     if (serverResult) {
