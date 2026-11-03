@@ -19,6 +19,9 @@ export type Account = {
   /** Opened from Element Studio (the account's element library): no project,
    *  and none may be touched from this chat. Only ever from a signed claim. */
   scope?: 'library';
+  /** An admin reading this account's chats from the app (`view: true` in
+   *  the signed claim): it may read and watch, never send, answer or change. */
+  viewOnly?: true;
   dir: string;
 };
 
@@ -40,7 +43,7 @@ function fromB64url(s: string): Buffer {
   return Buffer.from(s, 'base64url');
 }
 
-export type TokenClaims = { sub: string; email?: string; sid?: string; scope?: string; exp?: number; role?: string };
+export type TokenClaims = { sub: string; email?: string; sid?: string; scope?: string; exp?: number; role?: string; view?: boolean };
 
 /** Verify an HS256 JWT and return its claims. Throws on any defect. */
 export function verifyToken(token: string, secret: string): TokenClaims {
@@ -105,14 +108,19 @@ export class Accounts {
     // A library chat must never touch a project: a token that says both is
     // the app's mistake, and guessing which it meant is not ours to do.
     if (library && claims.sid) throw new AuthError('a library token must not name a project');
+    const view = claims.view === true;
+    // a view token reads one project's chats, never a whole library
+    if (view && !claims.sid) throw new AuthError('a view token must name a project');
     const dir = resolve(this.config.root, claims.sub);
     this.ensureDir(dir);
-    if (claims.email) this.remember(dir, claims.sub, claims.email);
+    // the email on a view token is the reader's, not the account's
+    if (claims.email && !view) this.remember(dir, claims.sub, claims.email);
     return {
       id: claims.sub,
       ...(claims.email ? { email: claims.email } : {}),
       ...(claims.sid ? { project: claims.sid } : {}),
       ...(library ? { scope: 'library' as const } : {}),
+      ...(view ? { viewOnly: true as const } : {}),
       dir,
     };
   }

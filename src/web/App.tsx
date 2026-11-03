@@ -371,6 +371,12 @@ export default function App() {
             This page’s access has expired. Reload the {page.scope === 'library' ? 'page' : 'project'} to continue.
           </p>
         )}
+        {config?.viewOnly ? (
+          <p className="mx-auto w-full max-w-3xl px-6 pb-4 pt-2 text-[12.5px] text-ink-3">
+            View only: you are reading this account’s chat. Nothing you do here reaches it.
+          </p>
+        ) : (
+        <>
         {pending && (
           <PermissionBanner
             key={pending.requestId}
@@ -418,6 +424,8 @@ export default function App() {
               }
             : {})}
         />
+        </>
+        )}
       </div>
       {filesOpen && !embed && <FileTree onPick={(p) => insertText(p)} refreshKey={treeKey} />}
     </div>

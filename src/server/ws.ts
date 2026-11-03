@@ -95,6 +95,11 @@ export function attachWebSocket(
     });
 
     async function handle(msg: ClientMessage) {
+      // a view-only page watches; it never starts, sends, answers or changes a chat
+      if (ctx.account?.viewOnly && msg.type !== 'attach' && msg.type !== 'detach') {
+        fail('This chat is view only', 'sessionId' in msg ? (msg.sessionId ?? undefined) : undefined);
+        return;
+      }
       switch (msg.type) {
         case 'attach': {
           const refused = sessions.refusal(msg.sessionId, scopeOf(ctx.account));
