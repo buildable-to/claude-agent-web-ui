@@ -168,6 +168,8 @@ export type HistoryMessage = {
   session_id: string;
   message: unknown;
   parent_tool_use_id: string | null;
+  /** When it was said (ISO), read from the saved conversation. */
+  timestamp?: string;
   stoppedWork?: StoppedWorkNotice;
 };
 

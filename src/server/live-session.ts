@@ -430,7 +430,10 @@ export class LiveSession {
     }
   }
 
-  private handle(message: SDKMessage) {
+  private handle(raw: SDKMessage) {
+    // when it arrived, so a page that attaches later shows the time it was
+    // said, not the time it was replayed
+    const message = stamped(raw);
     if (this.closed) return;
     this.lastActivity = Date.now();
     if (message.type === 'user' || message.type === 'assistant') {
@@ -602,4 +605,11 @@ function resultText(block: unknown): string {
   return content
     .map((c) => (c && typeof c === 'object' && typeof (c as { text?: unknown }).text === 'string' ? (c as { text: string }).text : ''))
     .join('\n');
+}
+
+/** A said message (the engineer's or the agent's) carries when it was said. */
+export function stamped(message: SDKMessage): SDKMessage {
+  if (message.type !== 'user' && message.type !== 'assistant') return message;
+  if (typeof (message as { timestamp?: unknown }).timestamp === 'string') return message;
+  return { ...message, timestamp: new Date().toISOString() } as SDKMessage;
 }
