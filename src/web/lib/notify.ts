@@ -15,10 +15,11 @@ export function questionText(pending: PermissionRequest[]): string | null {
   return said.replace(/\s+/g, ' ').trim() || null;
 }
 
-/** The turn just ended on an error: its note's words, else null. */
-export function turnError(t: Transcript): string | null {
-  const last = t.turns[t.turns.length - 1];
-  return last && last.kind === 'note' && last.level === 'error' && !last.stoppedWork ? last.text : null;
+/** The turn that began at `from` ended on an error: its note's words, else null. */
+export function turnError(t: Transcript, from = 0): string | null {
+  const i = t.turns.length - 1;
+  const last = t.turns[i];
+  return i >= from && last && last.kind === 'note' && last.level === 'error' && !last.stoppedWork ? last.text : null;
 }
 
 const KEY = 'notify';

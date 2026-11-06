@@ -16,19 +16,29 @@ type Props = {
 export function BellMenu({ notify, sound, onNotify, onSound, onTest }: Props) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
       if (!root.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        setOpen(false);
+        trigger.current?.focus();
+      }
     };
+    // a click in the studio around the chat takes the focus from this page
+    const onBlur = () => setOpen(false);
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('keydown', onKey);
+    window.addEventListener('blur', onBlur);
+    menu.current?.querySelector<HTMLElement>('button')?.focus();
     return () => {
       document.removeEventListener('pointerdown', onDown);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('blur', onBlur);
     };
   }, [open]);
   const row = (label: string, on: boolean | null, act: () => void) => (
@@ -49,6 +59,7 @@ export function BellMenu({ notify, sound, onNotify, onSound, onTest }: Props) {
   return (
     <div ref={root} className="relative inline-block">
       <button
+        ref={trigger}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -60,7 +71,7 @@ export function BellMenu({ notify, sound, onNotify, onSound, onTest }: Props) {
         {notify ? <Bell className="size-3.5" /> : <BellOff className="size-3.5" />}
       </button>
       {open && (
-        <div role="menu" className="menu-pop rise absolute bottom-full left-0 z-30 mb-1.5 min-w-[13rem]">
+        <div ref={menu} role="menu" className="menu-pop rise absolute bottom-full left-0 z-30 mb-1.5 min-w-[13rem]">
           {row('Notifications', notify, onNotify)}
           {row('Sound', sound, onSound)}
           {row('Send a test notification', null, onTest)}

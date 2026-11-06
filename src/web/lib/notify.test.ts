@@ -24,4 +24,5 @@ test('a turn that ended on an error says it; any other end does not', () => {
   assert.equal(turnError(t), 'The turn ended with an error.');
   assert.equal(turnError(addNote(t, 'i1', 'info', 'ok')), null);
   assert.equal(turnError(emptyTranscript()), null);
+  assert.equal(turnError(t, 1), null, 'an error from an earlier turn is not this one');
 });

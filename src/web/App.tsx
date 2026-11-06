@@ -217,22 +217,26 @@ export default function App() {
     if (connection === 'open') wasOpen.current = true;
     const status = connection === 'open' || !wasOpen.current ? shownStatus : 'offline';
     // what the studio's notification says (ezdxf-flask #1203): the card's
-    // question, why a turn ended. The status comes a moment before its card:
-    // wait for the card, so the question rides with it.
+    // question, why a turn ended. The server says the status a moment before
+    // the card, and idle a moment before the turn's result: wait for them.
+    if (status === 'running' || status === 'starting') turnFrom.current = transcriptNow.current.turns.length;
     const question = status === 'requires_action' ? questionText(state.pending) : null;
     const note: Record<string, unknown> = { type: 'status', status };
     if (question) note.question = question;
-    if (status === 'idle') {
-      const error = turnError(state.transcript);
-      if (error) note.reason = error;
-      if (stoppedByUser.current) note.stopped_by = 'user';
-      stoppedByUser.current = false;
-    }
-    if (status === 'requires_action' && !question) {
-      const t = setTimeout(() => tellParent(note), 500);
+    const say = () => {
+      if (status === 'idle') {
+        const error = turnError(transcriptNow.current, turnFrom.current);
+        if (error) note.reason = error;
+        if (stoppedByUser.current) note.stopped_by = 'user';
+        stoppedByUser.current = false;
+      }
+      tellParent(note);
+    };
+    if ((status === 'requires_action' && !question) || status === 'idle') {
+      const t = setTimeout(say, status === 'idle' ? 300 : 500);
       return () => clearTimeout(t);
     }
-    tellParent(note);
+    say();
     return undefined;
     // the transcript is read when the status changes, not followed
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -263,6 +267,10 @@ export default function App() {
   const testNotify = useCallback(() => tellParent({ type: 'notify_test' }), []);
   // Stop was pressed here: the engineer knows; the studio says no "finished"
   const stoppedByUser = useRef(false);
+  // the transcript as it is now, and where this turn began in it
+  const transcriptNow = useRef(state.transcript);
+  transcriptNow.current = state.transcript;
+  const turnFrom = useRef(0);
   const lastStatus = useRef(state.status);
   useEffect(() => {
     armChime();
@@ -427,6 +435,7 @@ export default function App() {
           onChange={setDraft}
           status={state.status}
           onSend={(text, files, pictures) => {
+            stoppedByUser.current = false;
             // the page that embeds us keeps the first thing the engineer says
             // on an empty project as its brief (Buildable issue #405) — the
             // brief is what the ENGINEER wrote, so the looking-at line stays
@@ -435,7 +444,7 @@ export default function App() {
             session.send(withViewing(withAttachments(text, files), viewingOn), files, pictures);
           }}
           onStop={() => {
-            stoppedByUser.current = true;
+            if (shownStatus !== 'idle') stoppedByUser.current = true;
             session.interrupt();
           }}
           backgroundWork={background}
