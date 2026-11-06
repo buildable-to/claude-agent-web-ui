@@ -11,6 +11,7 @@ import { Sidebar } from './components/Sidebar';
 import { WorkLine } from './components/WorkLine';
 import { TopBar } from './components/TopBar';
 import { api } from './lib/api';
+import { questionText, readNotifyOn, turnError, writeNotifyOn } from './lib/notify';
 import { armChime, chime, readChimeOn, shouldChime, shouldChimeForStoppedWork, writeChimeOn } from './lib/chime';
 import { EMPTY_MENTIONS, type Mentions } from './lib/mentions';
 import { listenForMentions, MentionsProvider } from './lib/mentionsLive';
@@ -214,8 +215,32 @@ export default function App() {
     // its own message and word on the bar.
     if (connection === 'expired') return;
     if (connection === 'open') wasOpen.current = true;
-    tellParent({ type: 'status', status: connection === 'open' || !wasOpen.current ? shownStatus : 'offline' });
-  }, [shownStatus, connection]);
+    const status = connection === 'open' || !wasOpen.current ? shownStatus : 'offline';
+    // what the studio's notification says (ezdxf-flask #1203): the card's
+    // question, why a turn ended. The server says the status a moment before
+    // the card, and idle a moment before the turn's result: wait for them.
+    if (status === 'running' || status === 'starting') turnFrom.current = transcriptNow.current.turns.length;
+    const question = status === 'requires_action' ? questionText(state.pending) : null;
+    const note: Record<string, unknown> = { type: 'status', status };
+    if (question) note.question = question;
+    const say = () => {
+      if (status === 'idle') {
+        const error = turnError(transcriptNow.current, turnFrom.current);
+        if (error) note.reason = error;
+        if (stoppedByUser.current) note.stopped_by = 'user';
+        stoppedByUser.current = false;
+      }
+      tellParent(note);
+    };
+    if ((status === 'requires_action' && !question) || status === 'idle') {
+      const t = setTimeout(say, status === 'idle' ? 300 : 500);
+      return () => clearTimeout(t);
+    }
+    say();
+    return undefined;
+    // the transcript is read when the status changes, not followed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shownStatus, connection, state.pending.length > 0]);
   useEffect(() => {
     if (connection === 'expired') tellParent({ type: 'expired' });
   }, [connection]);
@@ -226,6 +251,26 @@ export default function App() {
   // and that click is the gesture the browser wants before it lets the page
   // sound.
   const [chimeOn, setChimeOn] = useState(readChimeOn);
+  // the bell's two other words, said to the studio that shows notifications
+  const [notifyOn, setNotifyOn] = useState(readNotifyOn);
+  // the studio answers the settings with notify_ready when it shows
+  // notifications; an older studio never does, and the bell stays the chime
+  const [notifyHost, setNotifyHost] = useState(false);
+  useEffect(() => (embed ? hearParent((m) => { if (m.type === 'notify_ready') setNotifyHost(true); }) : undefined), []);
+  useEffect(() => {
+    if (embed) tellParent({ type: 'notify_settings', on: notifyOn, sound: chimeOn });
+  }, [notifyOn, chimeOn]);
+  const toggleNotify = useCallback(() => {
+    writeNotifyOn(!notifyOn);
+    setNotifyOn(!notifyOn);
+  }, [notifyOn]);
+  const testNotify = useCallback(() => tellParent({ type: 'notify_test' }), []);
+  // Stop was pressed here: the engineer knows; the studio says no "finished"
+  const stoppedByUser = useRef(false);
+  // the transcript as it is now, and where this turn began in it
+  const transcriptNow = useRef(state.transcript);
+  transcriptNow.current = state.transcript;
+  const turnFrom = useRef(0);
   const lastStatus = useRef(state.status);
   useEffect(() => {
     armChime();
@@ -390,6 +435,7 @@ export default function App() {
           onChange={setDraft}
           status={state.status}
           onSend={(text, files, pictures) => {
+            stoppedByUser.current = false;
             // the page that embeds us keeps the first thing the engineer says
             // on an empty project as its brief (Buildable issue #405) — the
             // brief is what the ENGINEER wrote, so the looking-at line stays
@@ -397,7 +443,10 @@ export default function App() {
             if (text) tellParent({ type: 'user_message', text });
             session.send(withViewing(withAttachments(text, files), viewingOn), files, pictures);
           }}
-          onStop={session.interrupt}
+          onStop={() => {
+            if (shownStatus !== 'idle') stoppedByUser.current = true;
+            session.interrupt();
+          }}
           backgroundWork={background}
           connected={connection === 'open'}
           commands={commands}
@@ -412,6 +461,7 @@ export default function App() {
           onShowViewing={canShow(viewingOn) ? () => showViewing(viewingOn) : undefined}
           chime={chimeOn}
           onChime={toggleChime}
+          notify={embed && notifyHost ? { on: notifyOn, onToggle: toggleNotify, onTest: testNotify } : undefined}
           {...(embed
             ? {
                 controls: {
