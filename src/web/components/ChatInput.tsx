@@ -1,4 +1,5 @@
 import { page } from '@/lib/page';
+import { BellMenu } from './BellMenu';
 import { ArrowUp, AtSign, Bell, BellOff, Eye, EyeOff, FileText, Loader2, Paperclip, SlashSquare, Square, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import type { Attachment, CommandInfo, SessionStatus } from '@shared/protocol';
@@ -56,6 +57,9 @@ type Props = {
    *  bell that switches it. */
   chime?: boolean;
   onChime?: () => void;
+  /** Embedded: the bell is a menu — notifications on/off, the chime (Sound)
+   *  on/off, a test notification (ezdxf-flask #1203). */
+  notify?: { on: boolean; onToggle: () => void; onTest: () => void };
 };
 
 /** A file on its way into the next message. */
@@ -89,6 +93,7 @@ export function ChatInput({
   onShowViewing,
   chime = true,
   onChime,
+  notify,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const mirror = useRef<HTMLDivElement>(null);
@@ -542,7 +547,10 @@ export function ChatInput({
                 <span className="text-ink-3">{mentions.marks.length}</span>
               </button>
             )}
-            {onChime && (
+            {notify && onChime && (
+              <BellMenu notify={notify.on} sound={chime} onNotify={notify.onToggle} onSound={onChime} onTest={notify.onTest} />
+            )}
+            {!notify && onChime && (
               <button
                 type="button"
                 onClick={onChime}

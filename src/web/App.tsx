@@ -11,6 +11,7 @@ import { Sidebar } from './components/Sidebar';
 import { WorkLine } from './components/WorkLine';
 import { TopBar } from './components/TopBar';
 import { api } from './lib/api';
+import { questionText, readNotifyOn, turnError, writeNotifyOn } from './lib/notify';
 import { armChime, chime, readChimeOn, shouldChime, shouldChimeForStoppedWork, writeChimeOn } from './lib/chime';
 import { EMPTY_MENTIONS, type Mentions } from './lib/mentions';
 import { listenForMentions, MentionsProvider } from './lib/mentionsLive';
@@ -214,8 +215,28 @@ export default function App() {
     // its own message and word on the bar.
     if (connection === 'expired') return;
     if (connection === 'open') wasOpen.current = true;
-    tellParent({ type: 'status', status: connection === 'open' || !wasOpen.current ? shownStatus : 'offline' });
-  }, [shownStatus, connection]);
+    const status = connection === 'open' || !wasOpen.current ? shownStatus : 'offline';
+    // what the studio's notification says (ezdxf-flask #1203): the card's
+    // question, why a turn ended. The status comes a moment before its card:
+    // wait for the card, so the question rides with it.
+    const question = status === 'requires_action' ? questionText(state.pending) : null;
+    const note: Record<string, unknown> = { type: 'status', status };
+    if (question) note.question = question;
+    if (status === 'idle') {
+      const error = turnError(state.transcript);
+      if (error) note.reason = error;
+      if (stoppedByUser.current) note.stopped_by = 'user';
+      stoppedByUser.current = false;
+    }
+    if (status === 'requires_action' && !question) {
+      const t = setTimeout(() => tellParent(note), 500);
+      return () => clearTimeout(t);
+    }
+    tellParent(note);
+    return undefined;
+    // the transcript is read when the status changes, not followed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shownStatus, connection, state.pending.length > 0]);
   useEffect(() => {
     if (connection === 'expired') tellParent({ type: 'expired' });
   }, [connection]);
@@ -226,6 +247,22 @@ export default function App() {
   // and that click is the gesture the browser wants before it lets the page
   // sound.
   const [chimeOn, setChimeOn] = useState(readChimeOn);
+  // the bell's two other words, said to the studio that shows notifications
+  const [notifyOn, setNotifyOn] = useState(readNotifyOn);
+  // the studio answers the settings with notify_ready when it shows
+  // notifications; an older studio never does, and the bell stays the chime
+  const [notifyHost, setNotifyHost] = useState(false);
+  useEffect(() => (embed ? hearParent((m) => { if (m.type === 'notify_ready') setNotifyHost(true); }) : undefined), []);
+  useEffect(() => {
+    if (embed) tellParent({ type: 'notify_settings', on: notifyOn, sound: chimeOn });
+  }, [notifyOn, chimeOn]);
+  const toggleNotify = useCallback(() => {
+    writeNotifyOn(!notifyOn);
+    setNotifyOn(!notifyOn);
+  }, [notifyOn]);
+  const testNotify = useCallback(() => tellParent({ type: 'notify_test' }), []);
+  // Stop was pressed here: the engineer knows; the studio says no "finished"
+  const stoppedByUser = useRef(false);
   const lastStatus = useRef(state.status);
   useEffect(() => {
     armChime();
@@ -397,7 +434,10 @@ export default function App() {
             if (text) tellParent({ type: 'user_message', text });
             session.send(withViewing(withAttachments(text, files), viewingOn), files, pictures);
           }}
-          onStop={session.interrupt}
+          onStop={() => {
+            stoppedByUser.current = true;
+            session.interrupt();
+          }}
           backgroundWork={background}
           connected={connection === 'open'}
           commands={commands}
@@ -412,6 +452,7 @@ export default function App() {
           onShowViewing={canShow(viewingOn) ? () => showViewing(viewingOn) : undefined}
           chime={chimeOn}
           onChime={toggleChime}
+          notify={embed && notifyHost ? { on: notifyOn, onToggle: toggleNotify, onTest: testNotify } : undefined}
           {...(embed
             ? {
                 controls: {
