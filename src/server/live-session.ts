@@ -10,6 +10,7 @@ import {
   type PermissionUpdate,
   type Query,
   type SDKMessage,
+  type SDKRateLimitInfo,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import type {
@@ -142,6 +143,8 @@ export type LiveSessionOptions = {
   onInfo?: (info: EngineInfo) => void;
   /** Called after every turn with the running totals, for the usage record. */
   onResult?: (usage: { totalCostUsd: number; numTurns: number; at: number }) => void;
+  /** The engine said where its Claude login stands against its limits. */
+  onRateLimit?: (info: SDKRateLimitInfo) => void;
   /** Resume this persisted session. When omitted a fresh session is created. */
   resume?: string;
   model?: string;
@@ -196,6 +199,7 @@ export class LiveSession {
   private readonly onlyCommands: ReadonlySet<string> | null;
   private readonly onInfo: ((info: EngineInfo) => void) | undefined;
   private readonly onResult: LiveSessionOptions['onResult'];
+  private readonly onRateLimit: LiveSessionOptions['onRateLimit'];
   /** tool_use ids of shell commands that write the app's project for real. */
   private readonly realApplies = new Set<string>();
   private perceives = new Map<string, PerceiveTarget>();
@@ -213,6 +217,7 @@ export class LiveSession {
     this.persistAlways = opts.persistAlways ?? true;
     this.onInfo = opts.onInfo;
     this.onResult = opts.onResult;
+    this.onRateLimit = opts.onRateLimit;
     this.onActivity = opts.onActivity;
     this.onStop = opts.onStop;
     this.onlyCommands = opts.onlyCommands ?? null;
@@ -471,6 +476,8 @@ export class LiveSession {
         this.meta = { ...this.meta, permissionMode: message.permissionMode };
         this.broadcast({ type: 'meta', sessionId: this.sessionId, meta: this.meta });
       }
+    } else if (message.type === 'rate_limit_event') {
+      this.onRateLimit?.(message.rate_limit_info);
     } else if (message.type === 'result') {
       this.meta = { ...this.meta, totalCostUsd: message.total_cost_usd };
       this.onResult?.({ totalCostUsd: message.total_cost_usd, numTurns: message.num_turns, at: Date.now() });
