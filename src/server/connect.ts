@@ -76,7 +76,9 @@ export class Connector {
     };
     child.stdout?.on('data', onData);
     child.stderr?.on('data', onData);
-    child.on('exit', () => {
+    // 'close', not 'exit': the sign-in prints the login and quits at once,
+    // and 'exit' can come before that last output has been read
+    child.on('close', () => {
       flow.done = true;
     });
     child.on('error', (err) => {

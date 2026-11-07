@@ -60,3 +60,22 @@ test('an empty or unknown sign-in is refused before anything is typed', async ()
   assert.equal(f.typed(), '');
   c.cancel(id);
 });
+
+test('a sign-in that prints the login and quits at once still hands the login over', async () => {
+  const runner = () => {
+    const child = new EventEmitter() as ChildProcess & EventEmitter;
+    const stdout = new PassThrough();
+    const stdin = new PassThrough();
+    Object.assign(child, { stdout, stderr: new PassThrough(), stdin, kill: () => true });
+    setTimeout(() => stdout.write(`${URL}\r\nPaste code here if prompted > `), 10);
+    stdin.on('data', () => {
+      // the process is gone before its last words are read
+      child.emit('exit', 0);
+      setTimeout(() => { stdout.write(`\r\nYour OAuth token (valid for 1 year):\r\n${TOKEN}\r\n`); stdout.end(); child.emit('close', 0); }, 30);
+    });
+    return child;
+  };
+  const c = new Connector(runner);
+  const { id } = await c.start();
+  assert.equal(await c.finish(id, 'abc#def'), TOKEN);
+});
