@@ -319,6 +319,16 @@ app.post(`${base}/api/admin/logins/:id/use`, (req, res) => {
   }
 });
 
+app.patch(`${base}/api/admin/logins/:id`, (req, res) => {
+  try {
+    adminOnly(req);
+    sharedLogins().rename(String(req.params.id), String(((req.body ?? {}) as { name?: unknown }).name ?? ''));
+    loginsReply(res);
+  } catch (err) {
+    loginsFailed(res, err);
+  }
+});
+
 app.delete(`${base}/api/admin/logins/:id`, (req, res) => {
   try {
     const all = adminOnly(req);

@@ -68,3 +68,12 @@ test("the server login is named by the box's own Claude login email", () => {
   assert.equal(new Logins(file, json).list()[0]?.name, 'oto@buildable.to');
   assert.equal(new Logins(file, join(file, '..', 'none.json')).list()[0]?.name, 'Saved on the server');
 });
+
+test('a login can be renamed; the server login cannot', () => {
+  const l = new Logins(fresh());
+  const row = l.add('Claude account 1', CODE);
+  l.rename(row.id, ' nika@buildable.to ');
+  assert.equal(l.list().find((r) => r.id === row.id)?.name, 'nika@buildable.to');
+  assert.throws(() => l.rename(row.id, '  '), LoginError);
+  assert.throws(() => l.rename(SERVER_LOGIN, 'x'), LoginError);
+});
