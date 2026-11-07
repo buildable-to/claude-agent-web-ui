@@ -12,6 +12,7 @@ const TOKEN = 'sk-ant-oat01-' + 'Z'.repeat(60);
  *  the way the real one does), then answers the pasted code. */
 function fakeSignIn(answer: (code: string) => string) {
   let typed = '';
+  const chunks: string[] = [];
   const runner = () => {
     const child = new EventEmitter() as ChildProcess & EventEmitter;
     const stdout = new PassThrough();
@@ -20,11 +21,12 @@ function fakeSignIn(answer: (code: string) => string) {
     setTimeout(() => stdout.write(`\x1b[1mWelcome\x1b[0m\r\nBrowser didn't open? Use the url below\r\n\x1b]8;id=1;${URL}\x07${URL}\x1b]8;;\x07\r\nPaste code here if prompted > `), 20);
     stdin.on('data', (b: Buffer) => {
       typed += b.toString();
+      chunks.push(b.toString());
       if (typed.endsWith('\r')) stdout.write(answer(typed.trim()));
     });
     return child;
   };
-  return { runner, typed: () => typed };
+  return { runner, typed: () => typed, chunks: () => chunks };
 }
 
 test('the terminal text is read plainly: colours and link wrappers gone, the link text kept', () => {
@@ -37,7 +39,8 @@ test('connect: the link comes back, the pasted code is typed in, the login code 
   const { id, url } = await c.start();
   assert.equal(url, URL);
   assert.equal(await c.finish(id, '  abc#def  '), TOKEN);
-  assert.equal(f.typed(), 'abc#def\r');
+  // the code, then Enter on its own (with the code, a long one reads as a paste)
+  assert.deepEqual(f.chunks(), ['abc#def', '\r']);
   // the flow is over: the same id cannot be finished twice
   await assert.rejects(c.finish(id, 'abc'), ConnectError);
 });
