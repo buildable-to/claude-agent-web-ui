@@ -18,6 +18,7 @@ const URL_RE = /https:\/\/claude\.(?:com|ai)\/[^\s\x07\x1b"']*oauth\/authorize\?
 const TOKEN_RE = /sk-ant-oat\d\d-[A-Za-z0-9_-]{20,}/;
 const ERROR_RE = /(OAuth error:[^\n]*|Invalid code[^\n]*|That code is not from this[^\n]*|Sign-in timed out[^\n]*)/;
 const FLOW_TTL_MS = 10 * 60 * 1000;
+const ENTER_DELAY_MS = 500;
 
 /** What the terminal printed, without colours, cursor moves and link
  *  wrappers (a link's text is the link itself). */
@@ -103,13 +104,18 @@ export class Connector {
     // Claude's page gives "code#state"; without the # part the sign-in refuses it
     if (!c.includes('#')) throw new ConnectError('that is only part of the code — use the Copy button on Claude\'s page (the code has a # in it)');
     const from = flow.out.length;
-    flow.child.stdin?.write(`${c}\r`);
+    // The code first, Enter a moment later: a long code typed with its Enter
+    // in one go reads as a paste, and the Enter is lost (seen on develop).
+    flow.child.stdin?.write(c);
+    await new Promise((r) => setTimeout(r, ENTER_DELAY_MS));
+    flow.child.stdin?.write('\r');
     const sentAt = Date.now();
     const tail = () => flow.out.slice(from);
     const result = await this.waitFor(
       flow,
       () => tail().match(TOKEN_RE)?.[0] ?? (tail().match(ERROR_RE) ? 'error' : undefined),
-      150_000,
+      // under Cloudflare's 100 s, or the admin page gets a 524 instead of an answer
+      80_000,
     );
     if (result && result !== 'error') {
       this.end(flow);
