@@ -9,6 +9,7 @@ import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from '
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { claudeConfigDir } from './commands.js';
+import { defaultClaudeConfigPath } from './accounts.js';
 
 export const SERVER_LOGIN = 'server';
 
@@ -53,7 +54,11 @@ const TOKEN = /^sk-ant-oat\d\d-[A-Za-z0-9_-]{20,}$/;
 export class Logins {
   private data: FileShape;
 
-  constructor(readonly file: string) {
+  constructor(
+    readonly file: string,
+    /** Claude Code's .claude.json, which names the box's own login. */
+    private readonly claudeJson: string = defaultClaudeConfigPath(),
+  ) {
     this.data = this.read();
   }
 
@@ -87,7 +92,7 @@ export class Logins {
       ...(this.data.limits[id] ? { limit: this.data.limits[id] } : {}),
     });
     return [
-      row(SERVER_LOGIN, 'Saved on the server', ''),
+      row(SERVER_LOGIN, serverLoginEmail(this.claudeJson) ?? 'Saved on the server', ''),
       ...this.data.logins.map((l) => row(l.id, l.name, l.token.slice(-4), l.addedAt)),
     ];
   }
@@ -141,6 +146,16 @@ export class Logins {
     this.data.limits[id] = next;
     // write when it changes, not on every event
     if (!prev || prev.status !== next.status || prev.resetsAt !== next.resetsAt || prev.type !== next.type) this.write();
+  }
+}
+
+/** The email of the login saved on the box (`claude` → /login), if any. */
+export function serverLoginEmail(path: string): string | undefined {
+  try {
+    const email = (JSON.parse(readFileSync(path, 'utf8')) as { oauthAccount?: { emailAddress?: unknown } }).oauthAccount?.emailAddress;
+    return typeof email === 'string' && email ? email : undefined;
+  } catch {
+    return undefined;
   }
 }
 

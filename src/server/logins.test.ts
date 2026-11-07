@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -59,4 +59,12 @@ test('a limit the engine reports is shown on that login, reset time in ms', () =
   l.remove(row.id);
   l.noteLimit(row.id, { status: 'allowed' });
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).limits[row.id], undefined);
+});
+
+test("the server login is named by the box's own Claude login email", () => {
+  const file = fresh();
+  const json = join(file, '..', 'claude.json');
+  writeFileSync(json, JSON.stringify({ oauthAccount: { emailAddress: 'oto@buildable.to' } }));
+  assert.equal(new Logins(file, json).list()[0]?.name, 'oto@buildable.to');
+  assert.equal(new Logins(file, join(file, '..', 'none.json')).list()[0]?.name, 'Saved on the server');
 });
