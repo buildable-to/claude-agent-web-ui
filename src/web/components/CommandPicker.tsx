@@ -8,6 +8,7 @@ type Props = {
   loading: boolean;
   onHover: (i: number) => void;
   onPick: (c: CommandInfo) => void;
+  onClose?: () => void;
 };
 
 export function matchCommands(commands: CommandInfo[], query: string): CommandInfo[] {
@@ -24,7 +25,7 @@ export function matchCommands(commands: CommandInfo[], query: string): CommandIn
   return [...starts, ...inName, ...inDesc];
 }
 
-export function CommandPicker({ commands, query, activeIndex, loading, onHover, onPick }: Props) {
+export function CommandPicker({ commands, query, activeIndex, loading, onHover, onPick, onClose }: Props) {
   const matches = useMemo(() => matchCommands(commands, query), [commands, query]);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -34,10 +35,24 @@ export function CommandPicker({ commands, query, activeIndex, loading, onHover, 
   }, [activeIndex]);
 
   return (
-    <div className="menu-pop rise absolute right-0 bottom-full left-0 z-20 mb-2">
+    <div className="menu-pop composer-pop rise absolute right-0 bottom-full left-0 z-20 mb-2">
       <div className="menu-head flex items-center justify-between">
         <span>Skills</span>
-        <span className="font-normal">↑↓ · Enter · Esc</span>
+        <span className="flex items-center gap-2 font-normal">
+          ↑↓ · Enter · Esc
+          {onClose && (
+            <button
+              type="button"
+              aria-label="Close skills"
+              title="Close (Esc)"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={onClose}
+              className="rounded px-1.5 text-[14px] leading-none text-ink-3 hover:bg-white/10 hover:text-white"
+            >
+              ×
+            </button>
+          )}
+        </span>
       </div>
       <div ref={listRef} role="listbox">
         {loading && matches.length === 0 && (

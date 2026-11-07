@@ -302,6 +302,7 @@ export function ChatInput({
             loading={commandsLoading}
             onHover={setActive}
             onPick={pick}
+            onClose={() => setDismissed(value)}
           />
         )}
         {atOpen && at && (

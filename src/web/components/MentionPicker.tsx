@@ -17,7 +17,7 @@ export function MentionPicker({ items, query, activeIndex, onHover, onPick }: Pr
     el?.scrollIntoView({ block: 'nearest' });
   }, [activeIndex]);
   return (
-    <div className="menu-pop rise absolute right-0 bottom-full left-0 z-20 mb-2">
+    <div className="menu-pop composer-pop rise absolute right-0 bottom-full left-0 z-20 mb-2">
       <div className="menu-head flex items-center justify-between">
         <span>Marks</span>
         <span className="font-normal">↑↓ · Enter · Esc</span>
