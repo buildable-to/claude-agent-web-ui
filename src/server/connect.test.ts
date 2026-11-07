@@ -46,7 +46,7 @@ test('a code Claude refuses is a ConnectError saying to sign in again', async ()
   const f = fakeSignIn(() => '\r\nOAuth error: Invalid code. Please make sure the full code was copied\r\nPress Enter to retry.');
   const c = new Connector(f.runner);
   const { id } = await c.start();
-  await assert.rejects(c.finish(id, 'wrong'), (e: unknown) => e instanceof ConnectError && /sign in again/.test(e.message));
+  await assert.rejects(c.finish(id, 'wrong#state'), (e: unknown) => e instanceof ConnectError && /sign in again/.test(e.message));
 });
 
 test('an empty or unknown sign-in is refused before anything is typed', async () => {
@@ -55,6 +55,8 @@ test('an empty or unknown sign-in is refused before anything is typed', async ()
   await assert.rejects(c.finish('nope', 'abc'), ConnectError);
   const { id } = await c.start();
   await assert.rejects(c.finish(id, '  '), ConnectError);
+  // half a code (no "#state"): refused here, with a hint
+  await assert.rejects(c.finish(id, 'abcdef'), (e: unknown) => e instanceof ConnectError && /#/.test(e.message));
   assert.equal(f.typed(), '');
   c.cancel(id);
 });
