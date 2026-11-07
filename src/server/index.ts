@@ -9,6 +9,7 @@ import { loadConfig, projectName } from './config.js';
 import { createDrainController } from './drain.js';
 import { SessionManager } from './session-manager.js';
 import { LoginError, sharedLogins } from './logins.js';
+import { ConnectError, sharedConnector } from './connect.js';
 import { buildTree } from './tree.js';
 import { MAX_FILE_BYTES, saveAttachment } from './attachments.js';
 import { attachWebSocket, scopeOf, type Resolver } from './ws.js';
@@ -245,7 +246,7 @@ function loginsReply(res: express.Response, extra: Record<string, unknown> = {})
 }
 
 function loginsFailed(res: express.Response, err: unknown) {
-  const status = err instanceof AuthError ? 401 : err instanceof LoginError ? 400 : 500;
+  const status = err instanceof AuthError ? 401 : err instanceof LoginError || err instanceof ConnectError ? 400 : 500;
   res.status(status).json({ error: err instanceof Error ? err.message : String(err) });
 }
 
@@ -264,6 +265,40 @@ app.post(`${base}/api/admin/logins`, (req, res) => {
     const body = (req.body ?? {}) as { name?: unknown; token?: unknown };
     sharedLogins().add(String(body.name ?? ''), String(body.token ?? ''));
     loginsReply(res);
+  } catch (err) {
+    loginsFailed(res, err);
+  }
+});
+
+/** Connect a Claude account: start Claude's own sign-in here and hand back
+ *  its link; the admin signs in and pastes the code Claude shows. */
+app.post(`${base}/api/admin/logins/connect`, async (req, res) => {
+  try {
+    adminOnly(req);
+    res.json(await sharedConnector().start());
+  } catch (err) {
+    loginsFailed(res, err);
+  }
+});
+
+app.post(`${base}/api/admin/logins/connect/:id`, async (req, res) => {
+  try {
+    adminOnly(req);
+    const body = (req.body ?? {}) as { code?: unknown; name?: unknown };
+    const token = await sharedConnector().finish(String(req.params.id), String(body.code ?? ''));
+    const n = sharedLogins().list().length; // the server login is row 1
+    sharedLogins().add(String(body.name ?? '').trim() || `Claude account ${n}`, token);
+    loginsReply(res);
+  } catch (err) {
+    loginsFailed(res, err);
+  }
+});
+
+app.delete(`${base}/api/admin/logins/connect/:id`, (req, res) => {
+  try {
+    adminOnly(req);
+    sharedConnector().cancel(String(req.params.id));
+    res.json({ ok: true });
   } catch (err) {
     loginsFailed(res, err);
   }

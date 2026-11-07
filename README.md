@@ -156,9 +156,13 @@ one appended line naming the open project. Its environment is an allowlist
 service's own secrets never reach it. On a shared server only the modes that
 ask (`default`, `plan`) exist, and "Always allow" does not persist.
 
-**Claude logins.** Which Claude subscription the chats run on. The admin keeps
-long-lived login codes (`claude setup-token`) and picks the active one in the
-app's admin Agent tab (`/api/admin/logins`, admin token): every engine started
+**Claude logins.** Which Claude subscription the chats run on. The admin
+connects Claude accounts from the app's admin Agent tab — this service runs
+Claude Code's own `claude setup-token` sign-in in a pseudo-terminal
+(`connect.ts`, a throwaway Claude home), hands back its link, and types in the
+code Claude's page shows (`POST /api/admin/logins/connect`, then
+`…/connect/:id` with the code) — and picks the active one
+(`/api/admin/logins`, admin token): every engine started
 after that gets it as `CLAUDE_CODE_OAUTH_TOKEN`, idle chats restart onto it, a
 chat mid-turn keeps the old one until its turn ends. "Saved on the server" (the
 box's own `claude` login) is used when nothing else is picked. The codes live
