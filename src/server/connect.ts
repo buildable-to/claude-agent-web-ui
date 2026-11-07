@@ -104,11 +104,12 @@ export class Connector {
     if (!c.includes('#')) throw new ConnectError('that is only part of the code — use the Copy button on Claude\'s page (the code has a # in it)');
     const from = flow.out.length;
     flow.child.stdin?.write(`${c}\r`);
+    const sentAt = Date.now();
     const tail = () => flow.out.slice(from);
     const result = await this.waitFor(
       flow,
       () => tail().match(TOKEN_RE)?.[0] ?? (tail().match(ERROR_RE) ? 'error' : undefined),
-      60_000,
+      150_000,
     );
     if (result && result !== 'error') {
       this.end(flow);
@@ -116,7 +117,7 @@ export class Connector {
     }
     const why = tail().match(ERROR_RE)?.[1]?.trim();
     // what the sign-in said, for the service log (codes masked)
-    console.error(`[connect] sign-in ended without a login: ${JSON.stringify(mask(tail()).replace(/\s+/g, ' ').slice(-1500))}`);
+    console.error(`[connect] sign-in ended without a login after ${Math.round((Date.now() - sentAt) / 1000)} s (process ${flow.done ? 'gone' : 'still running'}): ${JSON.stringify(mask(flow.out).replace(/[\u2500-\u259f]+/g, '').replace(/\s+/g, ' ').slice(-3000))}`);
     this.end(flow);
     // a retry needs a fresh link (each sign-in has its own), so start over
     throw new ConnectError(why ? 'Claude did not accept that code — press Connect and sign in again' : 'Claude did not answer — press Connect again');
