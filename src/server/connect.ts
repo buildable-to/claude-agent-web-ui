@@ -16,7 +16,7 @@ export class ConnectError extends Error {
 
 const URL_RE = /https:\/\/claude\.(?:com|ai)\/[^\s\x07\x1b"']*oauth\/authorize\?[^\s\x07\x1b"']+/;
 const TOKEN_RE = /sk-ant-oat\d\d-[A-Za-z0-9_-]{20,}/;
-const ERROR_RE = /(OAuth error:[^\n]*|Invalid code[^\n]*)/;
+const ERROR_RE = /(OAuth error:[^\n]*|Invalid code[^\n]*|That code is not from this[^\n]*|Sign-in timed out[^\n]*)/;
 const FLOW_TTL_MS = 10 * 60 * 1000;
 
 /** What the terminal printed, without colours, cursor moves and link
@@ -98,6 +98,8 @@ export class Connector {
     if (!flow || flow.done) throw new ConnectError('this sign-in has expired — press Connect again');
     const c = code.trim();
     if (!c || c.length > 500 || /\s/.test(c)) throw new ConnectError('paste the code Claude showed after you signed in');
+    // Claude's page gives "code#state"; without the # part the sign-in refuses it
+    if (!c.includes('#')) throw new ConnectError('that is only part of the code — use the Copy button on Claude\'s page (the code has a # in it)');
     const from = flow.out.length;
     flow.child.stdin?.write(`${c}\r`);
     const tail = () => flow.out.slice(from);
@@ -111,6 +113,8 @@ export class Connector {
       return result;
     }
     const why = tail().match(ERROR_RE)?.[1]?.trim();
+    // what the sign-in said, for the service log (codes masked)
+    console.error(`[connect] sign-in ended without a login: ${JSON.stringify(mask(tail()).replace(/\s+/g, ' ').slice(-1500))}`);
     this.end(flow);
     // a retry needs a fresh link (each sign-in has its own), so start over
     throw new ConnectError(why ? 'Claude did not accept that code — press Connect and sign in again' : 'Claude did not answer — press Connect again');
@@ -149,6 +153,11 @@ export class Connector {
     const now = Date.now();
     for (const f of this.flows.values()) if (f.done || now - f.started > FLOW_TTL_MS) this.end(f);
   }
+}
+
+/** Hide anything that could be a code or login in a log line. */
+function mask(text: string): string {
+  return text.replace(/sk-ant-[A-Za-z0-9_-]+/g, 'sk-ant-…').replace(/[A-Za-z0-9_-]{24,}(#[A-Za-z0-9_-]+)?/g, '…');
 }
 
 let shared: Connector | undefined;
