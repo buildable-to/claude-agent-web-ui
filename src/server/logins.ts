@@ -110,6 +110,16 @@ export class Logins {
     return this.list().find((r) => r.id === stored.id) as LoginRow;
   }
 
+  rename(id: string, name: string) {
+    const n = name.trim();
+    if (!n) throw new LoginError('give the login a name (its email)');
+    if (n.length > 120) throw new LoginError('name too long');
+    const l = this.data.logins.find((x) => x.id === id);
+    if (!l) throw new LoginError(id === SERVER_LOGIN ? 'the server login is named by the box' : 'no such login');
+    l.name = n;
+    this.write();
+  }
+
   use(id: string) {
     if (id !== SERVER_LOGIN && !this.data.logins.some((l) => l.id === id)) throw new LoginError('no such login');
     this.data.active = id;
