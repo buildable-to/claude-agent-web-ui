@@ -8,6 +8,7 @@ import { Accounts, AuthError, defaultClaudeConfigPath, type Account } from './ac
 import { loadConfig, projectName } from './config.js';
 import { createDrainController } from './drain.js';
 import { SessionManager } from './session-manager.js';
+import { LoginError, sharedLogins } from './logins.js';
 import { buildTree } from './tree.js';
 import { MAX_FILE_BYTES, saveAttachment } from './attachments.js';
 import { attachWebSocket, scopeOf, type Resolver } from './ws.js';
@@ -228,6 +229,73 @@ app.get(`${base}/api/admin/overview`, async (req, res) => {
     res.json({ accounts: out, generatedAt: Date.now() });
   } catch (err) {
     res.status(err instanceof AuthError ? 401 : 500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// --- Claude logins (admin token only): which Claude subscription the chats run on
+function adminOnly(req: express.Request) {
+  if (!accounts) throw new AuthError('no accounts mode');
+  const auth = req.header('authorization');
+  accounts.verifyAdmin(auth?.startsWith('Bearer ') ? auth.slice(7) : undefined);
+  return accounts;
+}
+
+function loginsReply(res: express.Response, extra: Record<string, unknown> = {}) {
+  res.json({ logins: sharedLogins().list(), ...extra });
+}
+
+function loginsFailed(res: express.Response, err: unknown) {
+  const status = err instanceof AuthError ? 401 : err instanceof LoginError ? 400 : 500;
+  res.status(status).json({ error: err instanceof Error ? err.message : String(err) });
+}
+
+app.get(`${base}/api/admin/logins`, (req, res) => {
+  try {
+    adminOnly(req);
+    loginsReply(res);
+  } catch (err) {
+    loginsFailed(res, err);
+  }
+});
+
+app.post(`${base}/api/admin/logins`, (req, res) => {
+  try {
+    adminOnly(req);
+    const body = (req.body ?? {}) as { name?: unknown; token?: unknown };
+    sharedLogins().add(String(body.name ?? ''), String(body.token ?? ''));
+    loginsReply(res);
+  } catch (err) {
+    loginsFailed(res, err);
+  }
+});
+
+/** Make a login the active one. Idle chats close so their next message
+ *  starts on it; a chat mid-turn keeps the old login until its turn ends. */
+app.post(`${base}/api/admin/logins/:id/use`, (req, res) => {
+  try {
+    const all = adminOnly(req);
+    sharedLogins().use(String(req.params.id));
+    let restarted = 0;
+    for (const account of all.listAccounts()) restarted += all.manager(account).closeIdle();
+    console.log(`[logins] now using ${String(req.params.id)}; ${restarted} idle chat(s) restarted`);
+    loginsReply(res, { restarted });
+  } catch (err) {
+    loginsFailed(res, err);
+  }
+});
+
+app.delete(`${base}/api/admin/logins/:id`, (req, res) => {
+  try {
+    const all = adminOnly(req);
+    const id = String(req.params.id);
+    const wasActive = sharedLogins().current().id === id;
+    sharedLogins().remove(id);
+    // a removed login is gone for idle chats too
+    let restarted = 0;
+    if (wasActive) for (const account of all.listAccounts()) restarted += all.manager(account).closeIdle();
+    loginsReply(res, { restarted });
+  } catch (err) {
+    loginsFailed(res, err);
   }
 });
 

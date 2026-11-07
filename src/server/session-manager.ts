@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import type { EngineInfo, HistoryMessage, SessionSummary } from '../shared/protocol.js';
 import { claudeConfigDir, installedSkills, probeEngine, skillCommands } from './commands.js';
 import { LiveSession, type LiveSessionOptions } from './live-session.js';
+import { sharedLogins } from './logins.js';
 import { WorkJournal } from './work-journal.js';
 
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
@@ -184,6 +185,9 @@ export class SessionManager {
     const project = library ? undefined : (opts.project ?? tag);
     const { project: _p, scope: _s, firstPrompt: _f, ...rest } = opts;
     const only = await this.offeredCommands();
+    // On the server every engine runs on the Claude login the admin picked
+    // (logins.ts); a laptop keeps its own.
+    const login = this.accountId ? sharedLogins().current() : undefined;
     const session = new LiveSession({
       cwd: this.projectDir,
       queryFactory: this.dependencies.queryFactory,
@@ -204,12 +208,14 @@ export class SessionManager {
       // On a shared server one click must not rewrite a folder's rules for good.
       persistAlways: !this.accountId,
       env: {
+        ...(login?.env ?? {}),
         ...(this.accountId ? { BUILDABLE_ACCOUNT: this.accountId } : {}),
         ...(project ? { BUILDABLE_PROJECT: project } : {}),
       },
       onInfo: (info) => {
         void this.shareInfo(info);
       },
+      onRateLimit: login ? (info) => sharedLogins().noteLimit(login.id, info) : undefined,
       onResult: (u) => {
         this.usage[session.sessionId] = u;
         this.writeJson(USAGE_FILE, this.usage);
@@ -410,6 +416,21 @@ export class SessionManager {
   /** Engines with foreground or background work, including permission waits. */
   busy(): number {
     return this.pendingOpens + this.liveSessions().filter((s) => s.backgroundWork > 0 || s.status === 'running' || s.status === 'requires_action' || s.status === 'starting').length;
+  }
+
+  /** Close the engines doing nothing (no turn, no background work, no
+   *  question waiting), so their next message starts on the login now
+   *  active. A busy one keeps its login until its own turn ends. */
+  closeIdle(): number {
+    let n = 0;
+    for (const [id, s] of this.live) {
+      if (s.status === 'idle' && s.backgroundWork === 0 && s.pendingRequests.length === 0) {
+        s.close('idle_timeout');
+        this.live.delete(id);
+        n++;
+      }
+    }
+    return n;
   }
 
   /** Record the stop before teardown; interrupt alone may leave builders alive. */

@@ -156,6 +156,16 @@ one appended line naming the open project. Its environment is an allowlist
 service's own secrets never reach it. On a shared server only the modes that
 ask (`default`, `plan`) exist, and "Always allow" does not persist.
 
+**Claude logins.** Which Claude subscription the chats run on. The admin keeps
+long-lived login codes (`claude setup-token`) and picks the active one in the
+app's admin Agent tab (`/api/admin/logins`, admin token): every engine started
+after that gets it as `CLAUDE_CODE_OAUTH_TOKEN`, idle chats restart onto it, a
+chat mid-turn keeps the old one until its turn ends. "Saved on the server" (the
+box's own `claude` login) is used when nothing else is picked. The codes live
+in `~/.claude/buildable-logins.json` (mode 600, `CLAUDE_LOGINS_FILE` to move
+it), never in the app's database; the admin sees only their last four
+characters, plus each login's last reported limit.
+
 **Messages to the parent page** (`window.parent.postMessage`, `source:
 'buildable-agent'`): `project_changed` after a shell command carrying
 `--real` finished without error; `status` on every status change; `expired`
