@@ -10,7 +10,8 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineInfo, HistoryMessage, SessionSummary } from '../shared/protocol.js';
 import { claudeConfigDir, installedSkills, probeEngine, skillCommands } from './commands.js';
-import { LiveSession, type LiveSessionOptions } from './live-session.js';
+import { LiveSession, engineEnv, type LiveSessionOptions } from './live-session.js';
+import { RunLog, doorSender, type Conversation, type Sender } from './run-log.js';
 import { sharedLogins } from './logins.js';
 import { WorkJournal } from './work-journal.js';
 
@@ -100,6 +101,10 @@ export class SessionManager {
   private subjects: Record<string, string>;
   private usage: Record<string, Usage>;
   private readonly work: WorkJournal;
+  /** Each run's record for pricing, on the server only (ezdxf-flask #1227). */
+  private readonly runs: RunLog | null;
+  /** What each conversation opened in this lifetime is called, for its runs. */
+  private readonly titles = new Map<string, string>();
 
   constructor(
     readonly projectDir: string,
@@ -111,6 +116,8 @@ export class SessionManager {
       getSessionInfo?: typeof getSessionInfo;
       getSessionMessages?: typeof getSessionMessages;
       sessionTimes?: typeof sessionTimes;
+      /** Where run records go (tests); the app's door by default. */
+      sendRun?: Sender;
     } = {},
   ) {
     this.info = shared ?? { value: null, probe: null };
@@ -118,6 +125,15 @@ export class SessionManager {
     this.subjects = this.readJson<Record<string, string>>(SUBJECTS_FILE);
     this.usage = this.readJson<Record<string, Usage>>(USAGE_FILE);
     this.work = new WorkJournal(projectDir);
+    this.runs = accountId
+      ? new RunLog(
+          projectDir,
+          accountId,
+          transcriptDir(projectDir),
+          dependencies.sendRun ?? doorSender(engineEnv({ BUILDABLE_ACCOUNT: accountId })),
+          (id) => this.conversation(id),
+        )
+      : null;
     setInterval(() => this.reapIdle(), 5 * 60 * 1000).unref();
   }
 
@@ -216,12 +232,15 @@ export class SessionManager {
         void this.shareInfo(info);
       },
       onRateLimit: login ? (info) => sharedLogins().noteLimit(login.id, info) : undefined,
+      onRunStart: (at) => this.runs?.begin(session.sessionId, at),
+      onRun: (run) => this.runs?.end(session.sessionId, run),
       onResult: (u) => {
         this.usage[session.sessionId] = u;
         this.writeJson(USAGE_FILE, this.usage);
       },
     });
     this.live.set(session.sessionId, session);
+    if (title) this.titles.set(session.sessionId, title);
     const newTag = library ? LIBRARY_TAG : project;
     if (newTag && this.projects[session.sessionId] !== newTag) {
       this.projects[session.sessionId] = newTag;
@@ -408,6 +427,21 @@ export class SessionManager {
     }
   }
 
+  /** What a run's record says of its conversation: its project (or the
+   *  library), its title, and whether it is the first conversation about
+   *  that project in this folder (the folder's tags keep their order). */
+  private conversation(sessionId: string): Conversation {
+    const tag = this.projects[sessionId];
+    const first = tag !== undefined && Object.entries(this.projects).find(([, p]) => p === tag)?.[0] === sessionId;
+    const title = this.titles.get(sessionId);
+    return {
+      project: tag && tag !== LIBRARY_TAG ? tag : null,
+      scope: tag === LIBRARY_TAG ? 'library' : tag ? 'project' : null,
+      ...(title ? { title } : {}),
+      first,
+    };
+  }
+
   /** Every live engine in this folder (for the usage view). */
   liveSessions(): LiveSession[] {
     return [...this.live.values()].filter((s) => s.status !== 'closed');
@@ -487,12 +521,17 @@ export class SessionManager {
   }
 }
 
+/** Where the engine keeps a folder's conversations. */
+export function transcriptDir(projectDir: string): string {
+  return join(claudeConfigDir(), 'projects', projectDir.replace(/[^A-Za-z0-9]/g, '-'));
+}
+
 /** When each message of a saved conversation was said, by uuid. The SDK's
  *  history leaves the time out; the engine's own file has it on every line. */
 export function sessionTimes(projectDir: string, sessionId: string): Map<string, string> {
   const times = new Map<string, string>();
   if (!/^[A-Za-z0-9-]+$/.test(sessionId)) return times;
-  const file = join(claudeConfigDir(), 'projects', projectDir.replace(/[^A-Za-z0-9]/g, '-'), `${sessionId}.jsonl`);
+  const file = join(transcriptDir(projectDir), `${sessionId}.jsonl`);
   let text: string;
   try {
     text = readFileSync(file, 'utf8');
