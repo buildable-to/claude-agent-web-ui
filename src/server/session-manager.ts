@@ -416,9 +416,11 @@ export class SessionManager {
   }
 
   async remove(sessionId: string) {
-    // deleting a conversation under a run stops it, as Stop would
+    // deleting a conversation under a run stops it, as Stop would; its
+    // tokens are counted before its transcript goes
     this.get(sessionId)?.close('user_stop');
     this.live.delete(sessionId);
+    await this.runs?.settled();
     await deleteSession(sessionId, { dir: this.projectDir });
     this.work.remove(sessionId);
     if (sessionId in this.projects) {
@@ -444,6 +446,12 @@ export class SessionManager {
       ...(title ? { title } : {}),
       first,
     };
+  }
+
+  /** Runs this folder recorded in an earlier lifetime and could not send
+   *  (or was cut in) go now (index.ts, at start). */
+  runsSettled(): Promise<void> {
+    return this.runs?.settled() ?? Promise.resolve();
   }
 
   /** Every live engine in this folder (for the usage view). */

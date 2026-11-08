@@ -36,6 +36,8 @@ export type Count = {
   seen: Record<string, Tokens>;
   earlier: boolean;
   last: number;
+  /** Whether the conversation's transcript was there to read. */
+  found: boolean;
 };
 
 /** The record handed to the app (buildable/services/agent_run_log.py). */
@@ -46,7 +48,11 @@ export type RunRecord = {
   scope: 'project' | 'library' | null;
   conversation: string;
   title?: string;
+  /** The project's first conversation in this folder. */
   first: boolean;
+  /** The conversation spoke before this run (an earlier run, maybe one
+   *  that failed, or one from before runs were recorded). */
+  earlier?: boolean;
   started_at: number;
   ended_at: number;
   outcome: Outcome;
@@ -54,6 +60,8 @@ export type RunRecord = {
   turns?: number;
   models: Record<string, Priced>;
   subagents: Record<string, Priced>;
+  /** The transcript was gone when the run was counted: its cost is unknown. */
+  tokens_unknown?: boolean;
   /** How often the door refused it (it waits in the folder meanwhile). */
   tries?: number;
 };
@@ -93,7 +101,7 @@ export function ratesFrom(usage: Record<string, ModelUsage>, seen: Record<string
   const out: Record<string, number> = {};
   for (const [key, u] of Object.entries(usage)) {
     const model = modelName(u.canonicalModel ?? key);
-    const s = seen[model];
+    const s = seen[model] ?? seen[modelName(key)];
     const hour = s && s.cache_write > 0 ? s.cache_write_1h / s.cache_write : 1;
     const w = weigh({
       input: u.inputTokens,
@@ -102,7 +110,7 @@ export function ratesFrom(usage: Record<string, ModelUsage>, seen: Record<string
       cache_write: u.cacheCreationInputTokens,
       cache_write_1h: u.cacheCreationInputTokens * hour,
     });
-    if (w > 0 && u.costUSD > 0) out[model] = u.costUSD / w;
+    if (w > 0 && u.costUSD > 0) out[model] = out[modelName(key)] = u.costUSD / w;
   }
   return out;
 }
@@ -145,12 +153,12 @@ type Row = {
  *  `last` when the newest call in the window was made (0 when none). */
 export async function countTokens(transcripts: string, sessionId: string, from: number, to: number): Promise<Count> {
   const calls = new Map<string, { model: string; sub: boolean; at: number; t: Tokens }>();
-  const read = async (file: string, sub: boolean) => {
+  const read = async (file: string, sub: boolean): Promise<boolean> => {
     let text: string;
     try {
       text = await readFile(file, 'utf8');
     } catch {
-      return;
+      return false;
     }
     for (const line of text.split('\n')) {
       if (!line.includes('"usage"')) continue;
@@ -178,8 +186,9 @@ export async function countTokens(transcripts: string, sessionId: string, from: 
         calls.set(key, { model: modelName(m.model), sub: sub || row.isSidechain === true, at: had ? Math.min(had.at, at) : at, t });
       }
     }
+    return true;
   };
-  await read(join(transcripts, `${sessionId}.jsonl`), false);
+  const found = await read(join(transcripts, `${sessionId}.jsonl`), false);
   const subDir = join(transcripts, sessionId, 'subagents');
   let files: string[] = [];
   try {
@@ -188,7 +197,7 @@ export async function countTokens(transcripts: string, sessionId: string, from: 
     // no sub-agents in this conversation
   }
   for (const f of files) await read(join(subDir, f), true);
-  const out: Count = { main: {}, subagents: {}, seen: {}, earlier: false, last: 0 };
+  const out: Count = { main: {}, subagents: {}, seen: {}, earlier: false, last: 0, found };
   const add = (side: Record<string, Tokens>, model: string, t: Tokens) => {
     const sum = (side[model] ??= zero());
     for (const k of Object.keys(sum) as (keyof Tokens)[]) sum[k] += t[k];
@@ -259,10 +268,13 @@ type Open = { runId: string; startedAt: number };
 export type Conversation = { project: string | null; scope: 'project' | 'library' | null; title?: string; first: boolean };
 
 /** A run that ended, as it waits in the folder until the door has it: what
- *  the service knew when it ended. Its tokens are counted when it is sent —
- *  the transcripts keep them — so a run ended by a deploy is not lost with
- *  the process. */
-type Ended = Omit<RunRecord, 'models' | 'subagents'> & { modelUsage?: Record<string, ModelUsage> };
+ *  the service knew when it ended, and — from its first try on — its
+ *  counted tokens and its end. The tokens are counted after the run (the
+ *  transcripts keep them), so a run ended by a deploy is not lost with the
+ *  process; counted once, so a run that waits is never counted again over
+ *  a window that has grown. */
+type Ended = Omit<RunRecord, 'models' | 'subagents'> &
+  Partial<Pick<RunRecord, 'models' | 'subagents'>> & { modelUsage?: Record<string, ModelUsage> };
 
 /** One account folder's runs. Every run is written to the folder as it
  *  ends and leaves it once the door has stored it; a run the service died in
@@ -272,6 +284,7 @@ export class RunLog {
   private open: Record<string, Open>;
   private chain: Promise<void> = Promise.resolve();
   private readonly unsent: string;
+  private waitingSaid = false;
 
   constructor(
     private readonly folder: string,
@@ -354,9 +367,17 @@ export class RunLog {
       });
   }
 
-  /** The run as the door takes it: its tokens counted and priced. */
-  private async record(e: Ended): Promise<RunRecord> {
-    const until = e.ended_at || Date.now();
+  /** Count and price a run, once: its tokens, its end (a run the service
+   *  died in ends at its last call, before the conversation's next run), and
+   *  whether it is the project's first. */
+  private async counted(e: Ended, others: Ended[]): Promise<Ended> {
+    if (e.models) return e;
+    let until = e.ended_at;
+    if (!until) {
+      const next = [this.open[e.conversation]?.startedAt, ...others.filter((o) => o.conversation === e.conversation && o.started_at > e.started_at).map((o) => o.started_at)]
+        .filter((t): t is number => typeof t === 'number');
+      until = Math.min(Date.now(), ...next.map((t) => t - 1));
+    }
     const count = await countTokens(this.transcripts, e.conversation, e.started_at, until);
     if (e.modelUsage) {
       this.rates = { ...this.rates, ...ratesFrom(e.modelUsage, count.seen) };
@@ -365,12 +386,11 @@ export class RunLog {
     const { modelUsage: _u, ...rest } = e;
     return {
       ...rest,
-      // a run the service died in ends at its last call
       ended_at: e.ended_at || Math.max(e.started_at, count.last),
-      // the project's first run: its first conversation, before it said anything
-      first: e.first && !count.earlier,
+      earlier: count.earlier,
       models: price(count.main, this.rates),
       subagents: price(count.subagents, this.rates),
+      ...(count.found ? {} : { tokens_unknown: true }),
     };
   }
 
@@ -380,20 +400,25 @@ export class RunLog {
     if (!waiting.length) return;
     const keep: Ended[] = [];
     for (const e of waiting) {
-      // once one fails the database is likely away: keep the rest for next time
+      // once one fails the database is likely away: keep the rest for next
+      // time, counted now (a count waits for no door)
       if (keep.length) {
-        keep.push(e);
+        keep.push(await this.counted(e, waiting));
         continue;
       }
-      const sent = await this.send(await this.record(e));
+      const c = await this.counted(e, waiting);
+      const { tries: _t, ...record } = c;
+      const sent = await this.send(record as RunRecord);
       if (sent === true) continue;
       if (sent === 'later') {
-        keep.push(e);
+        if (!this.waitingSaid) console.log(`[runs] the app's door is not on this server yet; runs wait in ${this.unsent}`);
+        this.waitingSaid = true;
+        keep.push(c);
         continue;
       }
       const tries = (e.tries ?? 0) + 1;
-      if (tries >= MAX_TRIES) console.error(`[runs] dropped ${e.run_id} after ${tries} tries: ${JSON.stringify(e).slice(0, 300)}`);
-      else keep.push({ ...e, tries });
+      if (tries >= MAX_TRIES) console.error(`[runs] dropped ${e.run_id} after ${tries} tries: ${JSON.stringify(c).slice(0, 300)}`);
+      else keep.push({ ...c, tries });
     }
     // runs that ended while these were sent were appended meanwhile: keep them
     const tried = new Set(waiting.map((e) => e.run_id));

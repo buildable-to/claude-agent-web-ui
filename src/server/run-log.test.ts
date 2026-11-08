@@ -67,7 +67,7 @@ test('a run spends what its calls in its window cost, each call once, sub-agents
   assert.equal(c.earlier, true, 'the conversation ran before');
   // every call up to the end, the earlier run's too: what the rates are read against
   assert.equal(c.seen['claude-opus-5-5']!.input, 12 + 2 + 999);
-  assert.deepEqual(await countTokens(dir, 'nobody', T, T + 60_000), { main: {}, subagents: {}, seen: {}, earlier: false, last: 0 });
+  assert.deepEqual(await countTokens(dir, 'nobody', T, T + 60_000), { main: {}, subagents: {}, seen: {}, earlier: false, last: 0, found: false });
   // a sub-agent's call before the run does not make it a later run
   assert.equal((await countTokens(dir, 'c1', T - 50_000, T + 60_000)).earlier, true);
   assert.equal((await countTokens(dir, 'c1', T - 200_000, T + 60_000)).earlier, false);
@@ -98,7 +98,7 @@ test("five-minute cache writes (the sub-agents') are read from the transcripts, 
   assert.ok(Math.abs(ratesFrom(usage, seen)['claude-opus-5-5']! - 5e-6) < 1e-12);
   assert.ok(ratesFrom(usage)['claude-opus-5-5']! < 4e-6, 'without the transcripts: all hour-long');
   // an alias key is priced under the model the transcripts name
-  assert.deepEqual(Object.keys(ratesFrom({ opus: modelUsage({ inputTokens: 1, costUSD: 1, canonicalModel: 'claude-opus-5-5' }) })), ['claude-opus-5-5']);
+  assert.deepEqual(Object.keys(ratesFrom({ opus: modelUsage({ inputTokens: 1, costUSD: 1, canonicalModel: 'claude-opus-5-5' }) })).sort(), ['claude-opus-5-5', 'opus']);
 });
 
 function log(t: TestContext, send: (r: RunRecord) => Promise<Sent>) {
@@ -188,6 +188,37 @@ test('a run the service died in is recorded as cut by a restart when it comes ba
   assert.equal(r.ended_at, T + 30_000, 'ends at its last call');
   assert.equal(r.models['claude-opus-5-5']!.usd, 0.00006);
   assert.equal(JSON.parse(readFileSync(join(dir, '.agent-runs-open.json'), 'utf8')).c1, undefined);
+});
+
+test('a cut run is counted once, up to the next run of its conversation, and keeps that while it waits', async (t) => {
+  const dir = folder(t);
+  const transcripts = join(dir, 'transcripts');
+  mkdirSync(transcripts);
+  writeFileSync(join(transcripts, 'c1.jsonl'), [call('m1', 30, usage(10, 10)), call('m2', 200, usage(500, 500))].join('\n') + '\n');
+  writeFileSync(join(dir, '.agent-runs-open.json'), JSON.stringify({ c1: { runId: 'r-cut', startedAt: T } }));
+  // the engineer's "continue" ran from T+100 s and is waiting to be sent too
+  writeFileSync(join(dir, '.agent-runs-unsent.jsonl'), JSON.stringify({ run_id: 'r-next', account: 'u1', project: null, scope: null,
+    conversation: 'c1', first: false, started_at: T + 100_000, ended_at: T + 300_000, outcome: 'ok' }) + '\n');
+  const sent: RunRecord[] = [];
+  let door: Sent = 'later';
+  const runs = new RunLog(dir, 'u1', transcripts, async (r) => (door === true && sent.push(r), door), () => ({ project: null, scope: null, first: false }), 0);
+  await runs.settled();
+  const kept = readFileSync(join(dir, '.agent-runs-unsent.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as RunRecord);
+  const cut = kept.find((r) => r.run_id === 'r-cut')!;
+  assert.equal(cut.ended_at, T + 30_000);
+  assert.equal(cut.models['claude-opus-5-5']!.input, 10, "not the next run's call");
+  door = true;
+  runs.end('c2', { startedAt: T, endedAt: T + 1, outcome: 'ok' });
+  await runs.settled();
+  assert.deepEqual(sent.map((r) => [r.run_id, r.models['claude-opus-5-5']?.input]), [['r-next', 500], ['r-cut', 10], [sent[2]!.run_id, undefined]]);
+});
+
+test('a run whose transcript is gone says its cost is unknown', async (t) => {
+  const sent: RunRecord[] = [];
+  const { runs } = log(t, async (r) => (sent.push(r), true));
+  runs.end('gone', { startedAt: T, endedAt: T + 1, outcome: 'ok' });
+  await runs.settled();
+  assert.equal(sent[0]!.tokens_unknown, true);
 });
 
 /** Only the CLI process is replaced (as in recovery.test.ts). */
@@ -292,7 +323,8 @@ test('only the first run of the first conversation is the first; its next messag
   await cli.result(true);
   await cli.state('idle');
   await (m as unknown as { runs: RunLog }).runs.settled();
-  assert.deepEqual(sent.map((r) => r.first), [true, false]);
+  // the first conversation both times; the second run comes after it spoke
+  assert.deepEqual(sent.map((r) => [r.first, r.earlier]), [[true, false], [true, true]]);
   m.closeAll();
 });
 

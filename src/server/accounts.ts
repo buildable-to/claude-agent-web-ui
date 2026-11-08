@@ -163,6 +163,26 @@ export class Accounts {
     for (const m of this.managers.values()) m.closeAll();
   }
 
+  /** At start: open the folders with runs an earlier lifetime cut or could
+   *  not send (ezdxf-flask #1227), so they go now, not when the account is
+   *  next used. */
+  sendWaitingRuns(): number {
+    let n = 0;
+    for (const a of this.listAccounts()) {
+      let open = false;
+      try {
+        open = Object.keys(JSON.parse(readFileSync(join(a.dir, '.agent-runs-open.json'), 'utf8')) as object).length > 0;
+      } catch {
+        // none
+      }
+      if (open || existsSync(join(a.dir, '.agent-runs-unsent.jsonl'))) {
+        this.manager(a);
+        n++;
+      }
+    }
+    return n;
+  }
+
   busy(): number {
     let n = 0;
     for (const m of this.managers.values()) n += m.busy();

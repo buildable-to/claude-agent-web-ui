@@ -208,8 +208,11 @@ environment, cwd `BUILDABLE_REPO`, `BUILDABLE_PYTHON` to pick the interpreter),
 which adds the project's size and stores it once. A stored run leaves the
 file; one the door refused is tried again with the next (dropped after 20
 refusals); while the server's app checkout has no such door yet, runs simply
-wait. A run under way is kept in `.agent-runs-open.json`, so one the service
-died in is recorded as cut by a restart when its account is next used.
+wait. A run is counted once, on its first try, and keeps that count while it
+waits. A run under way is kept in `.agent-runs-open.json`, so one the service
+died in is recorded as cut by a restart (ending at its last call before the
+conversation's next run); the service sends what any folder kept as it
+starts.
 Server mode only (an account per folder).
 
 **Serving under a path.** `BASE_PATH=/agent` at build and at run time mounts
