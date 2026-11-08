@@ -128,6 +128,10 @@ export function attachWebSocket(
             throw new Error('This page was opened for a different project');
           }
           const project = library ? undefined : (pinned ?? msg.project);
+          if (msg.sessionId) {
+            const refused = sessions.refusal(msg.sessionId, scopeOf(ctx.account));
+            if (refused) throw new Error(refused);
+          }
           const session = await sessions.open(msg.sessionId, {
             ...(msg.model ? { model: msg.model } : {}),
             ...(msg.permissionMode ? { permissionMode: msg.permissionMode } : {}),
@@ -209,6 +213,11 @@ export function attachWebSocket(
     }
 
     function requireLive(sessionId: string) {
+      // every message that drives a chat is held to the page's scope, as
+      // attach is: a page opened for one project never steers another's chat
+      // (security review 2026-11-08)
+      const refused = sessions.refusal(sessionId, scopeOf(ctx.account));
+      if (refused) throw new Error(refused);
       const session = sessions.get(sessionId);
       if (!session) throw new Error('Session is not running. Reopen it to continue.');
       return session;

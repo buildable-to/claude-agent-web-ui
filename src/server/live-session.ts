@@ -251,7 +251,10 @@ export class LiveSession {
           includePartialMessages: true,
           // Load the same settings the terminal would: user + project + local,
           // so CLAUDE.md files and existing allow rules apply here too.
-          settingSources: ['user', 'project', 'local'],
+          // On the shared server (no persisting), a desk's own settings.local.json
+          // is not read: a chat can write that file, and it would outrank the
+          // host's policy (security review 2026-11-08). A laptop keeps it.
+          settingSources: this.persistAlways ? ['user', 'project', 'local'] : ['user', 'project'],
           canUseTool: this.canUseTool,
           abortController: this.abort,
           env: library(engineEnv({
