@@ -28,8 +28,10 @@ import { forReplay, replaySince } from './replay.js';
 import type { WorkState } from './work-journal.js';
 
 /** What an engine (and everything it runs) may see of the service's
- *  environment. The service's own secrets never cross this line. */
-const ENV_ALLOW = /^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LANGUAGE|LC_[A-Z]+|TERM|TZ|TMPDIR|XDG_[A-Z_]+|NODE_OPTIONS|HTTPS?_PROXY|NO_PROXY|https?_proxy|no_proxy|PYTHONPATH|PYTHONUNBUFFERED|FREECAD_CMD|BUILDABLE_[A-Z_]+|AGENTS_ROOT|CLAUDE_[A-Z_]+|ANTHROPIC_[A-Z_]+)$/;
+ *  environment. The service's own secrets never cross this line.
+ *  PYTHONSAFEPATH must cross it: without it `python -m` would put a chat's
+ *  own folder ahead of the host's code (security review 2026-11-08). */
+const ENV_ALLOW = /^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LANGUAGE|LC_[A-Z]+|TERM|TZ|TMPDIR|XDG_[A-Z_]+|NODE_OPTIONS|HTTPS?_PROXY|NO_PROXY|https?_proxy|no_proxy|PYTHONPATH|PYTHONUNBUFFERED|PYTHONSAFEPATH|FREECAD_CMD|BUILDABLE_[A-Z_]+|AGENTS_ROOT|CLAUDE_[A-Z_]+|ANTHROPIC_[A-Z_]+)$/;
 
 export function engineEnv(extra: Record<string, string> = {}): Record<string, string> {
   const out: Record<string, string> = {};
