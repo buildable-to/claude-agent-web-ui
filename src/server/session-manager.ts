@@ -58,6 +58,11 @@ export function scopeRefusal(tag: string | undefined, where: Scope): string | nu
   if (where.project && tag === LIBRARY_TAG) {
     return 'That conversation is about the element library; open it from Element Studio.';
   }
+  // a project page reaches its own project's conversations only (security
+  // review 2026-11-08); an older untagged one may still be opened here
+  if (where.project && tag && tag !== where.project) {
+    return 'That conversation is about another project; open it from that project.';
+  }
   return null;
 }
 /** What each conversation has cost so far (the engine's running totals). */
@@ -269,7 +274,7 @@ export class SessionManager {
     if (this.info.value) return this.info.value;
     if (!this.info.probe) {
       this.info.probe = this.offeredCommands()
-        .then((only) => probeEngine(this.projectDir, only))
+        .then((only) => probeEngine(this.projectDir, only, undefined, Boolean(this.accountId)))
         .then(async (info) => {
           await this.shareInfo(info);
           console.log(`[sessions] discovered ${info.commands.length} commands, ${info.models.length} models`);

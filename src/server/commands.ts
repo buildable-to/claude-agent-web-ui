@@ -139,6 +139,9 @@ export async function probeEngine(
   cwd: string,
   only: ReadonlySet<string> | null = null,
   timeoutMs = 25_000,
+  /** On the shared server a desk's own settings.local.json is never read
+   *  (a chat can write it), here as in every live session. */
+  shared = false,
 ): Promise<EngineInfo> {
   const abort = new AbortController();
   const q = query({
@@ -147,7 +150,7 @@ export async function probeEngine(
       cwd,
       abortController: abort,
       persistSession: false,
-      settingSources: ['user', 'project', 'local'],
+      settingSources: shared ? ['user', 'project'] : ['user', 'project', 'local'],
       systemPrompt: { type: 'preset', preset: 'claude_code' },
       canUseTool: async () => ({ behavior: 'deny', message: 'probe' }),
       stderr: () => undefined,
