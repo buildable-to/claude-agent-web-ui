@@ -194,6 +194,27 @@ panel never asks the app for it. A pick lands in the sentence as `@C1` (a
 mark) or `@<element id>`; the text the agent receives is exactly that, and
 its standing note says how a tagged mark is read.
 
+**A record per run, for pricing** (`run-log.ts`, the app's #1227). A run is
+one stretch of work: from the engineer's message (or a turn the engine starts
+itself) until the conversation is quiet again (no turn, no sub-agent, no
+question waiting), or until the engine stops under it (Stop, a restart, a
+crash). The moment it ends it is written to `.agent-runs-unsent.jsonl` in the
+account's folder (a deploy may exit next); then the service counts its tokens
+per model from the engine's transcripts, the sub-agents' files apart, prices
+them at each model's rate learned from the engine's own cost totals (an API
+list-price estimate; `.agent-rates.json`), and pipes the run as JSON to the
+app's door `python -m buildable.services.agent_run_log` (in the engines'
+environment, cwd `BUILDABLE_REPO`, `BUILDABLE_PYTHON` to pick the interpreter),
+which adds the project's size and stores it once. A stored run leaves the
+file; one the door refused is tried again with the next (dropped after 20
+refusals); while the server's app checkout has no such door yet, runs simply
+wait. A run is counted once, on its first try, and keeps that count while it
+waits. A run under way is kept in `.agent-runs-open.json`, so one the service
+died in is recorded as cut by a restart (ending at its last call before the
+conversation's next run); the service sends what any folder kept as it
+starts.
+Server mode only (an account per folder).
+
 **Serving under a path.** `BASE_PATH=/agent` at build and at run time mounts
 the page, the API and the WebSocket under it, so a reverse proxy can route one
 path here.
@@ -202,7 +223,7 @@ path here.
 `scripts/agent-dev.sh` sets all of the above and starts this server on :3456;
 run the app with `AGENT_UI_URL=http://localhost:3456` and open a project.
 
-**Tests:** `npm test` (the token contract, account folders, the engine env).
+**Tests:** `npm test` (the token contract, account folders, the engine env, run records).
 
 **Changing the contract.** Everything above is what the Buildable app relies
 on. Add rather than rename; deploy this side first when it offers something

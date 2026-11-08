@@ -26,6 +26,7 @@ import { toCommandInfo, toModelOptions } from './commands.js';
 import { userContent } from './attachments.js';
 import { forReplay, replaySince } from './replay.js';
 import type { WorkState } from './work-journal.js';
+import type { Outcome, RunEnd } from './run-log.js';
 
 /** What an engine (and everything it runs) may see of the service's
  *  environment. The service's own secrets never cross this line. */
@@ -143,6 +144,10 @@ export type LiveSessionOptions = {
   onInfo?: (info: EngineInfo) => void;
   /** Called after every turn with the running totals, for the usage record. */
   onResult?: (usage: { totalCostUsd: number; numTurns: number; at: number }) => void;
+  /** A run began: the engineer's message, or a turn the engine started. */
+  onRunStart?: (startedAt: number) => void;
+  /** A run ended: the conversation is quiet again, or the engine stopped. */
+  onRun?: (run: RunEnd) => void;
   /** The engine said where its Claude login stands against its limits. */
   onRateLimit?: (info: SDKRateLimitInfo) => void;
   /** Resume this persisted session. When omitted a fresh session is created. */
@@ -167,6 +172,20 @@ export type LiveSessionOptions = {
 };
 
 export type Subscriber = (message: ServerMessage) => void;
+
+/** How bad an outcome is: a run's worst turn names it. */
+const RUN_RANK: Record<Outcome, number> = { ok: 0, error: 1, restart: 2, stopped: 3 };
+
+/** How a run ends when the engine stops under it, by the stop's reason. */
+const RUN_CUT: Record<StoppedWorkNotice['reason'], Outcome | undefined> = {
+  user_stop: 'stopped',
+  service_stop: 'restart',
+  service_restart: 'restart',
+  engine_exit: 'error',
+  // closed after hours without a word: background work that never settled;
+  // its turns' own outcome stands, a run with none is an error
+  idle_timeout: undefined,
+};
 
 export class LiveSession {
   readonly sessionId: string;
@@ -208,6 +227,10 @@ export class LiveSession {
   private lastMessageUuid: string | undefined;
   private readonly onActivity: LiveSessionOptions['onActivity'];
   private readonly onStop: LiveSessionOptions['onStop'];
+  private readonly onRunStart: LiveSessionOptions['onRunStart'];
+  private readonly onRun: LiveSessionOptions['onRun'];
+  /** The run under way, from its first message until all is quiet again. */
+  private run: { startedAt: number; outcome?: Outcome; error?: string; turns: number; modelUsage?: RunEnd['modelUsage']; stopping: boolean } | null = null;
 
   constructor(opts: LiveSessionOptions) {
     this.sessionId = opts.resume ?? randomUUID();
@@ -220,6 +243,8 @@ export class LiveSession {
     this.onRateLimit = opts.onRateLimit;
     this.onActivity = opts.onActivity;
     this.onStop = opts.onStop;
+    this.onRunStart = opts.onRunStart;
+    this.onRun = opts.onRun;
     this.onlyCommands = opts.onlyCommands ?? null;
     this.meta.permissionMode = opts.permissionMode ?? 'default';
     if (opts.model) this.meta.model = opts.model;
@@ -307,6 +332,7 @@ export class LiveSession {
     };
     this.lastActivity = Date.now();
     this.lastMessageUuid = message.uuid;
+    this.beginRun();
     try {
       // A queued turn can arrive while already running; persist it too.
       if (this.status === 'running') this.onActivity?.(this.workState());
@@ -346,6 +372,7 @@ export class LiveSession {
     // Deny anything still waiting on the user, then stop the turn — and the
     // sub-agents and backgrounded commands it left running: the engineer has
     // one Stop, and it stops the work, not only the part in the foreground.
+    if (this.run) this.run.stopping = true;
     for (const id of [...this.pending.keys()]) this.answerPermission(id, 'deny');
     const background = this.backgroundIds;
     if (this.status === 'running' || this.status === 'requires_action' || !background.length) await this.q.interrupt();
@@ -379,6 +406,7 @@ export class LiveSession {
       console.error(`[engine ${this.shortId}] recovery write failed: ${String(err)}`);
       this.broadcast({ type: 'error', sessionId: this.sessionId, message: 'Could not save the interruption notice. Work has stopped; reopen this conversation before continuing.' });
     }
+    this.endRun(RUN_CUT[reason]);
     this.closed = true;
     for (const id of [...this.pending.keys()]) this.answerPermission(id, 'deny');
     this.input.close();
@@ -469,6 +497,7 @@ export class LiveSession {
       this.backgroundWork = work.length;
       this.backgroundIds = work.map((t) => t.task_id);
       this.onActivity?.(this.workState());
+      this.endRunIfQuiet();
     } else if (message.type === 'system' && message.subtype === 'session_state_changed') {
       this.setStatus(message.state);
     } else if (message.type === 'system' && message.subtype === 'status' && message.permissionMode) {
@@ -481,7 +510,9 @@ export class LiveSession {
     } else if (message.type === 'result') {
       this.meta = { ...this.meta, totalCostUsd: message.total_cost_usd };
       this.onResult?.({ totalCostUsd: message.total_cost_usd, numTurns: message.num_turns, at: Date.now() });
+      this.noteResult(message);
       if (this.pending.size === 0) this.setStatus('idle');
+      this.endRunIfQuiet();
     }
     if (message.type !== 'stream_event') this.buffer.push(forReplay(message));
     this.broadcast({ type: 'message', sessionId: this.sessionId, message });
@@ -559,8 +590,68 @@ export class LiveSession {
     if (!busy) this.busySince = null;
     else if (this.busySince === null) this.busySince = Date.now();
     if (!this.closed) this.onActivity?.(this.workState());
+    if (busy) this.beginRun();
+    else if (status === 'idle') this.endRunIfQuiet();
     const busyForMs = this.busyForMs;
     this.broadcast({ type: 'status', sessionId: this.sessionId, status, ...(busyForMs !== undefined ? { busyForMs } : {}) });
+  }
+
+  // --- runs (ezdxf-flask #1227) ---------------------------------------------
+
+  private beginRun() {
+    if (this.run || this.closed) return;
+    this.run = { startedAt: Date.now(), turns: 0, stopping: false };
+    try {
+      this.onRunStart?.(this.run.startedAt);
+    } catch (err) {
+      console.error(`[engine ${this.shortId}] run start not kept: ${String(err)}`);
+    }
+  }
+
+  /** A turn's result: how it ended (the worst of the run's turns wins) and
+   *  the engine's running totals. */
+  private noteResult(message: Extract<SDKMessage, { type: 'result' }>) {
+    this.beginRun();
+    const run = this.run!;
+    run.turns += message.num_turns;
+    run.modelUsage = message.modelUsage;
+    const failed = message.subtype !== 'success' || message.is_error;
+    const outcome: Outcome = !failed ? 'ok' : run.stopping ? 'stopped' : 'error';
+    if (RUN_RANK[outcome] >= RUN_RANK[run.outcome ?? 'ok']) run.outcome = outcome;
+    if (failed && !run.error) {
+      const text = message.subtype === 'success' ? message.result : [message.subtype, ...(message.errors ?? [])].join(': ');
+      if (text) run.error = text;
+    }
+  }
+
+  /** Quiet again — no turn, no sub-agent, no question waiting — ends the run. */
+  private endRunIfQuiet() {
+    if (!this.run || this.status !== 'idle' || this.backgroundWork > 0 || this.pending.size > 0) return;
+    this.endRun();
+  }
+
+  /** `cut`: how the run ends when the engine stops under it. */
+  private endRun(cut?: Outcome) {
+    const run = this.run;
+    if (!run) return;
+    this.run = null;
+    // a run whose own turns all ended may still be cut in its background
+    // work; Stop on background work alone stops the run too
+    let outcome: Outcome = run.outcome ?? 'error';
+    if (run.stopping && RUN_RANK.stopped > RUN_RANK[outcome]) outcome = 'stopped';
+    if (cut && (!run.outcome || RUN_RANK[cut] > RUN_RANK[outcome])) outcome = cut;
+    try {
+      this.onRun?.({
+        startedAt: run.startedAt,
+        endedAt: Date.now(),
+        outcome,
+        ...(run.error ? { error: run.error } : cut && outcome === cut ? { error: `the engine stopped (${cut})` } : {}),
+        ...(run.turns ? { turns: run.turns } : {}),
+        ...(run.modelUsage ? { modelUsage: run.modelUsage } : {}),
+      });
+    } catch (err) {
+      console.error(`[engine ${this.shortId}] run not recorded: ${String(err)}`);
+    }
   }
 
   private workState(): WorkState {

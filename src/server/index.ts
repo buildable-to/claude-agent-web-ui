@@ -33,6 +33,12 @@ const accounts = config.agentsRoot
     })
   : null;
 const single = accounts ? null : new SessionManager(config.projectDir);
+try {
+  const n = accounts?.sendWaitingRuns() ?? 0;
+  if (n) console.log(`[runs] sending what ${n} account folder(s) kept from before`);
+} catch (err) {
+  console.error(`[runs] could not look for waiting runs: ${String(err)}`);
+}
 
 export type Ctx = { manager: SessionManager; dir: string; account?: Account };
 
