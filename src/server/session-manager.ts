@@ -118,6 +118,8 @@ export class SessionManager {
       sessionTimes?: typeof sessionTimes;
       /** Where run records go (tests); the app's door by default. */
       sendRun?: Sender;
+      /** How long after a run its transcript is read (tests: 0). */
+      runSettleMs?: number;
     } = {},
   ) {
     this.info = shared ?? { value: null, probe: null };
@@ -132,6 +134,7 @@ export class SessionManager {
           transcriptDir(projectDir),
           dependencies.sendRun ?? doorSender(engineEnv({ BUILDABLE_ACCOUNT: accountId })),
           (id) => this.conversation(id),
+          dependencies.runSettleMs,
         )
       : null;
     setInterval(() => this.reapIdle(), 5 * 60 * 1000).unref();
@@ -413,7 +416,8 @@ export class SessionManager {
   }
 
   async remove(sessionId: string) {
-    this.get(sessionId)?.close();
+    // deleting a conversation under a run stops it, as Stop would
+    this.get(sessionId)?.close('user_stop');
     this.live.delete(sessionId);
     await deleteSession(sessionId, { dir: this.projectDir });
     this.work.remove(sessionId);

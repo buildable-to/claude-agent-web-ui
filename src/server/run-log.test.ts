@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { setImmediate } from 'node:timers/promises';
 import { test, type TestContext } from 'node:test';
 import type { ModelUsage, Query, SDKMessage, query } from '@anthropic-ai/claude-agent-sdk';
-import { RunLog, countTokens, price, ratesFrom, type RunRecord } from './run-log.js';
+import { RunLog, countTokens, doorSender, price, ratesFrom, type RunRecord, type Sent } from './run-log.js';
 import { SessionManager, transcriptDir } from './session-manager.js';
 
 function folder(t: TestContext) {
@@ -39,7 +39,7 @@ function modelUsage(u: Partial<ModelUsage>): ModelUsage {
   };
 }
 
-test('a run spends what its calls in its window cost, each call once, sub-agents apart', (t) => {
+test('a run spends what its calls in its window cost, each call once, sub-agents apart', async (t) => {
   const dir = folder(t);
   mkdirSync(join(dir, 'c1', 'subagents'), { recursive: true });
   writeFileSync(join(dir, 'c1.jsonl'), [
@@ -57,14 +57,20 @@ test('a run spends what its calls in its window cost, each call once, sub-agents
     call('s1', 4, usage(5, 20, 300, 10), {}, 'claude-haiku-5-5'),
     call('s2', 4, usage(1, 2, 0, 0)),
   ].join('\n'));
-  const c = countTokens(dir, 'c1', T, T + 60_000);
+  const c = await countTokens(dir, 'c1', T, T + 60_000);
   assert.deepEqual(c.main, { 'claude-opus-5-5': { input: 12, output: 47, cache_read: 1000, cache_write: 50, cache_write_1h: 50 } });
   assert.deepEqual(c.subagents, {
     'claude-haiku-5-5': { input: 5, output: 20, cache_read: 300, cache_write: 10, cache_write_1h: 10 },
     'claude-opus-5-5': { input: 2, output: 3, cache_read: 0, cache_write: 0, cache_write_1h: 0 },
   });
   assert.equal(c.last, T + 7000);
-  assert.deepEqual(countTokens(dir, 'nobody', T, T + 60_000), { main: {}, subagents: {}, last: 0 });
+  assert.equal(c.earlier, true, 'the conversation ran before');
+  // every call up to the end, the earlier run's too: what the rates are read against
+  assert.equal(c.seen['claude-opus-5-5']!.input, 12 + 2 + 999);
+  assert.deepEqual(await countTokens(dir, 'nobody', T, T + 60_000), { main: {}, subagents: {}, seen: {}, earlier: false, last: 0 });
+  // a sub-agent's call before the run does not make it a later run
+  assert.equal((await countTokens(dir, 'c1', T - 50_000, T + 60_000)).earlier, true);
+  assert.equal((await countTokens(dir, 'c1', T - 200_000, T + 60_000)).earlier, false);
 });
 
 test("a model's price comes from the engine's own totals; an unknown model has no dollars", () => {
@@ -85,11 +91,21 @@ test("a model's price comes from the engine's own totals; an unknown model has n
   assert.equal('cache_write_1h' in priced['claude-opus-5-5']!, false);
 });
 
-function log(t: TestContext, send: (r: RunRecord) => Promise<boolean>) {
+test("five-minute cache writes (the sub-agents') are read from the transcripts, not taken for hour-long ones", () => {
+  // $5/M input; 1M five-minute writes (x1.25) cost $6.25; taken for hour-long (x2) the rate would read low
+  const usage = { 'claude-opus-5-5': modelUsage({ cacheCreationInputTokens: 1e6, costUSD: 6.25, canonicalModel: 'claude-opus-5-5' }) };
+  const seen = { 'claude-opus-5-5': { input: 0, output: 0, cache_read: 0, cache_write: 1000, cache_write_1h: 0 } };
+  assert.ok(Math.abs(ratesFrom(usage, seen)['claude-opus-5-5']! - 5e-6) < 1e-12);
+  assert.ok(ratesFrom(usage)['claude-opus-5-5']! < 4e-6, 'without the transcripts: all hour-long');
+  // an alias key is priced under the model the transcripts name
+  assert.deepEqual(Object.keys(ratesFrom({ opus: modelUsage({ inputTokens: 1, costUSD: 1, canonicalModel: 'claude-opus-5-5' }) })), ['claude-opus-5-5']);
+});
+
+function log(t: TestContext, send: (r: RunRecord) => Promise<Sent>) {
   const dir = folder(t);
   const transcripts = join(dir, 'transcripts');
   mkdirSync(transcripts);
-  const runs = new RunLog(dir, 'u1', transcripts, send, () => ({ project: 'p1', scope: 'project', first: true }));
+  const runs = new RunLog(dir, 'u1', transcripts, send, () => ({ project: 'p1', scope: 'project', first: true }), 0);
   return { dir, transcripts, runs };
 }
 
@@ -102,8 +118,10 @@ test('a record the database could not take waits in the folder and goes first ne
   });
   runs.begin('c1', T);
   runs.end('c1', { startedAt: T, endedAt: T + 1000, outcome: 'ok' });
-  await runs.settled();
   const unsent = join(dir, '.agent-runs-unsent.jsonl');
+  // on disk the moment it ends, before any sending: a deploy may exit next
+  assert.equal(readFileSync(unsent, 'utf8').trim().split('\n').length, 1);
+  await runs.settled();
   const waiting = readFileSync(unsent, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as RunRecord);
   assert.equal(waiting.length, 1);
   assert.equal(waiting[0]!.tries, 1);
@@ -130,6 +148,29 @@ test('one record the door always refuses is dropped in the end, never blocking t
   assert.equal(waiting[0]!.conversation, 'c1');
 });
 
+test("while this server's app has no door yet, records wait and keep their tries", async (t) => {
+  let door: Sent = 'later';
+  const sent: string[] = [];
+  const { dir, runs } = log(t, async (r) => {
+    if (door === true) sent.push(r.run_id);
+    return door;
+  });
+  for (let i = 0; i < 25; i++) runs.end(`c${i}`, { startedAt: T, endedAt: T + 1, outcome: 'ok' });
+  await runs.settled();
+  const waiting = readFileSync(join(dir, '.agent-runs-unsent.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as RunRecord);
+  assert.equal(waiting.length, 25);
+  assert.ok(waiting.every((r) => !r.tries));
+  door = true;
+  runs.end('c-last', { startedAt: T, endedAt: T + 1, outcome: 'ok' });
+  await runs.settled();
+  assert.equal(sent.length, 26);
+});
+
+test('the door sender waits when the checkout has no door yet', async (t) => {
+  const repo = folder(t);
+  assert.equal(await doorSender({ BUILDABLE_REPO: repo })({} as RunRecord), 'later');
+});
+
 test('a run the service died in is recorded as cut by a restart when it comes back', async (t) => {
   const dir = folder(t);
   const transcripts = join(dir, 'transcripts');
@@ -138,7 +179,7 @@ test('a run the service died in is recorded as cut by a restart when it comes ba
   writeFileSync(join(dir, '.agent-runs-open.json'), JSON.stringify({ c1: { runId: 'r-crashed', startedAt: T } }));
   writeFileSync(join(dir, '.agent-rates.json'), JSON.stringify({ 'claude-opus-5-5': 1e-6 }));
   const sent: RunRecord[] = [];
-  const runs = new RunLog(dir, 'u1', transcripts, async (r) => (sent.push(r), true), () => ({ project: null, scope: 'library', first: false }));
+  const runs = new RunLog(dir, 'u1', transcripts, async (r) => (sent.push(r), true), () => ({ project: null, scope: 'library', first: false }), 0);
   await runs.settled();
   assert.equal(sent.length, 1);
   const r = sent[0]!;
@@ -204,6 +245,7 @@ async function manager(t: TestContext) {
   const m = new SessionManager(dir, 'u1', { value: { commands: [], models: [] }, probe: null }, {
     queryFactory: cli.factory,
     sendRun: async (r) => (sent.push(r), true),
+    runSettleMs: 0,
   });
   mkdirSync(transcriptDir(dir), { recursive: true });
   return { m, cli, sent, dir };
@@ -234,6 +276,50 @@ test('a run lasts until all is quiet: its sub-agents too; the first chat of a pr
   assert.equal(sent.length, 2);
   assert.deepEqual([sent[1]!.first, sent[1]!.outcome, sent[1]!.error], [false, 'error', 'error_during_execution: the tool failed']);
   m.closeAll();
+});
+
+test('only the first run of the first conversation is the first; its next message is a revision', async (t) => {
+  const { m, cli, sent, dir } = await manager(t);
+  const s = await m.open(null, { project: 'p1', firstPrompt: 'Make it' });
+  const tr = transcriptDir(dir);
+  s.send('Make it');
+  writeFileSync(join(tr, `${s.sessionId}.jsonl`), call('m1', -1, usage(1, 1)).replace(at(-1), new Date(Date.now()).toISOString()) + '\n');
+  await cli.result(true);
+  await cli.state('idle');
+  await (m as unknown as { runs: RunLog }).runs.settled();
+  await new Promise((r) => setTimeout(r, 5));
+  s.send('Now the sheets');
+  await cli.result(true);
+  await cli.state('idle');
+  await (m as unknown as { runs: RunLog }).runs.settled();
+  assert.deepEqual(sent.map((r) => r.first), [true, false]);
+  m.closeAll();
+});
+
+test('Stop on background work alone ends the run as stopped', async (t) => {
+  const { m, cli, sent } = await manager(t);
+  const s = await m.open(null, { project: 'p1' });
+  s.send('six builders');
+  await cli.background(6);
+  await cli.result(true);
+  await cli.state('idle');
+  await s.interrupt();
+  await cli.background(0);
+  await (m as unknown as { runs: RunLog }).runs.settled();
+  assert.deepEqual(sent.map((r) => r.outcome), ['stopped']);
+  m.closeAll();
+});
+
+test('an idle chat closed hours later keeps its turns\' outcome; one with none is an error', async (t) => {
+  const { m, cli, sent } = await manager(t);
+  const s = await m.open(null, { project: 'p1' });
+  s.send('builders');
+  await cli.background(1);
+  await cli.result(true);
+  await cli.state('idle');
+  s.close('idle_timeout');
+  await (m as unknown as { runs: RunLog }).runs.settled();
+  assert.deepEqual(sent.map((r) => r.outcome), ['ok']);
 });
 
 test('Stop and a restart under a run end it as stopped and as cut by a restart', async (t) => {

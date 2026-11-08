@@ -177,12 +177,14 @@ export type Subscriber = (message: ServerMessage) => void;
 const RUN_RANK: Record<Outcome, number> = { ok: 0, error: 1, restart: 2, stopped: 3 };
 
 /** How a run ends when the engine stops under it, by the stop's reason. */
-const RUN_CUT: Record<StoppedWorkNotice['reason'], Outcome> = {
+const RUN_CUT: Record<StoppedWorkNotice['reason'], Outcome | undefined> = {
   user_stop: 'stopped',
   service_stop: 'restart',
   service_restart: 'restart',
   engine_exit: 'error',
-  idle_timeout: 'error',
+  // closed after hours without a word: background work that never settled;
+  // its turns' own outcome stands, a run with none is an error
+  idle_timeout: undefined,
 };
 
 export class LiveSession {
@@ -633,8 +635,11 @@ export class LiveSession {
     const run = this.run;
     if (!run) return;
     this.run = null;
-    // a run whose own turns all ended may still be cut in its background work
-    const outcome = cut && (!run.outcome || RUN_RANK[cut] > RUN_RANK[run.outcome]) ? cut : (run.outcome ?? 'error');
+    // a run whose own turns all ended may still be cut in its background
+    // work; Stop on background work alone stops the run too
+    let outcome: Outcome = run.outcome ?? 'error';
+    if (run.stopping && RUN_RANK.stopped > RUN_RANK[outcome]) outcome = 'stopped';
+    if (cut && (!run.outcome || RUN_RANK[cut] > RUN_RANK[outcome])) outcome = cut;
     try {
       this.onRun?.({
         startedAt: run.startedAt,
