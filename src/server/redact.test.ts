@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import { SkillRedactor, redactHistory } from './redact.js';
+import { SkillRedactor, hiddenSkills, redactHistory } from './redact.js';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const HIDDEN = new Set(['house-method']);
 
 const sdk = (m: unknown) => m as SDKMessage;
 const said = (content: unknown[]) => sdk({ type: 'assistant', uuid: 'a', parent_tool_use_id: null, message: { role: 'assistant', content } });
@@ -10,7 +15,7 @@ const heard = (content: unknown, extra: object = {}) =>
 const text = (m: SDKMessage | null) => JSON.stringify(m);
 
 test("a skill loading reaches no page: its name, its text, its result", () => {
-  const r = new SkillRedactor();
+  const r = new SkillRedactor(HIDDEN);
   const call = r.redact(said([{ type: 'tool_use', id: 't1', name: 'Skill', input: { skill: 'house-method' } }]));
   assert.ok(!text(call).includes('house-method'));
   const result = r.redact(heard([{ type: 'tool_result', tool_use_id: 't1', content: 'Launching skill: house-method' }],
@@ -22,7 +27,7 @@ test("a skill loading reaches no page: its name, its text, its result", () => {
 });
 
 test("the agent reading a skill's file becomes a bare skill step", () => {
-  const r = new SkillRedactor();
+  const r = new SkillRedactor(HIDDEN);
   const call = r.redact(said([
     { type: 'text', text: 'Looking.' },
     { type: 'tool_use', id: 't2', name: 'Read', input: { file_path: '/home/agent/.claude/skills/house-method/references/run.md' } },
@@ -37,7 +42,7 @@ test("the agent reading a skill's file becomes a bare skill step", () => {
 });
 
 test('a streamed skill read stops before its name', () => {
-  const r = new SkillRedactor();
+  const r = new SkillRedactor(HIDDEN);
   const ev = (event: object) => sdk({ type: 'stream_event', parent_tool_use_id: null, event });
   assert.ok(r.redact(ev({ type: 'content_block_start', index: 1, content_block: { type: 'tool_use', name: 'Read', input: {} } })));
   assert.ok(r.redact(ev({ type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"file_path": "\\/home\\/agent\\/.cla' } })));
@@ -55,7 +60,45 @@ test('history is read back the same way', () => {
     { type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'h1', name: 'Bash', input: { command: 'cat ~/.claude/skills/house-method/SKILL.md' } }] } },
     { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'h1', content: 'The secret rules.' }] } },
     { type: 'user', message: { role: 'user', content: 'Draw it.' } },
-  ]);
+  ], HIDDEN);
   assert.ok(!JSON.stringify(got).includes('secret') && !JSON.stringify(got).includes('house-method'));
   assert.equal((got[2]!.message as { content: string }).content, 'Draw it.');
+});
+
+test("a helper keeps its card; a brief carrying the method is not sent", () => {
+  const r = new SkillRedactor(HIDDEN);
+  const plain = said([{ type: 'tool_use', id: 'a1', name: 'Agent', input: { description: 'Tidy elev', prompt: 'Read .claude/skills/edit-drawing/SKILL.md first.' } }]);
+  assert.equal(r.redact(plain), plain);
+  const ours = r.redact(said([{ type: 'tool_use', id: 'a2', name: 'Agent', input: { description: 'Tidy sec', prompt: 'Load house-method. Its thirteen tests: ...' } }]));
+  assert.ok(text(ours).includes('Tidy sec') && text(ours).includes('"name":"Agent"') && !text(ours).includes('thirteen'));
+  const first = r.redact(sdk({ type: 'user', uuid: 'h', parent_tool_use_id: 'a2', message: { role: 'user', content: [{ type: 'text', text: 'Load house-method. Its thirteen tests' }] } }));
+  assert.ok(!text(first).includes('thirteen'));
+  const started = r.redact(sdk({ type: 'system', subtype: 'task_started', task_id: 't', description: 'Tidy sec', prompt: 'Load house-method. Its thirteen tests' }));
+  assert.ok(!text(started).includes('thirteen') && text(started).includes('Tidy sec'));
+});
+
+test('the skills folder as a whole, or a hidden skill named in a command, is a skill step', () => {
+  const r = new SkillRedactor(HIDDEN);
+  for (const input of [{ pattern: 'x', path: '/home/agent/.claude/skills' }, { command: 'ls ~/.claude/skills' },
+    { command: 'cd ~/.claude/skills && cat house-method/SKILL.md' }]) {
+    const got = r.redact(said([{ type: 'tool_use', id: 'g', name: 'Bash', input }]));
+    assert.ok(text(got).includes('"name":"Skill"') && !text(got).includes('skills'), JSON.stringify(input));
+  }
+});
+
+test("a hidden skill's name left in a reply or a printout reads 'drawing standard'", () => {
+  const r = new SkillRedactor(HIDDEN);
+  const got = r.redact(said([{ type: 'text', text: 'Ran house-method on the elevation.' }]));
+  assert.ok(text(got).includes('Ran drawing standard on'));
+  const out = r.redact(heard([{ type: 'tool_result', tool_use_id: 'z', content: 'a value in its style (house-method)' }]));
+  assert.ok(!text(out).includes('house-method'));
+});
+
+test('the hidden skills are those that say user-invocable: false', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'home-'));
+  for (const [name, head] of [['ours', 'user-invocable: false\n'], ['theirs', '']]) {
+    await mkdir(join(dir, 'skills', name!), { recursive: true });
+    await writeFile(join(dir, 'skills', name!, 'SKILL.md'), `---\nname: ${name}\n${head}description: x\n---\nbody`);
+  }
+  assert.deepEqual([...hiddenSkills(dir)], ['ours']);
 });
