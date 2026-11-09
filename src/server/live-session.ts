@@ -24,6 +24,7 @@ import type {
 } from '../shared/protocol.js';
 import { toCommandInfo, toModelOptions } from './commands.js';
 import { userContent } from './attachments.js';
+import { SkillRedactor } from './redact.js';
 import { forReplay, replaySince } from './replay.js';
 import type { WorkState } from './work-journal.js';
 import type { Outcome, RunEnd } from './run-log.js';
@@ -215,6 +216,8 @@ export class LiveSession {
   /** Everything the engine has emitted this process lifetime, minus stream
    *  events, as a page catching up needs it (replay.ts). */
   private readonly buffer: SDKMessage[] = [];
+  /** what the agent reads of its skills never reaches a page (Buildable #1253) */
+  private readonly skills = new SkillRedactor();
   private closed = false;
   private terminalOnlyCommands: string[] = [];
   private readonly onlyCommands: ReadonlySet<string> | null;
@@ -487,7 +490,10 @@ export class LiveSession {
         permissionMode: message.permissionMode,
         claudeCodeVersion: message.claude_code_version,
         tools: message.tools,
-        slashCommands: message.slash_commands,
+        // on the shared server the offered skills only: never one that is the agent's alone
+        slashCommands: this.onlyCommands
+          ? message.slash_commands.filter((n) => this.onlyCommands!.has(n.replace(/^\//, '')))
+          : message.slash_commands,
       };
       this.terminalOnlyCommands = message.terminal_slash_commands ?? [];
       // The SDK sends an init at the start of EVERY turn, not only when the
@@ -519,8 +525,9 @@ export class LiveSession {
       if (this.pending.size === 0) this.setStatus('idle');
       this.endRunIfQuiet();
     }
-    if (message.type !== 'stream_event') this.buffer.push(forReplay(message));
-    this.broadcast({ type: 'message', sessionId: this.sessionId, message });
+    const shown = this.skills.redact(message);
+    if (shown && shown.type !== 'stream_event') this.buffer.push(forReplay(shown));
+    if (shown) this.broadcast({ type: 'message', sessionId: this.sessionId, message: shown });
     this.watchRealApplies(message);
   }
 

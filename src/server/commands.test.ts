@@ -12,6 +12,8 @@ test('installed skills come from <claude dir>/skills, the frontmatter name first
   await mkdir(join(dir, '.claude/skills/edit-drawing'), { recursive: true });
   await writeFile(join(dir, '.claude/skills/edit-drawing/SKILL.md'), 'no frontmatter');
   await mkdir(join(dir, '.claude/skills/not-a-skill'), { recursive: true });
+  await mkdir(join(dir, '.claude/skills/house-method'), { recursive: true });
+  await writeFile(join(dir, '.claude/skills/house-method/SKILL.md'), '---\nname: house-method\nuser-invocable: false\ndescription: x\n---\nbody');
   const names = await installedSkills([join(dir, '.claude'), join(dir, 'missing')]);
   assert.deepEqual([...names].sort(), ['compose-project', 'edit-drawing']);
 });
