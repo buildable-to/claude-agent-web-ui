@@ -102,3 +102,32 @@ test('the hidden skills are those that say user-invocable: false', async () => {
   }
   assert.deepEqual([...hiddenSkills(dir)], ['ours']);
 });
+
+test('streamed, a name split over two pieces never goes out, nor a helper brief', () => {
+  const r = new SkillRedactor(HIDDEN, new Set());
+  const ev = (event: object) => sdk({ type: 'stream_event', parent_tool_use_id: null, event });
+  const piece = (index: number, t: string) => r.redact(ev({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: t } }));
+  r.redact(ev({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }));
+  const sent = [piece(0, 'I will run house-'), piece(0, 'method now')].map((m) => text(m)).join('');
+  assert.ok(!sent.includes('house') && sent.includes('drawing standard'));
+  r.redact(ev({ type: 'content_block_start', index: 1, content_block: { type: 'tool_use', name: 'Agent', input: {} } }));
+  assert.equal(r.redact(ev({ type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"prompt":"thirteen tests' } })), null);
+});
+
+test("a helper's lane lines and the engineer's own words", () => {
+  const r = new SkillRedactor(HIDDEN, new Set());
+  const lane = r.redact(sdk({ type: 'system', subtype: 'task_progress', task_id: 't', description: 'house-method pass, box elev', summary: 'Ran house-method test 5' }));
+  assert.ok(!text(lane).includes('house-method'));
+  const theirs = heard('What is house-method?');
+  assert.equal(r.redact(theirs), theirs);
+});
+
+test('a wildcard read is a skill step; a note written is still a Write', () => {
+  const r = new SkillRedactor(HIDDEN, new Set(['edit-drawing']));
+  const wild = r.redact(said([{ type: 'tool_use', id: 'w', name: 'Bash', input: { command: 'cat ~/.claude/skills/h*/SKILL.md' } }]));
+  assert.ok(text(wild).includes('"name":"Skill"'));
+  const shown = said([{ type: 'tool_use', id: 's', name: 'Read', input: { file_path: '/home/agent/.claude/skills/edit-drawing/SKILL.md' } }]);
+  assert.equal(r.redact(shown), shown);
+  const note = r.redact(said([{ type: 'tool_use', id: 'n', name: 'Write', input: { file_path: 'scratch/n.md', content: 'by house-method' } }]));
+  assert.ok(text(note).includes('"name":"Write"') && !text(note).includes('house-method'));
+});
