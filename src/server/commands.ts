@@ -69,7 +69,8 @@ export function claudeConfigDir(): string {
 /**
  * The skills installed under each Claude dir: `<dir>/skills/<folder>/SKILL.md`,
  * named by the frontmatter `name:` when there is one, else the folder (as
- * Claude Code does), with the frontmatter's `description:`. Dirs without
+ * Claude Code does), with the frontmatter's `description:`; a skill that
+ * says `user-invocable: false` is the model's alone and is left out. Dirs without
  * skills are skipped. `noLinks`: an account's folder, where its agent writes —
  * a link anywhere on the way (`.claude/skills` pointing at another account's)
  * is skipped, never followed.
@@ -97,6 +98,8 @@ export async function skillCommands(dirs: string[], noLinks = false): Promise<Co
         continue;
       }
       const frontmatter = /^---\s*\n([\s\S]*?)\n---/.exec(text)?.[1] ?? '';
+      // the agent's alone: Claude Code keeps it out of the / menu too (Buildable #1253)
+      if (/^user-invocable:\s*false\s*$/m.test(frontmatter)) continue;
       const name = /^name:\s*(.+)$/m.exec(frontmatter)?.[1]?.trim().replace(/^["']|["']$/g, '');
       out.push({ name: name || folder, description: frontmatterText(frontmatter, 'description') });
     }

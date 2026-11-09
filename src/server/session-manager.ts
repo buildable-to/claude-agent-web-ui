@@ -9,6 +9,7 @@ import {
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineInfo, HistoryMessage, SessionSummary } from '../shared/protocol.js';
+import { redactHistory } from './redact.js';
 import { claudeConfigDir, installedSkills, probeEngine, skillCommands } from './commands.js';
 import { LiveSession, engineEnv, type LiveSessionOptions } from './live-session.js';
 import { RunLog, doorSender, type Conversation, type Sender } from './run-log.js';
@@ -389,7 +390,7 @@ export class SessionManager {
       includeSystemMessages: true,
     });
     const times = (this.dependencies.sessionTimes ?? sessionTimes)(this.projectDir, sessionId);
-    const history: HistoryMessage[] = messages.map((m) => ({
+    const history: HistoryMessage[] = redactHistory(messages).map((m) => ({
       type: m.type,
       uuid: m.uuid,
       session_id: m.session_id,
