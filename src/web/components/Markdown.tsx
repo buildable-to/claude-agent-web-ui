@@ -8,6 +8,19 @@ import { ViewPill } from './ViewPill';
 import { ElementCard } from './ElementCard';
 
 const components: Components = {
+  // An image in a reply is shown as a link, never loaded by itself: text the
+  // agent read (a drawing, a brief) could otherwise make the browser send
+  // project data to any address inside an image URL (security review 2026-11-08).
+  img: ({ src, alt }) => {
+    let host = '';
+    try {
+      host = typeof src === 'string' ? new URL(src, window.location.href).host : '';
+    } catch {
+      host = '';
+    }
+    // plain text: not loaded, not a link, and it says where it points
+    return <span className="text-muted-foreground">{`[image${alt ? `: ${alt}` : ''}${host ? ` — ${host}` : ''}]`}</span>;
+  },
   a: ({ href, children, ...props }) => {
     // a mark the agent named: a pill, not a link
     if (href && href.startsWith('mention:')) return <Mention token={hrefToken(href, 'mention:')} />;

@@ -43,7 +43,12 @@ function fromB64url(s: string): Buffer {
   return Buffer.from(s, 'base64url');
 }
 
-export type TokenClaims = { sub: string; email?: string; sid?: string; scope?: string; exp?: number; role?: string; view?: boolean };
+export type TokenClaims = { sub: string; email?: string; sid?: string; scope?: string; exp?: number; role?: string; view?: boolean; aud?: string };
+
+/** Every token the app mints for this service says so (`aud`). The app's other
+ *  tokens (the desktop app's 30-day JWT) are signed with the same key while the
+ *  keys are shared, and must not open a desk (security review 2026-11-08). */
+export const AUDIENCE = 'buildable-agent';
 
 /** Verify an HS256 JWT and return its claims. Throws on any defect. */
 export function verifyToken(token: string, secret: string): TokenClaims {
@@ -65,6 +70,7 @@ export function verifyToken(token: string, secret: string): TokenClaims {
     throw new AuthError('bad token signature');
   }
   if (typeof claims.sub !== 'string' || !claims.sub) throw new AuthError('token has no subject');
+  if (claims.aud !== AUDIENCE) throw new AuthError('token is not for the agent');
   if (typeof claims.exp !== 'number') throw new AuthError('token has no expiry');
   if (claims.exp * 1000 < Date.now()) throw new AuthError('token expired');
   return claims;
@@ -73,7 +79,7 @@ export function verifyToken(token: string, secret: string): TokenClaims {
 /** Mint a token (tests and local tooling; the app mints the real ones). */
 export function signToken(claims: TokenClaims, secret: string): string {
   const h = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const p = b64url(JSON.stringify(claims));
+  const p = b64url(JSON.stringify({ aud: AUDIENCE, ...claims }));
   const s = createHmac('sha256', secret).update(`${h}.${p}`).digest('base64url');
   return `${h}.${p}.${s}`;
 }

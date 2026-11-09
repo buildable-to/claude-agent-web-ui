@@ -44,3 +44,16 @@ test('the engine knows which conversation it speaks for; the title rides along w
   assert.equal(env.BUILDABLE_CONVERSATION, 'abc-123');
   assert.equal(env.BUILDABLE_CONVERSATION_TITLE, 'Gutter');
 });
+
+// security review 2026-11-08: without this, `python -m` would put a chat's own
+// folder ahead of the host's code, so a door could run a chat's `buildable`
+test('the engine environment keeps the chat folder off python\'s import path', () => {
+  const before = process.env.PYTHONSAFEPATH;
+  process.env.PYTHONSAFEPATH = '1';
+  try {
+    assert.equal(engineEnv().PYTHONSAFEPATH, '1');
+  } finally {
+    if (before === undefined) delete process.env.PYTHONSAFEPATH;
+    else process.env.PYTHONSAFEPATH = before;
+  }
+});

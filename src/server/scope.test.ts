@@ -144,6 +144,10 @@ test('a library page resumes only library conversations; a project page never re
   assert.match(manager.refusal('untagged', { library: true }) ?? '', /about a project/);
   assert.equal(manager.refusal('lib1', { library: true }), null);
   assert.equal(manager.refusal('a1', { project: 'p1' }), null);
+  // another project's conversation is refused from this project's page; an untagged one is not
+  assert.match(manager.refusal('a1', { project: 'p2' }) ?? '', /another project/);
+  await assert.rejects(manager.open('a1', { project: 'p2' }), /another project/);
+  assert.equal(manager.refusal('untagged', { project: 'p1' }), null);
 
   // resumed from anywhere, a library conversation is still about the library
   const resumed = await manager.open('lib1', {});

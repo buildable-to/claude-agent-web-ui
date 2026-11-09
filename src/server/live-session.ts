@@ -29,8 +29,10 @@ import type { WorkState } from './work-journal.js';
 import type { Outcome, RunEnd } from './run-log.js';
 
 /** What an engine (and everything it runs) may see of the service's
- *  environment. The service's own secrets never cross this line. */
-const ENV_ALLOW = /^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LANGUAGE|LC_[A-Z]+|TERM|TZ|TMPDIR|XDG_[A-Z_]+|NODE_OPTIONS|HTTPS?_PROXY|NO_PROXY|https?_proxy|no_proxy|PYTHONPATH|PYTHONUNBUFFERED|FREECAD_CMD|BUILDABLE_[A-Z_]+|AGENTS_ROOT|CLAUDE_[A-Z_]+|ANTHROPIC_[A-Z_]+)$/;
+ *  environment. The service's own secrets never cross this line.
+ *  PYTHONSAFEPATH must cross it: without it `python -m` would put a chat's
+ *  own folder ahead of the host's code (security review 2026-11-08). */
+const ENV_ALLOW = /^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LANGUAGE|LC_[A-Z]+|TERM|TZ|TMPDIR|XDG_[A-Z_]+|NODE_OPTIONS|HTTPS?_PROXY|NO_PROXY|https?_proxy|no_proxy|PYTHONPATH|PYTHONUNBUFFERED|PYTHONSAFEPATH|FREECAD_CMD|BUILDABLE_[A-Z_]+|AGENTS_ROOT|CLAUDE_[A-Z_]+|ANTHROPIC_[A-Z_]+)$/;
 
 export function engineEnv(extra: Record<string, string> = {}): Record<string, string> {
   const out: Record<string, string> = {};
@@ -276,7 +278,10 @@ export class LiveSession {
           includePartialMessages: true,
           // Load the same settings the terminal would: user + project + local,
           // so CLAUDE.md files and existing allow rules apply here too.
-          settingSources: ['user', 'project', 'local'],
+          // On the shared server (no persisting), a desk's own settings.local.json
+          // is not read: a chat can write that file, and it would outrank the
+          // host's policy (security review 2026-11-08). A laptop keeps it.
+          settingSources: this.persistAlways ? ['user', 'project', 'local'] : ['user', 'project'],
           canUseTool: this.canUseTool,
           abortController: this.abort,
           env: library(engineEnv({

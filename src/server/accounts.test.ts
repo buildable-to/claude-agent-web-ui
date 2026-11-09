@@ -1,6 +1,7 @@
 // The contract with the app, checked without a browser or an engine:
 //   node --import tsx --test src/server/*.test.ts
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -100,4 +101,19 @@ test('a view token reads one project of the account and never rewrites whose des
   // a view token names a project; the owner's own token is not view only
   assert.throws(() => accounts.resolve(signToken({ sub: 'u1', view: true, exp: now() + 60 }, SECRET), undefined), AuthError);
   assert.equal(accounts.resolve(signToken({ sub: 'u1', sid: 'p1', exp: now() + 60 }, SECRET), undefined).viewOnly, undefined);
+});
+
+// security review 2026-11-08: a token minted for anything but this service never opens a desk
+test('a token without the agent audience is refused', () => {
+  const secret = 's'.repeat(32);
+  const exp = Math.floor(Date.now() / 1000) + 60;
+  const forged = (claims: object) => {
+    const h = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+    const p = Buffer.from(JSON.stringify(claims)).toString('base64url');
+    const s = createHmac('sha256', secret).update(`${h}.${p}`).digest('base64url');
+    return `${h}.${p}.${s}`;
+  };
+  assert.throws(() => verifyToken(forged({ sub: 'u1', exp }), secret), /not for the agent/);          // the desktop JWT's shape
+  assert.throws(() => verifyToken(forged({ sub: 'u1', exp, aud: 'other' }), secret), /not for the agent/);
+  assert.equal(verifyToken(forged({ sub: 'u1', exp, aud: 'buildable-agent' }), secret).sub, 'u1');
 });

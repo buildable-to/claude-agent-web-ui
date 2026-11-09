@@ -64,7 +64,8 @@ const studioOrigin = (() => {
   }
 })();
 app.use((_req, res, next) => {
-  res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${studioOrigin}`.trim());
+  // images only from this site (and inline/blob): nothing a reply contains loads from elsewhere
+  res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${studioOrigin}`.trim() + `; img-src 'self' data: blob: ${studioOrigin}`.trimEnd());
   next();
 });
 
