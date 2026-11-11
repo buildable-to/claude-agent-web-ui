@@ -3,6 +3,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, PermissionMode, ServerMessage } from '../shared/protocol.js';
 import type { Account } from './accounts.js';
 import { checkAttachments } from './attachments.js';
+import type { CreditCheck } from './billing.js';
 import type { LiveSession } from './live-session.js';
 import type { Scope, SessionManager } from './session-manager.js';
 
@@ -24,6 +25,8 @@ export function scopeOf(account: Account | undefined): Scope {
 export type ServerState = {
   /** A restart is waiting for running turns: no new turn starts, the rest works. */
   draining: () => boolean;
+  /** Whether an account may start a turn (billing.ts); none on a laptop. */
+  credits?: CreditCheck | null;
 };
 
 export const DRAINING_MESSAGE =
@@ -119,6 +122,8 @@ export function attachWebSocket(
           if (state.draining()) throw new Error(DRAINING_MESSAGE);
           refuseUnlessAsking(msg.permissionMode);
           const files = checkAttachments(ctx.dir, msg.files);
+          // opening a chat to read it is free; a message that starts a turn is not
+          if (msg.text.trim() || files.length) await refuseWithoutCredits();
           // The token's project is signed; the page's is not. A token that names
           // a project pins it, otherwise the page may say which one. A library
           // token has no project at all: whatever the page says is ignored.
@@ -159,6 +164,7 @@ export function attachWebSocket(
           const files = checkAttachments(ctx.dir, msg.files);
           const text = msg.text.trim();
           if (!text && !files.length) return;
+          await refuseWithoutCredits();
           session.send(text, msg.uuid, files);
           return;
         }
@@ -210,6 +216,14 @@ export function attachWebSocket(
     function refuseUnlessAsking(mode: PermissionMode | undefined) {
       if (!ctx.account || !mode || mode === 'default' || mode === 'acceptEdits' || mode === 'plan' || mode === 'auto') return;
       throw new Error(`Mode "${mode}" is not available on a shared server`);
+    }
+
+    /** Out of credits: the turn does not start, and the page says why and
+     *  where to get more. The app answers; when it cannot, the turn runs. */
+    async function refuseWithoutCredits() {
+      if (!ctx.account || !state.credits) return;
+      const refused = await state.credits(ctx.account.id);
+      if (refused) throw new Error(refused);
     }
 
     function requireLive(sessionId: string) {

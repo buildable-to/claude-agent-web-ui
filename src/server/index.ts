@@ -13,6 +13,7 @@ import { ConnectError, sharedConnector } from './connect.js';
 import { buildTree } from './tree.js';
 import { MAX_FILE_BYTES, saveAttachment } from './attachments.js';
 import { attachWebSocket, scopeOf, type Resolver } from './ws.js';
+import { creditCheck } from './billing.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const config = loadConfig();
@@ -384,7 +385,11 @@ if (existsSync(webDist)) {
 }
 
 const server = createServer(app);
-attachWebSocket(server, resolveCtx, `${base}/ws`, { draining: () => drain.draining });
+// Credits are checked only where accounts are (the shared server), against
+// the app at BUILDABLE_URL with the secret the two share (ezdxf-flask
+// docs/billing.md). A laptop has neither and checks nothing.
+const credits = accounts ? creditCheck({ appUrl: process.env.BUILDABLE_URL, secret: config.authSecret }) : null;
+attachWebSocket(server, resolveCtx, `${base}/ws`, { draining: () => drain.draining, credits });
 
 server.listen(config.port, config.host, () => {
   console.log(`claude-agent-web-ui listening on http://${config.host}:${config.port}${base}/`);
