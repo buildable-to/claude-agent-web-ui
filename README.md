@@ -215,6 +215,19 @@ conversation's next run); the service sends what any folder kept as it
 starts.
 Server mode only (an account per folder).
 
+**Credits before a turn** (`billing.ts`, the app's `docs/billing.md`). Before
+a message starts a turn (`start` with text or files, `send`), the service asks
+`POST <BUILDABLE_URL>/billing/agent/check` with `{user_id: <account>}` and an
+HS256 JWT signed with `AGENT_AUTH_SECRET`: `{role: 'agent-service', aud:
+'buildable-billing', exp}` (no other door takes that audience, and this
+service's own doors refuse it). `allowed: false` refuses the message with the
+app's words and the billing link; the engine is not started. Any other answer
+(an error, a 401, a timeout after 4 s, an app with no such door yet) lets the
+turn run: billing never takes the agent down. Opening a chat to read it asks
+nothing. What a run cost is not sent from here: the run record above carries
+it, and the app's run door charges it. Server mode only, and only with
+`BUILDABLE_URL` set.
+
 **Serving under a path.** `BASE_PATH=/agent` at build and at run time mounts
 the page, the API and the WebSocket under it, so a reverse proxy can route one
 path here.
@@ -223,7 +236,7 @@ path here.
 `scripts/agent-dev.sh` sets all of the above and starts this server on :3456;
 run the app with `AGENT_UI_URL=http://localhost:3456` and open a project.
 
-**Tests:** `npm test` (the token contract, account folders, the engine env, run records).
+**Tests:** `npm test` (the token contract, account folders, the engine env, run records, the credit check).
 
 **Changing the contract.** Everything above is what the Buildable app relies
 on. Add rather than rename; deploy this side first when it offers something
