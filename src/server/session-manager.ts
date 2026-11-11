@@ -5,6 +5,7 @@ import {
   listSessions,
   renameSession,
   type PermissionMode,
+  type SessionStoreEntry,
 } from '@anthropic-ai/claude-agent-sdk';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -122,6 +123,7 @@ export class SessionManager {
       getSessionInfo?: typeof getSessionInfo;
       getSessionMessages?: typeof getSessionMessages;
       sessionTimes?: typeof sessionTimes;
+      rowsBeforeCompactions?: typeof rowsBeforeCompactions;
       /** Where run records go (tests); the app's door by default. */
       sendRun?: Sender;
       /** How long after a run its transcript is read (tests: 0). */
@@ -385,10 +387,25 @@ export class SessionManager {
   }
 
   async history(sessionId: string): Promise<HistoryMessage[]> {
-    const messages = await (this.dependencies.getSessionMessages ?? getSessionMessages)(sessionId, {
-      dir: this.projectDir,
-      includeSystemMessages: true,
-    });
+    const read = this.dependencies.getSessionMessages ?? getSessionMessages;
+    const options = { dir: this.projectDir, includeSystemMessages: true };
+    const latest = await read(sessionId, options);
+    // The SDK's history starts at the last compaction; what was said before
+    // each one is still in the file, and the engineer scrolls back for it.
+    const messages: typeof latest = [];
+    const seen = new Set(latest.map((m) => m.uuid));
+    for (const rows of (this.dependencies.rowsBeforeCompactions ?? rowsBeforeCompactions)(this.projectDir, sessionId)) {
+      const part = await read(sessionId, {
+        ...options,
+        sessionStore: { append: async () => {}, load: async () => rows as SessionStoreEntry[] },
+      });
+      for (const m of part) {
+        if (seen.has(m.uuid)) continue;
+        seen.add(m.uuid);
+        messages.push(m);
+      }
+    }
+    messages.push(...latest);
     const times = (this.dependencies.sessionTimes ?? sessionTimes)(this.projectDir, sessionId);
     const history: HistoryMessage[] = redactHistory(messages).map((m) => ({
       type: m.type,
@@ -542,6 +559,34 @@ export class SessionManager {
 /** Where the engine keeps a folder's conversations. */
 export function transcriptDir(projectDir: string): string {
   return join(claudeConfigDir(), 'projects', projectDir.replace(/[^A-Za-z0-9]/g, '-'));
+}
+
+/** A saved conversation's lines up to each compaction, oldest first: one
+ *  list per compaction, each holding everything written before it. Read as a
+ *  conversation of its own, a list gives the stretch that ended there. Empty
+ *  for a conversation that was never compacted. */
+export function rowsBeforeCompactions(projectDir: string, sessionId: string): unknown[][] {
+  if (!/^[A-Za-z0-9-]+$/.test(sessionId)) return [];
+  let text: string;
+  try {
+    text = readFileSync(join(transcriptDir(projectDir), `${sessionId}.jsonl`), 'utf8');
+  } catch {
+    return [];
+  }
+  if (!text.includes('"compact_boundary"')) return [];
+  const rows: unknown[] = [];
+  const cuts: number[] = [];
+  for (const line of text.split('\n')) {
+    if (!line) continue;
+    try {
+      const row = JSON.parse(line) as { type?: unknown; subtype?: unknown; isSidechain?: unknown };
+      if (row.type === 'system' && row.subtype === 'compact_boundary' && !row.isSidechain && rows.length) cuts.push(rows.length);
+      rows.push(row);
+    } catch {
+      // a torn last line while the engine writes
+    }
+  }
+  return cuts.map((end) => rows.slice(0, end));
 }
 
 /** When each message of a saved conversation was said, by uuid. The SDK's
