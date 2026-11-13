@@ -390,6 +390,13 @@ const server = createServer(app);
 // docs/billing.md). A laptop has neither and checks nothing.
 const credits = accounts ? creditCheck({ appUrl: process.env.BUILDABLE_URL, secret: config.authSecret }) : null;
 attachWebSocket(server, resolveCtx, `${base}/ws`, { draining: () => drain.draining, credits });
+// What our own stop (a deploy) cut goes on by itself. AGENT_AUTO_CONTINUE=0 turns it off.
+if (accounts && process.env.AGENT_AUTO_CONTINUE !== '0') {
+  accounts
+    .continueStopped(credits)
+    .then((n) => { if (n) console.log(`[sessions] continued ${n} conversation(s) the last stop cut`); })
+    .catch((err) => console.error(`[sessions] could not continue stopped conversations: ${String(err)}`));
+}
 
 server.listen(config.port, config.host, () => {
   console.log(`claude-agent-web-ui listening on http://${config.host}:${config.port}${base}/`);

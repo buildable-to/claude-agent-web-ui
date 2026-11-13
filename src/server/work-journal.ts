@@ -74,6 +74,18 @@ export class WorkJournal {
     return notice?.id === entry?.generation ? notice : undefined;
   }
 
+  /** Conversations our own stop cut (a deploy's drain ran out), not yet
+   *  resumed and not older than `maxAgeMs`. A crash ('service_restart') is
+   *  left to the engineer: resuming it unasked could crash the service again. */
+  cutByServiceStop(maxAgeMs: number, now = Date.now()): string[] {
+    return Object.values(this.data.entries)
+      .filter((entry) => {
+        const notice = entry.notices.at(-1);
+        return notice?.id === entry.generation && notice.reason === 'service_stop' && now - notice.detectedAt <= maxAgeMs;
+      })
+      .map((entry) => entry.sessionId);
+  }
+
   remove(sessionId: string) {
     const entries = { ...this.data.entries };
     delete entries[sessionId];

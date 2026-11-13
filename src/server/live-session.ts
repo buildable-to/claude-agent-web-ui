@@ -84,7 +84,7 @@ export function promptAppend(opts: { project?: string; scope?: 'library'; recove
           COLLEAGUE_TONE
         : '';
   const resume = opts.recovery
-    ? '\nThe previous engine stopped while work was in flight. The engineer has now chosen to resume. Before restarting builders, inspect the conversation and current project/file state, reconcile writes that already landed, and continue only unfinished work. Do not blindly repeat completed operations.'
+    ? '\nThe previous engine stopped while work was in flight. The work is now being resumed. Before restarting builders, inspect the conversation and current project/file state, reconcile writes that already landed, and continue only unfinished work. Do not blindly repeat completed operations.'
     : '';
   return where || resume ? where + resume : undefined;
 }
