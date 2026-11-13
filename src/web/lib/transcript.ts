@@ -290,8 +290,11 @@ function stoppedWorkText(notice: StoppedWorkNotice): string {
   if (notice.reason === 'service_restart') {
     return `A restart interrupted your work (detected ${time(notice.detectedAt)}; last active ${time(notice.lastActiveAt)}). ${continueText}`;
   }
+  // our own update: the service continues the work itself (continueStopped)
+  if (notice.reason === 'service_stop') {
+    return `We paused your work at ${time(notice.detectedAt)} for an update. It continues by itself. If it doesn't 🙂 type "continue".`;
+  }
   const why = {
-    service_stop: 'when the service stopped',
     engine_exit: 'when the agent exited',
     user_stop: 'by a stop request',
     idle_timeout: 'after the session timed out',
