@@ -33,7 +33,7 @@ test('a stopped builder is explained even though its coordinator finished, witho
   assert.equal(stopped.attached, false);
   assert.equal(stopped.status, 'closed');
   assert.equal(notes(stopped.transcript).length, 1);
-  assert.match(notes(stopped.transcript)[0]!.text, /Type "continue"/);
+  assert.match(notes(stopped.transcript)[0]!.text, /type "continue"/);
   const closed = event(stopped, { type: 'status', sessionId: 's', status: 'closed' });
   assert.equal(notes(closed.transcript).length, 1);
   assert.equal(closed.transcript.turns.some((turn) => turn.kind === 'user'), false);
