@@ -389,14 +389,15 @@ const server = createServer(app);
 // the app at BUILDABLE_URL with the secret the two share (ezdxf-flask
 // docs/billing.md). A laptop has neither and checks nothing.
 const credits = accounts ? creditCheck({ appUrl: process.env.BUILDABLE_URL, secret: config.authSecret }) : null;
-attachWebSocket(server, resolveCtx, `${base}/ws`, { draining: () => drain.draining, credits });
 // What our own stop (a deploy) cut goes on by itself. AGENT_AUTO_CONTINUE=0 turns it off.
-if (accounts && process.env.AGENT_AUTO_CONTINUE !== '0') {
-  accounts
-    .continueStopped(credits)
-    .then((n) => { if (n) console.log(`[sessions] continued ${n} conversation(s) the last stop cut`); })
-    .catch((err) => console.error(`[sessions] could not continue stopped conversations: ${String(err)}`));
-}
+const resumed =
+  accounts && process.env.AGENT_AUTO_CONTINUE !== '0'
+    ? accounts
+        .continueStopped(credits)
+        .then((n) => { if (n) console.log(`[sessions] continued ${n} conversation(s) the last stop cut`); })
+        .catch((err) => console.error(`[sessions] could not continue stopped conversations: ${String(err)}`))
+    : undefined;
+attachWebSocket(server, resolveCtx, `${base}/ws`, { draining: () => drain.draining, credits, ...(resumed ? { resumed } : {}) });
 
 server.listen(config.port, config.host, () => {
   console.log(`claude-agent-web-ui listening on http://${config.host}:${config.port}${base}/`);

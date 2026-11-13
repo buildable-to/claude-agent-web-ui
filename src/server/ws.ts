@@ -27,10 +27,17 @@ export type ServerState = {
   draining: () => boolean;
   /** Whether an account may start a turn (billing.ts); none on a laptop. */
   credits?: CreditCheck | null;
+  /** Settles once the chats the last stop cut are running again (index.ts).
+   *  A page that reconnects before that would be told its chat is not live,
+   *  and would never look again. */
+  resumed?: Promise<unknown>;
 };
 
 export const DRAINING_MESSAGE =
   'The agent is restarting for an update and will be back in a minute. Your conversation is kept; send again then.';
+
+/** How long an attach waits for the start's auto-continue, at most. */
+const RESUME_WAIT_MS = 10_000;
 
 export function attachWebSocket(
   server: Server,
@@ -105,6 +112,7 @@ export function attachWebSocket(
       }
       switch (msg.type) {
         case 'attach': {
+          if (state.resumed) await Promise.race([state.resumed, new Promise((r) => setTimeout(r, RESUME_WAIT_MS).unref())]);
           const refused = sessions.refusal(msg.sessionId, scopeOf(ctx.account));
           if (refused) {
             fail(refused, msg.sessionId);

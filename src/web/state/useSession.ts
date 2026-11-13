@@ -25,6 +25,10 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
   const activeId = useRef<string | null>(requested);
   const attached = useRef(false);
   const awaitingNew = useRef(false);
+  /** The server has said once whether this conversation is live: from then
+   *  on a reconnect asks again. Before that, the first attach is still on
+   *  its way (it waits for the history). */
+  const answered = useRef(false);
   /** The newest main-conversation uuids this page holds, sent with every
    *  attach so the server replays only what is newer. */
   const known = useRef<string[]>([]);
@@ -35,6 +39,7 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
     let cancelled = false;
     activeId.current = requested;
     attached.current = false;
+    answered.current = false;
     awaitingNew.current = false;
     known.current = [];
     dispatch({ type: 'reset', sessionId: requested });
@@ -63,6 +68,7 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
           awaitingNew.current = false;
         } else if (m.sessionId !== activeId.current) return;
         attached.current = true;
+        answered.current = true;
         known.current = rememberKnown(known.current, m.replay);
         dispatch({ type: 'server', message: m });
         return;
@@ -75,12 +81,15 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
       if (m.type === 'not_live' || (m.type === 'status' && m.status === 'closed')) {
         attached.current = false;
       }
+      if (m.type === 'not_live') answered.current = true;
       dispatch({ type: 'server', message: m });
       if (m.type === 'status' && (m.status === 'idle' || m.status === 'closed')) turnEnd.current?.();
     });
     const unsubState = ws.onState((s) => {
-      // After a reconnect, re-subscribe to the engine if we had one.
-      if (s === 'open' && activeId.current && attached.current) {
+      // After a reconnect, look at the conversation again: re-subscribe to
+      // its engine, or find the one that continued it after an update (the
+      // old engine said "closed" before the service went down).
+      if (s === 'open' && activeId.current && answered.current) {
         ws.send({ type: 'attach', sessionId: activeId.current, known: known.current });
       }
     });
