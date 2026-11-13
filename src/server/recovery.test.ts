@@ -385,3 +385,51 @@ test('Stop after the turn stops the work left in the background, and only that',
   assert.equal(cli.interrupts, 1, 'nothing in the background: a plain interrupt, as before');
   manager.closeAll();
 });
+
+test('work our own stop cut goes on by itself after the restart; a crash waits for the engineer', async (t) => {
+  const info = async (id: string) => ({ sessionId: id, lastModified: 1, summary: 'Build', fileSize: 1 });
+  const dir = folder(t);
+  const old = engine();
+  const manager = new SessionManager(dir, undefined, undefined, { queryFactory: old.factory });
+  const session = await manager.open(null);
+  session.send('make a builder');
+  await old.background(1);
+  await old.idle();
+  // a deploy: the drain ran out and the service closed what still worked
+  manager.closeAll();
+  assert.equal(manager.stoppedWork(session.sessionId)[0]?.reason, 'service_stop');
+
+  // out of credits, or too long ago: left to the engineer
+  const refused = engine();
+  const broke = new SessionManager(dir, undefined, undefined, { queryFactory: refused.factory, getSessionInfo: info });
+  assert.equal(await broke.continueStopped(async () => false), 0);
+  assert.equal(await broke.continueStopped(undefined, -1), 0);
+  assert.equal(refused.launches, 0);
+
+  const resumed = engine();
+  const next = new SessionManager(dir, undefined, undefined, { queryFactory: resumed.factory, getSessionInfo: info });
+  assert.equal(await next.continueStopped(), 1);
+  await setImmediate();
+  assert.equal(resumed.launches, 1);
+  assert.equal(resumed.options?.resume, session.sessionId);
+  assert.match(JSON.stringify(resumed.prompts[0]), /continue/);
+  assert.match(JSON.stringify(resumed.options?.systemPrompt), /reconcile writes that already landed/);
+  // once: the resumed engine is a new generation, nothing is left to continue
+  assert.equal(await next.continueStopped(), 0);
+  assert.equal(resumed.launches, 1);
+  next.closeAll();
+
+  // a crash (no close handler ran) is not continued unasked
+  const crashDir = folder(t);
+  const lost = engine();
+  const crashed = new SessionManager(crashDir, undefined, undefined, { queryFactory: lost.factory });
+  const cut = await crashed.open(null);
+  cut.send('make a builder');
+  await lost.background(1);
+  await lost.idle();
+  const after = engine();
+  const back = new SessionManager(crashDir, undefined, undefined, { queryFactory: after.factory, getSessionInfo: info });
+  assert.equal(back.stoppedWork(cut.sessionId)[0]?.reason, 'service_restart');
+  assert.equal(await back.continueStopped(), 0);
+  assert.equal(after.launches, 0);
+});

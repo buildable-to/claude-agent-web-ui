@@ -189,6 +189,17 @@ export class Accounts {
     return n;
   }
 
+  /** At start: the conversations the last stop (a deploy) cut go on by
+   *  themselves. `refused` is the credit check, as for a typed message. */
+  async continueStopped(refused?: ((accountId: string) => Promise<string | null>) | null): Promise<number> {
+    let n = 0;
+    for (const a of this.listAccounts()) {
+      if (!existsSync(join(a.dir, '.agent-work.json'))) continue;
+      n += await this.manager(a).continueStopped(async () => !refused || !(await refused(a.id)));
+    }
+    return n;
+  }
+
   busy(): number {
     let n = 0;
     for (const m of this.managers.values()) n += m.busy();

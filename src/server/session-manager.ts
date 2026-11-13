@@ -39,6 +39,10 @@ export function shouldReap(
 /** Which app project each conversation in this folder is about — or
  *  LIBRARY_TAG for one started from Element Studio, about no project. */
 const PROJECTS_FILE = '.agent-projects.json';
+/** A conversation our stop cut is continued on its own only this soon after:
+ *  later, the engineer may have moved on, and should say so. */
+const AUTO_CONTINUE_MS = 30 * 60 * 1000;
+export const AUTO_CONTINUE_TEXT = 'continue';
 /** The model the engineer picked for a conversation. The engine forgets it
  *  when it stops (a deploy, a login switch, an idle hour), and the
  *  conversation would come back on the default: "it changed by itself". */
@@ -439,6 +443,23 @@ export class SessionManager {
       }
     }
     return history;
+  }
+
+  /** After our own restart (a deploy): the conversations it cut pick up
+   *  where they left off, without the engineer typing "continue".
+   *  `allowed` is the credit check; a refusal leaves the notice to the engineer. */
+  async continueStopped(allowed: () => Promise<boolean> = async () => true, maxAgeMs = AUTO_CONTINUE_MS): Promise<number> {
+    let n = 0;
+    for (const sessionId of this.work.cutByServiceStop(maxAgeMs)) {
+      try {
+        if (!(await allowed())) break;
+        (await this.open(sessionId)).send(AUTO_CONTINUE_TEXT);
+        n++;
+      } catch (err) {
+        console.error(`[sessions] could not continue ${sessionId.slice(0, 8)} after the restart: ${String(err)}`);
+      }
+    }
+    return n;
   }
 
   stoppedWork(sessionId: string) {
