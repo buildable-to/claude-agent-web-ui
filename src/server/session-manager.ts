@@ -39,6 +39,10 @@ export function shouldReap(
 /** Which app project each conversation in this folder is about — or
  *  LIBRARY_TAG for one started from Element Studio, about no project. */
 const PROJECTS_FILE = '.agent-projects.json';
+/** The model the engineer picked for a conversation. The engine forgets it
+ *  when it stops (a deploy, a login switch, an idle hour), and the
+ *  conversation would come back on the default: "it changed by itself". */
+const MODELS_FILE = '.agent-models.json';
 /** A library conversation's element, by conversation id (ezdxf-flask #723). */
 const SUBJECTS_FILE = '.agent-subjects.json';
 /** What a subject may be: an element id, or `draft:<id>`. */
@@ -106,6 +110,7 @@ export class SessionManager {
   private readonly info: SharedEngineInfo;
   private projects: Record<string, string>;
   private subjects: Record<string, string>;
+  private models: Record<string, string>;
   private usage: Record<string, Usage>;
   private readonly work: WorkJournal;
   /** Each run's record for pricing, on the server only (ezdxf-flask #1227). */
@@ -133,6 +138,7 @@ export class SessionManager {
     this.info = shared ?? { value: null, probe: null };
     this.projects = this.readJson<Record<string, string>>(PROJECTS_FILE);
     this.subjects = this.readJson<Record<string, string>>(SUBJECTS_FILE);
+    this.models = this.readJson<Record<string, string>>(MODELS_FILE);
     this.usage = this.readJson<Record<string, Usage>>(USAGE_FILE);
     this.work = new WorkJournal(projectDir);
     this.runs = accountId
@@ -211,6 +217,8 @@ export class SessionManager {
     const library = opts.scope === 'library' || tag === LIBRARY_TAG;
     const project = library ? undefined : (opts.project ?? tag);
     const { project: _p, scope: _s, firstPrompt: _f, ...rest } = opts;
+    // what the page picks now, else what was picked for this conversation before
+    const model = opts.model ?? (sessionId ? this.models[sessionId] : undefined);
     const only = await this.offeredCommands();
     // On the server every engine runs on the Claude login the admin picked
     // (logins.ts); a laptop keeps its own.
@@ -228,6 +236,8 @@ export class SessionManager {
       // write still ask, the deny rules still deny.
       ...(this.accountId ? { permissionMode: 'auto' as const } : {}),
       ...rest,
+      ...(model ? { model } : {}),
+      onModel: (picked) => this.keepModel(session.sessionId, picked),
       ...(project ? { project } : {}),
       ...(library ? { scope: 'library' as const } : {}),
       ...(title ? { title } : {}),
@@ -252,6 +262,7 @@ export class SessionManager {
     });
     this.live.set(session.sessionId, session);
     if (title) this.titles.set(session.sessionId, title);
+    if (opts.model) this.keepModel(session.sessionId, opts.model);
     const newTag = library ? LIBRARY_TAG : project;
     if (newTag && this.projects[session.sessionId] !== newTag) {
       this.projects[session.sessionId] = newTag;
@@ -454,6 +465,14 @@ export class SessionManager {
       delete this.subjects[sessionId];
       this.writeJson(SUBJECTS_FILE, this.subjects);
     }
+    this.keepModel(sessionId, null);
+  }
+
+  private keepModel(sessionId: string, model: string | null) {
+    if ((this.models[sessionId] ?? null) === model) return;
+    if (model) this.models[sessionId] = model;
+    else delete this.models[sessionId];
+    this.writeJson(MODELS_FILE, this.models);
   }
 
   /** What a run's record says of its conversation: its project (or the
