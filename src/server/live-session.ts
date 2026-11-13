@@ -156,6 +156,8 @@ export type LiveSessionOptions = {
   /** Resume this persisted session. When omitted a fresh session is created. */
   resume?: string;
   model?: string;
+  /** The engineer picked another model for this conversation (null: the default). */
+  onModel?: (model: string | null) => void;
   permissionMode?: PermissionMode;
   /** Extra environment for the engine and everything it runs. */
   env?: Record<string, string>;
@@ -234,6 +236,7 @@ export class LiveSession {
   private readonly onStop: LiveSessionOptions['onStop'];
   private readonly onRunStart: LiveSessionOptions['onRunStart'];
   private readonly onRun: LiveSessionOptions['onRun'];
+  private readonly onModel: LiveSessionOptions['onModel'];
   /** The run under way, from its first message until all is quiet again. */
   private run: { startedAt: number; outcome?: Outcome; error?: string; turns: number; modelUsage?: RunEnd['modelUsage']; stopping: boolean } | null = null;
 
@@ -250,6 +253,7 @@ export class LiveSession {
     this.onStop = opts.onStop;
     this.onRunStart = opts.onRunStart;
     this.onRun = opts.onRun;
+    this.onModel = opts.onModel;
     this.onlyCommands = opts.onlyCommands ?? null;
     this.meta.permissionMode = opts.permissionMode ?? 'default';
     if (opts.model) this.meta.model = opts.model;
@@ -402,6 +406,7 @@ export class LiveSession {
   async setModel(model: string | null) {
     await this.q.setModel(model ?? undefined);
     this.meta = { ...this.meta, model: model ?? undefined };
+    this.onModel?.(model);
     this.broadcast({ type: 'meta', sessionId: this.sessionId, meta: this.meta });
   }
 
