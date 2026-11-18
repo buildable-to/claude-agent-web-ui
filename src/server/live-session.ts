@@ -483,7 +483,9 @@ export class LiveSession {
     if (this.closed) return;
     this.lastActivity = Date.now();
     if (message.type === 'user' || message.type === 'assistant') {
-      this.lastMessageUuid = message.uuid;
+      // A helper's message is not in the conversation's own history: a notice
+      // anchored to one was never found there and fell to the end of the chat.
+      if (!message.parent_tool_use_id) this.lastMessageUuid = message.uuid;
       // Persist the history boundary as well as membership changes. Stream
       // token deltas never write the journal.
       this.onActivity?.(this.workState());
