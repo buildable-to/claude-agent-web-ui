@@ -436,8 +436,19 @@ export class SessionManager {
         message: {}, parent_tool_use_id: null, stoppedWork: notice,
       };
       let anchor = history.findIndex((m) => m.uuid === notice.afterMessageUuid);
-      if (anchor < 0) history.push(line);
-      else {
+      if (anchor < 0) {
+        // No anchor in this history (older notices were anchored to a helper's
+        // message): it goes where it happened, after the last thing said
+        // before it, never under everything said since.
+        let at = -1;
+        history.forEach((m, i) => {
+          const said = typeof m.timestamp === 'string' ? Date.parse(m.timestamp) : NaN;
+          if (said <= notice.detectedAt) at = i;
+        });
+        const dated = history.some((m) => typeof m.timestamp === 'string');
+        if (dated) history.splice(at + 1, 0, line);
+        else history.push(line);
+      } else {
         while (history[anchor + 1]?.stoppedWork?.afterMessageUuid === notice.afterMessageUuid) anchor++;
         history.splice(anchor + 1, 0, line);
       }

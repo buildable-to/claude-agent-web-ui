@@ -282,6 +282,24 @@ test('history places repeated incidents in order before later resumed messages',
   ]);
 });
 
+test('a notice whose anchor is not in the history goes where it happened, by time', async (t) => {
+  const dir = folder(t);
+  const journal = new WorkJournal(dir);
+  const state = { sessionId: 'session', generation: 'cut', active: true, lastActiveAt: 1, afterMessageUuid: 'a-helpers-message' };
+  journal.begin(state);
+  t.mock.method(Date, 'now', () => Date.parse('2026-11-17T12:28:00Z'));
+  journal.stop(state, 'service_stop');
+  t.mock.restoreAll();
+  const said = { before: '2026-11-17T12:00:00Z', after: '2026-11-17T13:00:00Z', today: '2026-11-18T18:58:00Z' };
+  const manager = new SessionManager(dir, undefined, undefined, {
+    getSessionMessages: async () => Object.keys(said).map((uuid) => ({
+      type: 'user', uuid, session_id: 'session', parent_tool_use_id: null, parent_agent_id: null, message: { role: 'user', content: uuid },
+    })),
+    sessionTimes: () => new Map(Object.entries(said)),
+  });
+  assert.deepEqual((await manager.history('session')).map((m) => m.uuid), ['before', 'cut', 'after', 'today']);
+});
+
 test('a failed first background-state write still records the resulting engine stop', async (t) => {
   const cli = engine();
   const dir = folder(t);
