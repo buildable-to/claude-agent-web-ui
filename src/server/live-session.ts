@@ -44,6 +44,8 @@ export function engineEnv(extra: Record<string, string> = {}): Record<string, st
   return { ...out, ...extra };
 }
 
+/** What the server says for the engineer when the engine dropped a step. */
+export const DROPPED_STEP_RETRY_TEXT = 'continue';
 /** What a library conversation's engine is told and refused. The app's doors
  *  refuse project work under BUILDABLE_SCOPE=library; the engine is the second
  *  lock: the two project doors are denied outright, whatever the folder's
@@ -209,6 +211,10 @@ export class LiveSession {
   backgroundWork = 0;
   /** The ids behind backgroundWork, so Stop can stop them. */
   private backgroundIds: string[] = [];
+  /** Steps the agent wrote that have no answer yet (its own, not a helper's). */
+  private readonly openSteps = new Set<string>();
+  /** One retry per failure: a turn that fails again is the engineer's to see. */
+  private retriedDroppedStep = false;
 
   private readonly input = new InputQueue();
   private readonly q: Query;
@@ -490,6 +496,9 @@ export class LiveSession {
       // token deltas never write the journal.
       this.onActivity?.(this.workState());
     }
+    this.trackOpenSteps(message);
+    // asked before the result ends the run: Stop is the run's to remember
+    const retry = message.type === 'result' && this.droppedStep(message);
     if (message.type === 'system' && message.subtype === 'init') {
       this.meta = {
         ...this.meta,
@@ -536,6 +545,38 @@ export class LiveSession {
     if (shown && shown.type !== 'stream_event') this.buffer.push(forReplay(shown));
     if (shown) this.broadcast({ type: 'message', sessionId: this.sessionId, message: shown });
     this.watchRealApplies(message);
+    if (retry) {
+      console.error(`[engine ${this.shortId}] the turn ended on a step the engine never ran: continuing once`);
+      this.send(DROPPED_STEP_RETRY_TEXT);
+    }
+  }
+
+  private trackOpenSteps(message: SDKMessage) {
+    if ((message.type !== 'assistant' && message.type !== 'user') || message.parent_tool_use_id) return;
+    const content = message.message.content;
+    if (!Array.isArray(content)) return;
+    for (const block of content) {
+      if (typeof block !== 'object' || block === null) continue;
+      if (block.type === 'tool_use') this.openSteps.add(block.id);
+      else if (block.type === 'tool_result') this.openSteps.delete(block.tool_use_id);
+    }
+  }
+
+  /** The engine sometimes ends a turn right after the agent writes a step (a
+   *  question to the engineer, seen 2026-11-20), without running it: no card,
+   *  only an error line, and the chat sat until someone typed. Say "continue"
+   *  for the engineer, once. Not after Stop, and not while a card waits. */
+  private droppedStep(message: Extract<SDKMessage, { type: 'result' }>): boolean {
+    const dropped = this.openSteps.size > 0;
+    this.openSteps.clear();
+    const failed = message.subtype !== 'success' || message.is_error;
+    if (!failed) {
+      this.retriedDroppedStep = false;
+      return false;
+    }
+    if (!dropped || this.closed || this.run?.stopping || this.pending.size > 0 || this.retriedDroppedStep) return false;
+    this.retriedDroppedStep = true;
+    return true;
   }
 
   /** A `--real` apply is the one command that changes the app's project. When
