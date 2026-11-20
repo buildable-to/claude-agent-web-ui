@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { studioTable } from './fileLink';
+import { studioFile } from './fileLink';
+
+// the id of the file a link is taken for, or null when it stays a plain link
+const studioTable = (href: string | undefined, label: string, studio: string | null) => {
+  const f = studioFile(href, label, studio);
+  return f && f.opens ? f.id : null;
+};
 
 // A click on a table's link is taken from the browser and handed to the
 // studio, so only a link that is surely a table in the studio's own folder
@@ -39,4 +45,19 @@ test('only the studio\'s own folder addresses', () => {
 test('standalone, with no studio around, nothing is taken', () => {
   assert.equal(studioTable(`${APP}/project-v4/sessions/s-1/files/9a786865cf3c`, 'a.xlsx', null), null);
   assert.equal(studioTable(undefined, 'a.xlsx', APP), null);
+});
+
+test('a file is drawn by its kind, and only a table or a PDF opens in the studio', () => {
+  const at = `${APP}/project-v4/sessions/s-1/files/9a786865cf3c`;
+  assert.deepEqual(studioFile(at, 'ხარჯთაღრიცხვა v2.xlsx', APP), {
+    id: '9a786865cf3c', name: 'ხარჯთაღრიცხვა v2.xlsx', tag: 'XLSX', tone: 'table', what: 'Excel table', opens: true });
+  assert.deepEqual(studioFile(at, 'Audit.pdf', APP), {
+    id: '9a786865cf3c', name: 'Audit.pdf', tag: 'PDF', tone: 'pdf', what: 'PDF', opens: true });
+  // a card too, but it downloads
+  assert.equal(studioFile(at, 'Plan.dxf', APP)?.opens, false);
+  assert.equal(studioFile(at, 'old.xls', APP)?.opens, false);
+  assert.deepEqual(studioFile(at, 'model.step', APP), {
+    id: '9a786865cf3c', name: 'model.step', tag: 'STEP', tone: 'plain', what: 'File', opens: false });
+  // a link in words, not a file name, stays a plain link
+  assert.equal(studioFile(at, 'the estimate', APP), null);
 });
