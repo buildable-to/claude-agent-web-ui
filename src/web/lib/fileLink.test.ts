@@ -18,9 +18,13 @@ test('a table in the library folder too', () => {
   assert.equal(studioTable(`${APP}/element-v4/folder/files/ab12cd34ef56`, 'Bar list.xlsm', APP), 'ab12cd34ef56');
 });
 
+test('a PDF in the folder is the studio\'s to open too', () => {
+  assert.equal(studioTable(`${APP}/project-v4/sessions/s-1/files/863f98a45d75`, 'Audit 2026-11-19.pdf', APP), '863f98a45d75');
+});
+
 test('a link not named as a table file downloads as before', () => {
   assert.equal(studioTable(`${APP}/project-v4/sessions/s-1/files/9a786865cf3c`, 'the estimate', APP), null);
-  assert.equal(studioTable(`${APP}/project-v4/sessions/s-1/files/9a786865cf3c`, 'Set.pdf', APP), null);
+  assert.equal(studioTable(`${APP}/project-v4/sessions/s-1/files/9a786865cf3c`, 'Set.dxf', APP), null);
   assert.equal(studioTable(`${APP}/project-v4/sessions/s-1/files/9a786865cf3c`, 'old.xls', APP), null);
 });
 
