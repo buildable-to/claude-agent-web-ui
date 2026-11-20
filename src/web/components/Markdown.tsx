@@ -3,12 +3,12 @@ import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markd
 import remarkGfm from 'remark-gfm';
 import { hrefToken, linkMarks } from '@/lib/mentions';
 import { linkViews, type StudioView } from '@/lib/studio';
-import { studioTable } from '@/lib/fileLink';
-import { openInStudio } from '@/lib/fileLinkLive';
+import { studioFile } from '@/lib/fileLink';
 import { parentOrigin } from '@/lib/page';
 import { Mention } from './Mention';
 import { ViewPill } from './ViewPill';
 import { ElementCard } from './ElementCard';
+import { FileCard } from './FileCard';
 
 const components: Components = {
   // An image in a reply is shown as a link, never loaded by itself: text the
@@ -32,27 +32,10 @@ const components: Components = {
     // an element the agent found in the library: a card — View, Use, Make new (#942)
     if (href && href.startsWith('element:'))
       return <ElementCard id={hrefToken(href, 'element:')} name={typeof props.title === 'string' ? props.title : undefined}>{children}</ElementCard>;
-    // a table the agent made (an estimate): the studio opens it in the folder,
-    // as a table to read. With a modifier key, or the middle button, it is a
-    // plain link still.
-    const table = studioTable(href, plain(children), parentOrigin());
-    if (table && href)
-      return (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          {...props}
-          title="Open in the studio"
-          onClick={(e) => {
-            if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-            e.preventDefault();
-            openInStudio(table, href);
-          }}
-        >
-          {children}
-        </a>
-      );
+    // a file in the studio's folder (an estimate the agent made): a card
+    // that opens it in the studio, or downloads it
+    const file = studioFile(href, plain(children), parentOrigin());
+    if (file && href) return <FileCard file={file} href={href} />;
     return (
       <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
         {children}
