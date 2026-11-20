@@ -1,8 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { hrefToken, linkMarks } from '@/lib/mentions';
 import { linkViews, type StudioView } from '@/lib/studio';
+import { studioTable } from '@/lib/fileLink';
+import { openInStudio } from '@/lib/fileLinkLive';
+import { parentOrigin } from '@/lib/page';
 import { Mention } from './Mention';
 import { ViewPill } from './ViewPill';
 import { ElementCard } from './ElementCard';
@@ -29,6 +32,27 @@ const components: Components = {
     // an element the agent found in the library: a card — View, Use, Make new (#942)
     if (href && href.startsWith('element:'))
       return <ElementCard id={hrefToken(href, 'element:')} name={typeof props.title === 'string' ? props.title : undefined}>{children}</ElementCard>;
+    // a table the agent made (an estimate): the studio opens it in the folder,
+    // as a table to read. With a modifier key, or the middle button, it is a
+    // plain link still.
+    const table = studioTable(href, plain(children), parentOrigin());
+    if (table && href)
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          {...props}
+          title="Open in the studio"
+          onClick={(e) => {
+            if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            e.preventDefault();
+            openInStudio(table, href);
+          }}
+        >
+          {children}
+        </a>
+      );
     return (
       <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
         {children}
@@ -36,6 +60,13 @@ const components: Components = {
     );
   },
 };
+
+/** The words of a link, when it is only words. */
+function plain(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(plain).join('');
+  return '';
+}
 
 export default function Markdown({
   children,
