@@ -1,4 +1,5 @@
 import type { IncomingMessage, Server } from 'node:http';
+import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, PermissionMode, ServerMessage } from '../shared/protocol.js';
 import type { Account } from './accounts.js';
@@ -27,6 +28,11 @@ export type ServerState = {
   draining: () => boolean;
   /** Whether an account may start a turn (billing.ts); none on a laptop. */
   credits?: CreditCheck | null;
+  /** Side by side (copies.ts): where this account's connection is served,
+   *  here (null), on the copy at that port, or nowhere reachable ('gone'). */
+  place?: (req: IncomingMessage, url: URL) => number | 'gone' | null;
+  /** Splices the handshake through to the copy at that port. */
+  pass?: (req: IncomingMessage, socket: Duplex, head: Buffer, port: number) => void;
 };
 
 export const DRAINING_MESSAGE =
@@ -44,6 +50,17 @@ export function attachWebSocket(
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname !== path) {
       socket.destroy();
+      return;
+    }
+    const place = state.place?.(req, url) ?? null;
+    if (place === 'gone') {
+      // the page connects again and the front door sends it to the right copy
+      socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    if (place !== null && state.pass) {
+      state.pass(req, socket, head, place);
       return;
     }
     // One connection speaks for one account, decided at the handshake.
@@ -64,6 +81,8 @@ export function attachWebSocket(
 
   wss.on('connection', (ws: WebSocket, _req: IncomingMessage, ctx: ReturnType<Resolver>) => {
     const sessions = ctx.manager;
+    // so a copy letting an account go can close that account's connections
+    (ws as { accountId?: string }).accountId = ctx.account?.id;
     const attachments = new Map<string, Attachment>();
     const send = (message: ServerMessage) => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));

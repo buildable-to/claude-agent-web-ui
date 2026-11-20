@@ -590,8 +590,8 @@ export class SessionManager {
     }
   }
 
-  closeAll() {
-    for (const s of this.live.values()) s.close();
+  closeAll(reason?: Parameters<LiveSession['close']>[0]) {
+    for (const s of this.live.values()) s.close(reason);
     this.live.clear();
   }
 

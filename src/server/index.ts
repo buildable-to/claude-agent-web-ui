@@ -6,7 +6,9 @@ import express from 'express';
 import type { ServerConfig } from '../shared/protocol.js';
 import { Accounts, AuthError, defaultClaudeConfigPath, type Account } from './accounts.js';
 import { loadConfig, projectName } from './config.js';
+import { Copies } from './copies.js';
 import { createDrainController } from './drain.js';
+import { HOP, NOT_MINE, isHop, passHttp, passUpgrade } from './handoff.js';
 import { SessionManager } from './session-manager.js';
 import { LoginError, sharedLogins } from './logins.js';
 import { ConnectError, sharedConnector } from './connect.js';
@@ -34,8 +36,25 @@ const accounts = config.agentsRoot
     })
   : null;
 const single = accounts ? null : new SessionManager(config.projectDir);
+// Across a deploy two versions run side by side and an account is on exactly
+// one of them (copies.ts, ezdxf-flask #1457). Off without AGENT_COPIES_DIR.
+const copies = new Copies({ ...(accounts && process.env.AGENT_COPIES_DIR ? { dir: process.env.AGENT_COPIES_DIR } : {}), port: config.port });
+if (copies.diedRetiring) {
+  console.log('[copies] this copy died while retiring: its accounts go to the newest copy');
+  copies.leave();
+  process.exit(0);
+}
+/** Take the account for this copy; false when another copy has it. */
+const mine = (accountId: string) => copies.claim(accountId) === copies.port;
+/** Where a request for the account is served: here (null), on the copy at
+ *  that port, or nowhere this copy can reach ('gone': retry at the front door). */
+function placeOf(accountId: string, hop: boolean): number | 'gone' | null {
+  const owner = copies.claim(accountId);
+  if (owner === copies.port) return null;
+  return owner === null || hop ? 'gone' : owner;
+}
 try {
-  const n = accounts?.sendWaitingRuns() ?? 0;
+  const n = accounts?.sendWaitingRuns(mine) ?? 0;
   if (n) console.log(`[runs] sending what ${n} account folder(s) kept from before`);
 } catch (err) {
   console.error(`[runs] could not look for waiting runs: ${String(err)}`);
@@ -46,6 +65,8 @@ export type Ctx = { manager: SessionManager; dir: string; account?: Account };
 /** Who is asking, and which folder that means. Throws AuthError. */
 const resolveCtx: Resolver = (token, devAccount, devScope) => {
   if (!accounts) return { manager: single as SessionManager, dir: config.projectDir };
+  // an account's folder has one writer: never open it beside the copy that holds it
+  if (!mine(accounts.identify(token, devAccount))) throw new AuthError('this account is on another copy of the agent');
   const account = accounts.resolve(token, devAccount, devScope);
   return { manager: accounts.manager(account), dir: account.dir, account };
 };
@@ -68,6 +89,35 @@ app.use((_req, res, next) => {
   // images only from this site (and inline/blob): nothing a reply contains loads from elsewhere
   res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${studioOrigin}`.trim() + `; img-src 'self' data: blob: ${studioOrigin}`.trimEnd());
   next();
+});
+
+// Nothing here needs a token; the deploy asks it whether the new copy is up.
+app.get(`${base}/healthz`, (_req, res) => {
+  res.json({ ok: true, retiring: copies.retiring });
+});
+
+// An account another copy holds is served by that copy: its calls go there
+// whole, before anything here reads the body or opens the folder.
+app.use(`${base}/api`, (req, res, next) => {
+  if (!accounts || !copies.enabled || req.path.startsWith('/admin/')) {
+    next();
+    return;
+  }
+  let id: string;
+  try {
+    const auth = req.header('authorization');
+    id = accounts.identify(auth?.startsWith('Bearer ') ? auth.slice(7) : firstString(req.query.token), firstString(req.query.account));
+  } catch {
+    next(); // the token check below answers
+    return;
+  }
+  const gone = () => res.status(503).set(NOT_MINE, '1').set('retry-after', '1').json({ error: 'The agent is moving to a new version. Try again.' });
+  const place = placeOf(id, isHop(req));
+  if (place === null) next();
+  else if (place === 'gone') gone();
+  // the owner may let the account go while the call is on its way: a call
+  // without a body is then served here
+  else passHttp(req, res, place, req.method === 'GET' ? () => (mine(id) ? next() : gone()) : undefined);
 });
 
 // Only the API needs the token; the page and its assets load without one and
@@ -227,13 +277,25 @@ app.get(`${base}/api/admin/overview`, async (req, res) => {
     if (!accounts) throw new AuthError('no accounts mode');
     const auth = req.header('authorization');
     accounts.verifyAdmin(auth?.startsWith('Bearer ') ? auth.slice(7) : undefined);
-    const out = [];
+    const out: unknown[] = [];
     for (const account of accounts.listAccounts()) {
+      // each copy answers for the accounts it holds; the one asked adds the others'
+      if (!(isHop(req) ? copies.ownerOf(account.id) === copies.port : mine(account.id))) continue;
       const manager = accounts.manager(account);
       const sessions = await manager.list();
       const live = manager.liveSessions().length;
       const costUsd = sessions.reduce((sum, s) => sum + (s.costUsd ?? 0), 0);
       out.push({ id: account.id, email: account.email, live, costUsd, sessions });
+    }
+    if (!isHop(req)) {
+      for (const other of copies.others()) {
+        try {
+          const r = await fetch(`http://127.0.0.1:${other.port}${base}/api/admin/overview`, { headers: { authorization: auth ?? '', [HOP]: '1' } });
+          if (r.ok) out.push(...((await r.json()) as { accounts: unknown[] }).accounts);
+        } catch (err) {
+          console.error(`[copies] no overview from the copy on ${other.port}: ${String(err)}`);
+        }
+      }
     }
     res.json({ accounts: out, generatedAt: Date.now() });
   } catch (err) {
@@ -358,10 +420,27 @@ app.post(`${base}/api/admin/sessions/:id/stop`, async (req, res) => {
     const auth = req.header('authorization');
     accounts.verifyAdmin(auth?.startsWith('Bearer ') ? auth.slice(7) : undefined);
     const id = String(req.params.id);
-    for (const account of accounts.listAccounts()) {
-      if (await accounts.manager(account).stop(id)) {
-        res.json({ ok: true, account: account.id });
+    // a running chat is in a manager this lifetime opened, here or on another copy
+    for (const { id: account, manager } of accounts.opened()) {
+      if (await manager.stop(id)) {
+        res.json({ ok: true, account });
         return;
+      }
+    }
+    if (!isHop(req)) {
+      for (const other of copies.others()) {
+        try {
+          const r = await fetch(`http://127.0.0.1:${other.port}${base}/api/admin/sessions/${encodeURIComponent(id)}/stop`, {
+            method: 'POST',
+            headers: { authorization: auth ?? '', [HOP]: '1' },
+          });
+          if (r.ok) {
+            res.json(await r.json());
+            return;
+          }
+        } catch (err) {
+          console.error(`[copies] could not ask the copy on ${other.port} to stop a chat: ${String(err)}`);
+        }
       }
     }
     res.status(404).json({ error: 'not running' });
@@ -379,8 +458,38 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
 // In production the built web app is served from the same port.
 const webDist = resolve(here, '../../web');
 if (existsSync(webDist)) {
-  app.use(base || '/', express.static(webDist));
   const escaped = base.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+  // An account another copy holds gets that copy's page too, so the page and
+  // the server it talks to are one version. The page's URL carries the token.
+  app.get(new RegExp(`^${escaped}(?!/api/|/assets/).*`), (req, res, next) => {
+    const token = firstString(req.query.token);
+    const dev = firstString(req.query.account);
+    if (!accounts || !copies.enabled || isHop(req) || (!token && !dev)) {
+      next();
+      return;
+    }
+    let owner: number | null = null;
+    try {
+      owner = copies.ownerOf(accounts.identify(token, dev));
+    } catch {
+      // a bad token gets this copy's page, which says so
+    }
+    if (owner === null || owner === copies.port) next();
+    else passHttp(req, res, owner, next);
+  });
+  app.use(base || '/', express.static(webDist));
+  // That page's scripts are named by their content and asked for without a
+  // token: one this build does not have is another copy's.
+  app.get(new RegExp(`^${escaped}/assets/`), (req, res) => {
+    const ports = isHop(req) ? [] : copies.others().map((c) => c.port);
+    const tryNext = () => {
+      const port = ports.shift();
+      if (port === undefined) res.status(404).end();
+      else passHttp(req, res, port, tryNext);
+    };
+    if (isHop(req)) res.status(404).set(NOT_MINE, '1').end();
+    else tryNext();
+  });
   app.get(new RegExp(`^${escaped}(?!/api/).*`), (_req, res) => res.sendFile(resolve(webDist, 'index.html')));
 }
 
@@ -389,11 +498,24 @@ const server = createServer(app);
 // the app at BUILDABLE_URL with the secret the two share (ezdxf-flask
 // docs/billing.md). A laptop has neither and checks nothing.
 const credits = accounts ? creditCheck({ appUrl: process.env.BUILDABLE_URL, secret: config.authSecret }) : null;
-attachWebSocket(server, resolveCtx, `${base}/ws`, { draining: () => drain.draining, credits });
+const wss = attachWebSocket(server, resolveCtx, `${base}/ws`, {
+  // side by side, a retiring copy keeps serving the accounts it holds
+  draining: () => drain.draining && !copies.enabled,
+  credits,
+  place: (req, url) => {
+    if (!accounts || !copies.enabled) return null;
+    try {
+      return placeOf(accounts.identify(url.searchParams.get('token') ?? undefined, url.searchParams.get('account') ?? undefined), isHop(req));
+    } catch {
+      return null; // the handshake's own token check answers
+    }
+  },
+  pass: passUpgrade,
+});
 // What our own stop (a deploy) cut goes on by itself. AGENT_AUTO_CONTINUE=0 turns it off.
 if (accounts && process.env.AGENT_AUTO_CONTINUE !== '0') {
   accounts
-    .continueStopped(credits)
+    .continueStopped(credits, mine)
     .then((n) => { if (n) console.log(`[sessions] continued ${n} conversation(s) the last stop cut`); })
     .catch((err) => console.error(`[sessions] could not continue stopped conversations: ${String(err)}`));
 }
@@ -413,19 +535,67 @@ server.listen(config.port, config.host, () => {
 // exits. Ctrl-C twice on a laptop skips the wait.
 function stopNow(reason: string) {
   console.log(reason);
+  // a copy that leaves with work still open keeps its owner files: the newest
+  // copy finds them, takes the accounts over and continues what was cut
+  if ((accounts?.busy() ?? 0) === 0) copies.leave();
   accounts?.closeAll();
   single?.closeAll();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 2000).unref();
 }
+// Side by side: once a second, a retiring copy lets go of every account that
+// has had no work for a quiet minute (a helper ending and the turn it wakes
+// are a moment apart), and the copy that serves takes over what a dead copy
+// left behind.
+const quietMs = Number(process.env.AGENT_RELEASE_QUIET_SECONDS ?? 60) * 1000;
+const lastBusy = new Map<string, number>();
+let ticks = 0;
+function closeSockets(accountId: string) {
+  for (const ws of wss.clients) {
+    if ((ws as { accountId?: string }).accountId === accountId) ws.close(1012, 'moved to the new version');
+  }
+}
+function adopt(accountId: string) {
+  const account = accounts?.listAccounts().find((a) => a.id === accountId);
+  if (!accounts || !account || !mine(accountId)) return;
+  console.log(`[copies] taking over ${accountId} from a copy that is gone`);
+  const manager = accounts.manager(account);
+  if (process.env.AGENT_AUTO_CONTINUE === '0') return;
+  manager
+    .continueStopped(async () => !credits || !(await credits(accountId)))
+    .then((n) => { if (n) console.log(`[sessions] continued ${n} conversation(s) of ${accountId} the other copy's stop cut`); })
+    .catch((err) => console.error(`[sessions] could not continue ${accountId}: ${String(err)}`));
+}
+if (accounts && copies.enabled) {
+  setInterval(() => {
+    const now = Date.now();
+    for (const { id, manager } of accounts.opened()) {
+      if (manager.busy() > 0 || !lastBusy.has(id)) lastBusy.set(id, now);
+      else if (copies.retiring && now - (lastBusy.get(id) ?? now) >= quietMs) {
+        console.log(`[copies] ${id} has no work: it goes to the newest copy`);
+        closeSockets(id);
+        accounts.drop(id);
+        copies.release(id);
+        lastBusy.delete(id);
+      }
+    }
+    if (!copies.retiring && ++ticks % 15 === 0) {
+      for (const id of copies.orphaned()) adopt(id);
+    }
+  }, 1000).unref();
+}
 const drain = createDrainController({
-  busy: () => (accounts ?? single)?.busy() ?? 0,
+  // side by side the copy is done when it holds no account, not when no turn runs
+  busy: () => (copies.enabled ? accounts?.opened().length : (accounts ?? single)?.busy()) ?? 0,
   stop: stopNow,
   log: console.log,
   timeoutMs: Number(process.env.AGENT_DRAIN_MINUTES ?? 25) * 60 * 1000,
 });
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, () => drain.signal(signal));
+  process.on(signal, () => {
+    copies.retire();
+    drain.signal(signal);
+  });
 }
 
 function firstString(v: unknown): string | undefined {
