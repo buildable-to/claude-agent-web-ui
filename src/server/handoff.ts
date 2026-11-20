@@ -16,8 +16,10 @@ export function isHop(req: IncomingMessage): boolean {
  *  `onNotMine` is called instead of answering when that copy says the account
  *  is not its own; only requests without a body can be tried again. */
 export function passHttp(req: IncomingMessage, res: ServerResponse, port: number, onNotMine?: () => void) {
+  // inside a mounted router req.url has lost its prefix; the other copy needs the whole path
+  const path = (req as IncomingMessage & { originalUrl?: string }).originalUrl ?? req.url;
   const upstream = request(
-    { host: '127.0.0.1', port, method: req.method, path: req.url, headers: { ...req.headers, [HOP]: '1' } },
+    { host: '127.0.0.1', port, method: req.method, path, headers: { ...req.headers, [HOP]: '1' } },
     (answer) => {
       if (answer.headers[NOT_MINE] !== undefined && onNotMine) {
         answer.resume();
