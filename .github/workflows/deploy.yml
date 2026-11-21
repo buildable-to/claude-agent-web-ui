@@ -1,6 +1,7 @@
 # Deploy the agent service to the Buildable box on every push to main.
 # Runs on the self-hosted runner registered on that box (label web-ui); the
-# service lives at /home/agent/web-ui and runs as systemd buildable-agent
+# source lives at /home/agent/web-ui and the service runs as systemd
+# buildable-agent@<port>, one copy per build across a deploy
 # (see buildable-to/ezdxf-flask deploy/agent-host/). The app repo's own
 # deploy also pulls and builds this repo, so either push updates the box.
 name: Deploy agent service
@@ -20,12 +21,19 @@ jobs:
           sudo -iu agent git -C /home/agent/web-ui checkout -q main
           sudo -iu agent git -C /home/agent/web-ui reset -q --hard origin/main
           sudo -iu agent git -C /home/agent/web-ui log -1 --format='%h %s'
-      - name: Build under /agent
+      - name: Start the new build beside the running one
+        # The app repo's rollout script builds this commit in its own folder,
+        # starts it in a free slot, points nginx at it and lets the old copy
+        # finish the work it holds (buildable-to/ezdxf-flask#1457). A box that
+        # does not have the script yet gets the old way: build in place, restart.
         run: |
-          sudo -iu agent bash -c 'cd /home/agent/web-ui && npm ci --no-audit --no-fund --silent && BASE_PATH=/agent/ npm run build'
-      - name: Restart the service and check
-        run: |
-          sudo systemctl restart buildable-agent
-          sleep 3
-          systemctl is-active buildable-agent
-          curl -sf -o /dev/null http://127.0.0.1:3456/agent/ && echo "agent page answers"
+          if [ -x /srv/buildable/deploy/agent-host/agent-rollout.sh ]; then
+            sudo bash /srv/buildable/deploy/agent-host/agent-rollout.sh
+            sudo bash /srv/buildable/deploy/agent-host/agent-rollout.sh --status
+          else
+            sudo -iu agent bash -c 'cd /home/agent/web-ui && npm ci --no-audit --no-fund --silent && BASE_PATH=/agent/ npm run build'
+            sudo systemctl restart buildable-agent
+            sleep 3
+            systemctl is-active buildable-agent
+          fi
+          curl -sf -o /dev/null http://127.0.0.1/agent/ -H 'Host: app.buildable.to' && echo "agent page answers"

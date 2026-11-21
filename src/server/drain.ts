@@ -34,7 +34,7 @@ export function createDrainController(options: {
         finish(`${signal}: no active work, stopping`);
         return;
       }
-      options.log?.(`${signal}: ${n} session(s) with active work, draining (up to ${timeoutMs / 60000} min; no new turns meanwhile)`);
+      options.log?.(`${signal}: ${n} session(s) with active work, draining (up to ${timeoutMs / 60000} min)`);
       const started = Date.now();
       tick = setInterval(() => {
         const left = options.busy();

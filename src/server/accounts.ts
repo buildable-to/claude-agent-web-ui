@@ -100,6 +100,21 @@ export class Accounts {
 
   /** The account a request speaks for, from its token (or `?account=` in dev
    *  mode, where `?scope=library` stands in for the library claim). */
+  /** Whose request this is, from the token alone: no folder is made or
+   *  touched. Used to find the copy that owns the account (copies.ts). */
+  identify(token: string | undefined, devAccount: string | undefined): string {
+    let sub: string;
+    if (this.config.authSecret) {
+      if (!token) throw new AuthError('missing token');
+      sub = verifyToken(token, this.config.authSecret).sub;
+    } else {
+      if (!devAccount) throw new AuthError('no account (dev mode: pass ?account=<id>)');
+      sub = devAccount;
+    }
+    if (!SAFE_ID.test(sub)) throw new AuthError('bad account id');
+    return sub;
+  }
+
   resolve(token: string | undefined, devAccount: string | undefined, devScope?: string): Account {
     let claims: TokenClaims;
     if (this.config.authSecret) {
@@ -156,23 +171,53 @@ export class Accounts {
       });
   }
 
+  /** Called once for each account folder this lifetime opens (index.ts
+   *  continues what a stop cut there). */
+  onOpen: ((accountId: string, manager: SessionManager) => void) | null = null;
+
   manager(account: Account): SessionManager {
     let m = this.managers.get(account.dir);
     if (!m) {
       m = new SessionManager(account.dir, account.id, this.engineInfo);
       this.managers.set(account.dir, m);
+      this.onOpen?.(account.id, m);
     }
     return m;
+  }
+
+  /** At start: open the folders that may hold work a stop cut, so it goes on
+   *  now (through onOpen), not when the account is next used. */
+  openStopped(mine: (accountId: string) => boolean = () => true): number {
+    let n = 0;
+    for (const a of this.listAccounts()) {
+      if (!existsSync(join(a.dir, '.agent-work.json')) || !mine(a.id)) continue;
+      this.manager(a);
+      n++;
+    }
+    return n;
   }
 
   closeAll() {
     for (const m of this.managers.values()) m.closeAll();
   }
 
+  /** The accounts this lifetime has opened, with their managers. */
+  opened(): { id: string; manager: SessionManager }[] {
+    return [...this.managers.values()].map((manager) => ({ id: manager.accountId ?? '', manager }));
+  }
+
+  /** Let an account go (a retiring copy, once the account has no work): its
+   *  idle engines close and the next copy to serve it reads the folder afresh. */
+  drop(accountId: string) {
+    const dir = resolve(this.config.root, accountId);
+    this.managers.get(dir)?.closeAll('idle_timeout');
+    this.managers.delete(dir);
+  }
+
   /** At start: open the folders with runs an earlier lifetime cut or could
    *  not send (ezdxf-flask #1227), so they go now, not when the account is
    *  next used. */
-  sendWaitingRuns(): number {
+  sendWaitingRuns(mine: (accountId: string) => boolean = () => true): number {
     let n = 0;
     for (const a of this.listAccounts()) {
       let open = false;
@@ -181,7 +226,7 @@ export class Accounts {
       } catch {
         // none
       }
-      if (open || existsSync(join(a.dir, '.agent-runs-unsent.jsonl'))) {
+      if ((open || existsSync(join(a.dir, '.agent-runs-unsent.jsonl'))) && mine(a.id)) {
         this.manager(a);
         n++;
       }
@@ -191,10 +236,13 @@ export class Accounts {
 
   /** At start: the conversations the last stop (a deploy) cut go on by
    *  themselves. `refused` is the credit check, as for a typed message. */
-  async continueStopped(refused?: ((accountId: string) => Promise<string | null>) | null): Promise<number> {
+  async continueStopped(
+    refused?: ((accountId: string) => Promise<string | null>) | null,
+    mine: (accountId: string) => boolean = () => true,
+  ): Promise<number> {
     let n = 0;
     for (const a of this.listAccounts()) {
-      if (!existsSync(join(a.dir, '.agent-work.json'))) continue;
+      if (!existsSync(join(a.dir, '.agent-work.json')) || !mine(a.id)) continue;
       n += await this.manager(a).continueStopped(async () => !refused || !(await refused(a.id)));
     }
     return n;
