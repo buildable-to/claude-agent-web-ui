@@ -92,7 +92,7 @@ export class Copies {
     rmSync(this.copyPath(this.port), { force: true });
   }
 
-  /** The other copies that are running now. A dead one's file is removed. */
+  /** The other copies that are running now. */
   others(): CopyInfo[] {
     if (!this.enabled) return [];
     const out: CopyInfo[] = [];
@@ -100,8 +100,9 @@ export class Copies {
       const m = /^copy-(\d+)\.json$/.exec(name);
       if (!m || Number(m[1]) === this.port) continue;
       const info = this.read(Number(m[1]));
+      // a dead copy's file is left alone: removing it here could race a new
+      // copy starting on that port (the rollout and the copy itself clean up)
       if (info && this.alive(info.pid)) out.push(info);
-      else rmSync(join(this.dir, name), { force: true });
     }
     return out;
   }
@@ -183,20 +184,25 @@ export class Copies {
   private locked<T>(fn: () => T): T {
     const lock = join(this.dir, 'claim.lock');
     const wait = new Int32Array(new SharedArrayBuffer(4));
-    for (let tries = 0; tries < 800; tries++) {
+    let held = false;
+    // a decision takes well under a millisecond: a lock two seconds old was
+    // left by a copy that died holding it, and it is broken long before the
+    // three seconds this copy is willing to wait
+    for (let tries = 0; tries < 600 && !held; tries++) {
       try {
         mkdirSync(lock);
-        break;
+        held = true;
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
         try {
-          if (Date.now() - statSync(lock).mtimeMs > 5000) rmSync(lock, { recursive: true, force: true });
+          if (Date.now() - statSync(lock).mtimeMs > 2000) rmSync(lock, { recursive: true, force: true });
         } catch {
           // gone already
         }
         Atomics.wait(wait, 0, 0, 5);
       }
     }
+    if (!held) throw new Error('could not decide who holds the account: the claim lock stayed taken');
     try {
       return fn();
     } finally {

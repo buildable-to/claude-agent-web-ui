@@ -171,13 +171,30 @@ export class Accounts {
       });
   }
 
+  /** Called once for each account folder this lifetime opens (index.ts
+   *  continues what a stop cut there). */
+  onOpen: ((accountId: string, manager: SessionManager) => void) | null = null;
+
   manager(account: Account): SessionManager {
     let m = this.managers.get(account.dir);
     if (!m) {
       m = new SessionManager(account.dir, account.id, this.engineInfo);
       this.managers.set(account.dir, m);
+      this.onOpen?.(account.id, m);
     }
     return m;
+  }
+
+  /** At start: open the folders that may hold work a stop cut, so it goes on
+   *  now (through onOpen), not when the account is next used. */
+  openStopped(mine: (accountId: string) => boolean = () => true): number {
+    let n = 0;
+    for (const a of this.listAccounts()) {
+      if (!existsSync(join(a.dir, '.agent-work.json')) || !mine(a.id)) continue;
+      this.manager(a);
+      n++;
+    }
+    return n;
   }
 
   closeAll() {

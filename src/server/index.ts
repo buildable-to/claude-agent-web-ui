@@ -44,6 +44,21 @@ if (copies.diedRetiring) {
   copies.leave();
   process.exit(0);
 }
+/** Calls and messages being handled now, per account: a retiring copy never
+ *  lets an account go under one (it would finish on a closed folder). */
+const inFlight = new Map<string, number>();
+function hold(accountId: string | undefined): () => void {
+  if (!accountId) return () => {};
+  inFlight.set(accountId, (inFlight.get(accountId) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const left = (inFlight.get(accountId) ?? 1) - 1;
+    if (left > 0) inFlight.set(accountId, left);
+    else inFlight.delete(accountId);
+  };
+}
 /** Take the account for this copy; false when another copy has it. */
 const mine = (accountId: string) => copies.claim(accountId) === copies.port;
 /** Where a request for the account is served: here (null), on the copy at
@@ -113,11 +128,21 @@ app.use(`${base}/api`, (req, res, next) => {
   }
   const gone = () => res.status(503).set(NOT_MINE, '1').set('retry-after', '1').json({ error: 'The agent is moving to a new version. Try again.' });
   const place = placeOf(id, isHop(req));
-  if (place === null) next();
-  else if (place === 'gone') gone();
+  if (place === null) {
+    res.on('close', hold(id));
+    next();
+  } else if (place === 'gone') gone();
   // the owner may let the account go while the call is on its way: a call
   // without a body is then served here
-  else passHttp(req, res, place, req.method === 'GET' ? () => (mine(id) ? next() : gone()) : undefined);
+  else {
+    passHttp(req, res, place, req.method === 'GET'
+      ? () => {
+          if (!mine(id)) return gone();
+          res.on('close', hold(id));
+          next();
+        }
+      : undefined);
+  }
 });
 
 // Only the API needs the token; the page and its assets load without one and
@@ -511,13 +536,30 @@ const wss = attachWebSocket(server, resolveCtx, `${base}/ws`, {
     }
   },
   pass: passUpgrade,
+  hold,
 });
 // What our own stop (a deploy) cut goes on by itself. AGENT_AUTO_CONTINUE=0 turns it off.
+// An account's folder is opened once in a lifetime, at start or when the
+// account first comes here (from a copy that let it go, was ended, or died):
+// that is the moment its cut work is continued, whichever way it came.
 if (accounts && process.env.AGENT_AUTO_CONTINUE !== '0') {
-  accounts
-    .continueStopped(credits, mine)
-    .then((n) => { if (n) console.log(`[sessions] continued ${n} conversation(s) the last stop cut`); })
-    .catch((err) => console.error(`[sessions] could not continue stopped conversations: ${String(err)}`));
+  const continued = new Set<string>();
+  const continueCut = (accountId: string, manager: SessionManager) => {
+    if (continued.has(accountId)) return;
+    continued.add(accountId);
+    manager
+      .continueStopped(async () => !credits || !(await credits(accountId)))
+      .then((n) => { if (n) console.log(`[sessions] continued ${n} conversation(s) of ${accountId} a stop cut`); })
+      .catch((err) => console.error(`[sessions] could not continue ${accountId}: ${String(err)}`));
+  };
+  // a folder this copy lets go and later gets back is opened afresh
+  accounts.onOpen = (accountId, manager) => {
+    continued.delete(accountId);
+    continueCut(accountId, manager);
+  };
+  // the folders opened above, before this was set (runs waiting to be sent)
+  for (const { id, manager } of accounts.opened()) continueCut(id, manager);
+  accounts.openStopped(mine);
 }
 
 server.listen(config.port, config.host, () => {
@@ -560,18 +602,13 @@ function adopt(accountId: string) {
   const account = accounts?.listAccounts().find((a) => a.id === accountId);
   if (!accounts || !account || !mine(accountId)) return;
   console.log(`[copies] taking over ${accountId} from a copy that is gone`);
-  const manager = accounts.manager(account);
-  if (process.env.AGENT_AUTO_CONTINUE === '0') return;
-  manager
-    .continueStopped(async () => !credits || !(await credits(accountId)))
-    .then((n) => { if (n) console.log(`[sessions] continued ${n} conversation(s) of ${accountId} the other copy's stop cut`); })
-    .catch((err) => console.error(`[sessions] could not continue ${accountId}: ${String(err)}`));
+  accounts.manager(account); // opening it continues what was cut (onOpen)
 }
 if (accounts && copies.enabled) {
   setInterval(() => {
     const now = Date.now();
     for (const { id, manager } of accounts.opened()) {
-      if (manager.busy() > 0 || !lastBusy.has(id)) lastBusy.set(id, now);
+      if (manager.busy() > 0 || inFlight.has(id) || !lastBusy.has(id)) lastBusy.set(id, now);
       else if (copies.retiring && now - (lastBusy.get(id) ?? now) >= quietMs) {
         console.log(`[copies] ${id} has no work: it goes to the newest copy`);
         closeSockets(id);

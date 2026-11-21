@@ -31,6 +31,9 @@ export type ServerState = {
   /** Side by side (copies.ts): where this account's connection is served,
    *  here (null), on the copy at that port, or nowhere reachable ('gone'). */
   place?: (req: IncomingMessage, url: URL) => number | 'gone' | null;
+  /** Marks a message of this account as being handled until the returned
+   *  function is called: a copy never lets an account go under one. */
+  hold?: (accountId: string | undefined) => () => void;
   /** Splices the handshake through to the copy at that port. */
   pass?: (req: IncomingMessage, socket: Duplex, head: Buffer, port: number) => void;
 };
@@ -103,11 +106,14 @@ export function attachWebSocket(
         fail('Malformed message');
         return;
       }
+      const done = state.hold?.(ctx.account?.id);
       try {
         await handle(msg);
       } catch (err) {
         const text = err instanceof Error ? err.message : String(err);
         fail(text, 'sessionId' in msg ? (msg.sessionId ?? undefined) : undefined);
+      } finally {
+        done?.();
       }
     });
 

@@ -18,14 +18,24 @@ export function isHop(req: IncomingMessage): boolean {
 export function passHttp(req: IncomingMessage, res: ServerResponse, port: number, onNotMine?: () => void) {
   // inside a mounted router req.url has lost its prefix; the other copy needs the whole path
   const path = (req as IncomingMessage & { originalUrl?: string }).originalUrl ?? req.url;
+  // an answer and a later socket error must not both hand the request on
+  let handedBack = false;
+  const notMine = onNotMine
+    ? () => {
+        if (handedBack) return;
+        handedBack = true;
+        onNotMine();
+      }
+    : undefined;
   const upstream = request(
     { host: '127.0.0.1', port, method: req.method, path, headers: { ...req.headers, [HOP]: '1' } },
     (answer) => {
-      if (answer.headers[NOT_MINE] !== undefined && onNotMine) {
+      if (answer.headers[NOT_MINE] !== undefined && notMine) {
         answer.resume();
-        onNotMine();
+        notMine();
         return;
       }
+      handedBack = true;
       res.writeHead(answer.statusCode ?? 502, answer.headers);
       answer.pipe(res);
     },
@@ -35,7 +45,8 @@ export function passHttp(req: IncomingMessage, res: ServerResponse, port: number
       res.destroy();
       return;
     }
-    if (onNotMine) onNotMine();
+    if (handedBack) return;
+    if (notMine) notMine();
     else res.writeHead(503, { 'retry-after': '2' }).end('{"error":"The agent is moving to a new version. Try again."}');
   });
   req.pipe(upstream);

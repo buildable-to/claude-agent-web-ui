@@ -61,7 +61,7 @@ test('what a dead copy held is orphaned and the live copy takes it over', (t) =>
   assert.deepEqual(fresh.orphaned(), ['acme']);
   assert.equal(fresh.claim('acme'), 3457);
   assert.deepEqual(fresh.orphaned(), []);
-  assert.deepEqual(fresh.others(), [], 'the dead copy is forgotten');
+  assert.deepEqual(fresh.others(), [], 'the dead copy is not counted');
   assert.deepEqual(fresh.owned(), ['acme']);
 });
 
