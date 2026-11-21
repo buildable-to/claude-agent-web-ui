@@ -538,6 +538,7 @@ function stopNow(reason: string) {
   // a copy that leaves with work still open keeps its owner files: the newest
   // copy finds them, takes the accounts over and continues what was cut
   if ((accounts?.busy() ?? 0) === 0) copies.leave();
+  else copies.forget();
   accounts?.closeAll();
   single?.closeAll();
   server.close(() => process.exit(0));

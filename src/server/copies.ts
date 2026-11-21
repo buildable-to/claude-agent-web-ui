@@ -76,6 +76,15 @@ export class Copies {
     rmSync(this.copyPath(this.port), { force: true });
   }
 
+  /** Stop with work still open: this copy's own file goes, its owner files
+   *  stay. They then name a copy that is not there, so the copy that serves
+   *  (or the next one started on this port) takes the accounts and continues
+   *  what the stop cut. */
+  forget() {
+    if (!this.enabled) return;
+    rmSync(this.copyPath(this.port), { force: true });
+  }
+
   /** The other copies that are running now. A dead one's file is removed. */
   others(): CopyInfo[] {
     if (!this.enabled) return [];
