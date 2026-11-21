@@ -98,8 +98,13 @@ test('a copy ended with work open leaves its accounts to be continued, on any po
   // the copy that serves, on another port, sees an account nobody holds
   const serving = new Copies({ dir, port: 3457, pid: 2, alive: (pid) => alive.has(pid) });
   assert.deepEqual(serving.orphaned(), ['acme']);
-  // a new copy started in the ended copy's slot is a fresh copy and holds the account
+  // a new copy started in the ended copy's slot is a fresh copy: the account is
+  // nobody's until one of the two takes it, and only one does
   const sameSlot = new Copies({ dir, port: 3458, pid: 3, alive: () => true });
+  alive.add(3);
   assert.equal(sameSlot.diedRetiring, false);
-  assert.equal(sameSlot.claim('acme'), 3458);
+  assert.equal(sameSlot.ownerOf('acme'), null);
+  assert.equal(serving.claim('acme'), 3457);
+  assert.equal(sameSlot.claim('acme'), 3457);
+  assert.deepEqual(sameSlot.owned(), []);
 });

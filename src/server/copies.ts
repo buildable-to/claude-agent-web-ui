@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** Two versions of this service run side by side across a deploy: the new
@@ -37,6 +37,9 @@ export class Copies {
   private readonly pid: number;
   private readonly alive: (pid: number) => boolean;
   private retiringNow = false;
+  /** When this lifetime began: an owner file names the port and this time, so
+   *  what an earlier lifetime on the same port held is nobody's until taken. */
+  private readonly startedAt: number;
   /** True when this port's last lifetime died while retiring: nothing points
    *  at it any more, so it must not come back as a serving copy. */
   readonly diedRetiring: boolean;
@@ -48,11 +51,12 @@ export class Copies {
     this.pid = options.pid ?? process.pid;
     this.alive = options.alive ?? processAlive;
     let diedRetiring = false;
+    this.startedAt = Date.now();
     if (this.enabled) {
       mkdirSync(this.dir, { recursive: true });
       const before = this.read(this.port);
       diedRetiring = Boolean(before?.retiring) && before?.pid !== this.pid;
-      this.write({ port: this.port, pid: this.pid, startedAt: Date.now(), retiring: false });
+      this.write({ port: this.port, pid: this.pid, startedAt: this.startedAt, retiring: false });
     }
     this.diedRetiring = diedRetiring;
   }
@@ -66,13 +70,16 @@ export class Copies {
     this.retiringNow = true;
     if (!this.enabled) return;
     const mine = this.read(this.port);
-    this.write({ port: this.port, pid: this.pid, startedAt: mine?.startedAt ?? Date.now(), retiring: true });
+    this.write({ port: this.port, pid: this.pid, startedAt: mine?.startedAt ?? this.startedAt, retiring: true });
   }
 
   /** Leave the record: this copy's file and every owner file it holds. */
   leave() {
     if (!this.enabled) return;
-    for (const account of this.owned()) this.release(account);
+    // also what an earlier lifetime of this port left behind
+    for (const account of this.owners()) {
+      if (this.readOwner(account)?.port === this.port) rmSync(this.ownerPath(account), { force: true });
+    }
     rmSync(this.copyPath(this.port), { force: true });
   }
 
@@ -100,73 +107,98 @@ export class Copies {
   }
 
   /** The port of the live copy that owns the account, or null for nobody.
-   *  An owner file a dead copy left is not an owner. */
+   *  An owner file a dead copy left, or an earlier lifetime of a port, is not
+   *  an owner. */
   ownerOf(account: string): number | null {
     if (!this.enabled) return this.port;
-    const port = this.readOwner(account);
-    if (port === null) return null;
-    if (port === this.port) return port;
-    const info = this.read(port);
-    return info && this.alive(info.pid) ? port : null;
+    const owner = this.readOwner(account);
+    if (!owner) return null;
+    if (owner.port === this.port) return owner.startedAt === this.startedAt ? this.port : null;
+    const info = this.read(owner.port);
+    return info && info.startedAt === owner.startedAt && this.alive(info.pid) ? owner.port : null;
   }
 
   /** Take the account if nobody live has it. Returns the owner's port: this
-   *  copy's when the claim held, another's when that copy got there first.
-   *  A retiring copy takes nothing new: it returns null for an account it
-   *  does not already own. */
+   *  copy's when the claim held, another's when that copy has it. A retiring
+   *  copy takes nothing new: it returns null for an account it does not
+   *  already own. One copy at a time decides (the lock), so two copies that
+   *  find the same account free cannot both take it. */
   claim(account: string): number | null {
     if (!this.enabled) return this.port;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    const fast = this.ownerOf(account);
+    if (fast !== null) return fast;
+    if (this.retiringNow) return null;
+    return this.locked(() => {
       const owner = this.ownerOf(account);
       if (owner !== null) return owner;
-      if (this.retiringNow) return null;
-      // a dead copy's file goes first, then one atomic create decides the race
-      if (this.readOwner(account) !== null) rmSync(this.ownerPath(account), { force: true });
-      try {
-        writeFileSync(this.ownerPath(account), String(this.port), { flag: 'wx', mode: 0o600 });
-        return this.port;
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
-      }
-    }
-    return this.ownerOf(account);
+      const path = this.ownerPath(account);
+      const tmp = `${path}.${this.pid}.tmp`;
+      writeFileSync(tmp, `${this.port} ${this.startedAt}`, { mode: 0o600 });
+      renameSync(tmp, path);
+      return this.port;
+    });
   }
 
   /** Give the account up (only this copy's own claim is removed). */
   release(account: string) {
     if (!this.enabled) return;
-    if (this.readOwner(account) === this.port) rmSync(this.ownerPath(account), { force: true });
+    if (this.ownerOf(account) === this.port) rmSync(this.ownerPath(account), { force: true });
   }
 
   /** The accounts this copy holds. */
   owned(): string[] {
     if (!this.enabled) return [];
-    return this.owners().filter(([, port]) => port === this.port).map(([account]) => account);
+    return this.owners().filter((account) => this.ownerOf(account) === this.port);
   }
 
   /** Accounts whose owner file names a copy that is gone. */
   orphaned(): string[] {
     if (!this.enabled) return [];
-    return this.owners().filter(([account, port]) => port !== this.port && this.ownerOf(account) === null).map(([account]) => account);
+    return this.owners().filter((account) => this.ownerOf(account) === null);
   }
 
-  private owners(): [string, number][] {
-    const out: [string, number][] = [];
+  /** Every account with an owner file, whoever it names. */
+  private owners(): string[] {
+    const out: string[] = [];
     for (const name of readdirSync(this.dir)) {
       const m = OWNER.exec(name);
-      if (!m?.[1]) continue;
-      const port = this.readOwner(m[1]);
-      if (port !== null) out.push([m[1], port]);
+      if (m?.[1] && !name.endsWith('.tmp')) out.push(m[1]);
     }
     return out;
   }
 
-  private readOwner(account: string): number | null {
+  private readOwner(account: string): { port: number; startedAt: number } | null {
     try {
-      const port = Number(readFileSync(this.ownerPath(account), 'utf8').trim());
-      return Number.isInteger(port) && port > 0 ? port : null;
+      const [port, startedAt] = readFileSync(this.ownerPath(account), 'utf8').trim().split(' ').map(Number);
+      return port && Number.isInteger(port) && port > 0 && startedAt ? { port, startedAt } : null;
     } catch {
       return null;
+    }
+  }
+
+  /** Run `fn` as the only copy deciding an owner. A lock a dead copy left
+   *  (older than five seconds) is broken. */
+  private locked<T>(fn: () => T): T {
+    const lock = join(this.dir, 'claim.lock');
+    const wait = new Int32Array(new SharedArrayBuffer(4));
+    for (let tries = 0; tries < 800; tries++) {
+      try {
+        mkdirSync(lock);
+        break;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+        try {
+          if (Date.now() - statSync(lock).mtimeMs > 5000) rmSync(lock, { recursive: true, force: true });
+        } catch {
+          // gone already
+        }
+        Atomics.wait(wait, 0, 0, 5);
+      }
+    }
+    try {
+      return fn();
+    } finally {
+      rmSync(lock, { recursive: true, force: true });
     }
   }
 
