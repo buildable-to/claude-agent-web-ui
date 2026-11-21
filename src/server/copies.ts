@@ -115,7 +115,9 @@ export class Copies {
     if (!owner) return null;
     if (owner.port === this.port) return owner.startedAt === this.startedAt ? this.port : null;
     const info = this.read(owner.port);
-    return info && info.startedAt === owner.startedAt && this.alive(info.pid) ? owner.port : null;
+    // a file without a lifetime (another build's way of writing it) is still
+    // that port's while a copy runs there: when unsure, never take a busy account
+    return info && (owner.startedAt === 0 || info.startedAt === owner.startedAt) && this.alive(info.pid) ? owner.port : null;
   }
 
   /** Take the account if nobody live has it. Returns the owner's port: this
@@ -170,7 +172,7 @@ export class Copies {
   private readOwner(account: string): { port: number; startedAt: number } | null {
     try {
       const [port, startedAt] = readFileSync(this.ownerPath(account), 'utf8').trim().split(' ').map(Number);
-      return port && Number.isInteger(port) && port > 0 && startedAt ? { port, startedAt } : null;
+      return port && Number.isInteger(port) && port > 0 ? { port, startedAt: startedAt || 0 } : null;
     } catch {
       return null;
     }

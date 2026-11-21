@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -107,4 +107,15 @@ test('a copy ended with work open leaves its accounts to be continued, on any po
   assert.equal(serving.claim('acme'), 3457);
   assert.equal(sameSlot.claim('acme'), 3457);
   assert.deepEqual(sameSlot.owned(), []);
+});
+
+test('an owner file with only a port still belongs to the copy running there', (t) => {
+  const dir = folder(t);
+  const alive = new Set([1, 2]);
+  new Copies({ dir, port: 3456, pid: 1, alive: (pid) => alive.has(pid) });
+  const fresh = new Copies({ dir, port: 3457, pid: 2, alive: (pid) => alive.has(pid) });
+  writeFileSync(join(dir, 'owner-acme'), '3456');
+  assert.equal(fresh.claim('acme'), 3456, 'never taken from a copy that may be working on it');
+  alive.delete(1);
+  assert.equal(fresh.claim('acme'), 3457);
 });
