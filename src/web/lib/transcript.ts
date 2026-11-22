@@ -290,6 +290,11 @@ function stoppedWorkText(notice: StoppedWorkNotice): string {
   if (notice.reason === 'service_restart') {
     return `A restart interrupted your work (detected ${time(notice.detectedAt)}; last active ${time(notice.lastActiveAt)}). ${continueText}`;
   }
+  // our own update, while the agent waited for the engineer's answer: nobody
+  // answered, so nothing goes on by itself
+  if (notice.reason === 'service_stop' && notice.awaitingAnswer) {
+    return `We restarted the agent at ${time(notice.detectedAt)} for an update while it was waiting for your answer. Its question is still open and it did not go on by itself. Write your answer, or type "continue" and it asks again.`;
+  }
   // our own update: the service continues the work itself (continueStopped)
   if (notice.reason === 'service_stop') {
     return `We paused your work at ${time(notice.detectedAt)} for an update. It continues by itself. If it doesn't 🙂 type "continue".`;

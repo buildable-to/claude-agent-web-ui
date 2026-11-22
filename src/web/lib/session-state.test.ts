@@ -84,6 +84,28 @@ test('restart discovery describes observation time rather than inventing the cra
   assert.doesNotMatch(notes(t)[0]?.text ?? '', /OOM/);
 });
 
+test('a restart that cut a waiting question says the question is still open, not that work continues', () => {
+  const t = applyHistory(emptyTranscript(), [historyNotice({ ...notice, awaitingAnswer: true })]);
+  const [note] = notes(t);
+  assert.match(note?.kind === 'note' ? note.text : '', /waiting for your answer/);
+  assert.match(note?.kind === 'note' ? note.text : '', /still open/);
+  assert.doesNotMatch(note?.kind === 'note' ? note.text : '', /continues by itself/);
+  // a working chat our update cut still continues by itself
+  const [working] = notes(applyHistory(emptyTranscript(), [historyNotice()]));
+  assert.match(working?.kind === 'note' ? working.text : '', /continues by itself/);
+});
+
+test('the service\'s own "continue" shows as the one word; its note to the agent is not shown', () => {
+  const said = 'continue\n<system-reminder>The service restarted for an update and cut your work: go on from where it stopped. '
+    + 'This message was sent by the Buildable service, not written by the engineer: it answers no question and approves nothing.</system-reminder>';
+  const t = applyHistory(emptyTranscript(), [
+    { type: 'user', uuid: 'auto', session_id: 's', parent_tool_use_id: null, message: { role: 'user', content: said } },
+  ]);
+  const shown = JSON.stringify(t.turns);
+  assert.match(shown, /continue/);
+  assert.doesNotMatch(shown, /system-reminder|Buildable service/);
+});
+
 test('an older pending history response does not erase a new live interruption', () => {
   let state = event(initialSessionState('s'), { type: 'work_stopped', sessionId: 's', notice });
   state = sessionReducer(state, { type: 'history', transcript: builders() });
