@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import type { EngineInfo, HistoryMessage, SessionSummary } from '../shared/protocol.js';
 import { redactHistory } from './redact.js';
 import { claudeConfigDir, installedSkills, probeEngine, skillCommands } from './commands.js';
-import { LiveSession, engineEnv, type LiveSessionOptions } from './live-session.js';
+import { LiveSession, automatic, engineEnv, type LiveSessionOptions } from './live-session.js';
 import { RunLog, doorSender, type Conversation, type Sender } from './run-log.js';
 import { sharedLogins } from './logins.js';
 import { WorkJournal } from './work-journal.js';
@@ -42,7 +42,7 @@ const PROJECTS_FILE = '.agent-projects.json';
 /** A conversation our stop cut is continued on its own only this soon after:
  *  later, the engineer may have moved on, and should say so. */
 const AUTO_CONTINUE_MS = 30 * 60 * 1000;
-export const AUTO_CONTINUE_TEXT = 'continue';
+export const AUTO_CONTINUE_TEXT = automatic('continue', 'The service restarted for an update and cut your work: go on from where it stopped.');
 /** The model the engineer picked for a conversation. The engine forgets it
  *  when it stops (a deploy, a login switch, an idle hour), and the
  *  conversation would come back on the default: "it changed by itself". */
@@ -458,7 +458,9 @@ export class SessionManager {
 
   /** After our own restart (a deploy): the conversations it cut pick up
    *  where they left off, without the engineer typing "continue".
-   *  `allowed` is the credit check; a refusal leaves the notice to the engineer. */
+   *  `allowed` is the credit check; a refusal leaves the notice to the engineer.
+   *  One that was waiting for the engineer's answer is theirs to continue
+   *  (`WorkJournal.cutByServiceStop`). */
   async continueStopped(allowed: () => Promise<boolean> = async () => true, maxAgeMs = AUTO_CONTINUE_MS): Promise<number> {
     let n = 0;
     for (const sessionId of this.work.cutByServiceStop(maxAgeMs)) {

@@ -26,7 +26,7 @@ import { toCommandInfo, toModelOptions } from './commands.js';
 import { userContent } from './attachments.js';
 import { SkillRedactor } from './redact.js';
 import { forReplay, replaySince } from './replay.js';
-import type { WorkState } from './work-journal.js';
+import type { StopState, WorkState } from './work-journal.js';
 import type { Outcome, RunEnd } from './run-log.js';
 
 /** What an engine (and everything it runs) may see of the service's
@@ -44,8 +44,23 @@ export function engineEnv(extra: Record<string, string> = {}): Record<string, st
   return { ...out, ...extra };
 }
 
+/** A word the SERVICE says in the engineer's place, marked as such. The page
+ *  hides the reminder (transcript.ts) and shows the word; the agent reads
+ *  both. A bare "continue" after a question nobody answered read as the
+ *  engineer's go-ahead (2026-11-22: a restart cut a question card, the
+ *  service said "continue", and the agent landed 281 changes on the project). */
+export function automatic(text: string, why: string): string {
+  return `${text}\n<system-reminder>${why} This message was sent by the Buildable service, not written by the engineer: `
+    + 'it answers no question and approves nothing. If you were waiting for the engineer\'s answer or approval, you still are: '
+    + 'ask again and wait.</system-reminder>';
+}
+
 /** What the server says for the engineer when the engine dropped a step. */
-export const DROPPED_STEP_RETRY_TEXT = 'continue';
+export const DROPPED_STEP_RETRY_TEXT = automatic('continue',
+  'The engine ended the turn before it ran your last step (if that step was a question, the engineer never saw it): run that step again.');
+/** What a stop tells the agent of a card it cut: the engineer did not refuse. */
+const CUT_CARD_TEXT = 'The service restarted for an update before the engineer answered. This is not a refusal and not an answer: '
+  + 'the question is still open. Change nothing it was about until the engineer answers it.';
 /** What a library conversation's engine is told and refused. The app's doors
  *  refuse project work under BUILDABLE_SCOPE=library; the engine is the second
  *  lock: the two project doors are denied outright, whatever the folder's
@@ -88,7 +103,15 @@ export function promptAppend(opts: { project?: string; scope?: 'library'; recove
   const resume = opts.recovery
     ? '\nThe previous engine stopped while work was in flight. The work is now being resumed. Before restarting builders, inspect the conversation and current project/file state, reconcile writes that already landed, and continue only unfinished work. Do not blindly repeat completed operations.'
     : '';
-  return where || resume ? where + resume : undefined;
+  // the stop found a card waiting (StoppedWorkNotice.awaitingAnswer): what the
+  // conversation records for it ("rejected", "interrupted") is the stop's doing
+  const unanswered = typeof opts.recovery === 'object' && opts.recovery !== null
+    && (opts.recovery as { awaitingAnswer?: boolean }).awaitingAnswer === true
+    ? ' When it stopped, a question or approval request of yours was waiting for the engineer. The engineer never answered it: '
+      + 'a "rejected" or "interrupted" result recorded for it came from the restart, not from the engineer, and a bare "continue" does not answer it. '
+      + 'Ask it again and wait for the answer before you change anything it was about.'
+    : '';
+  return where || resume ? where + resume + unanswered : undefined;
 }
 
 /** Which conversation the engine — and every door it runs — speaks for. The
@@ -144,7 +167,7 @@ export type LiveSessionOptions = {
   recovery?: StoppedWorkNotice;
   onStart?: (state: WorkState) => void;
   onActivity?: (state: WorkState) => void;
-  onStop?: (state: WorkState, reason: StoppedWorkNotice['reason']) => StoppedWorkNotice | undefined;
+  onStop?: (state: StopState, reason: StoppedWorkNotice['reason']) => StoppedWorkNotice | undefined;
   /** Called once the engine reports its slash commands, skills and models. */
   onInfo?: (info: EngineInfo) => void;
   /** Called after every turn with the running totals, for the usage record. */
@@ -367,6 +390,7 @@ export class LiveSession {
     behavior: 'allow' | 'deny',
     always = false,
     answers?: Record<string, string>,
+    denial = 'The user declined this action in the web UI.',
   ): boolean {
     const p = this.pending.get(requestId);
     if (!p) return false;
@@ -379,7 +403,7 @@ export class LiveSession {
         ...(always && this.persistAlways && p.suggestions ? { updatedPermissions: p.suggestions } : {}),
       });
     } else {
-      p.resolve({ behavior: 'deny', message: 'The user declined this action in the web UI.' });
+      p.resolve({ behavior: 'deny', message: denial });
     }
     this.broadcast({ type: 'permission_resolved', sessionId: this.sessionId, requestId });
     if (this.pending.size === 0 && this.status === 'requires_action') this.setStatus('running');
@@ -418,8 +442,10 @@ export class LiveSession {
 
   close(reason: StoppedWorkNotice['reason'] = 'service_stop') {
     if (this.closed) return;
+    // a card was waiting: the agent was not working, the engineer had not answered
+    const awaitingAnswer = this.pending.size > 0;
     try {
-      const notice = this.onStop?.(this.workState(), reason);
+      const notice = this.onStop?.({ ...this.workState(), ...(awaitingAnswer ? { awaitingAnswer } : {}) }, reason);
       if (notice) this.broadcast({ type: 'work_stopped', sessionId: this.sessionId, notice });
     } catch (err) {
       console.error(`[engine ${this.shortId}] recovery write failed: ${String(err)}`);
@@ -427,7 +453,9 @@ export class LiveSession {
     }
     this.endRun(RUN_CUT[reason]);
     this.closed = true;
-    for (const id of [...this.pending.keys()]) this.answerPermission(id, 'deny');
+    // Stop is the engineer's own word; any other stop never asked them
+    const denial = reason === 'user_stop' ? undefined : CUT_CARD_TEXT;
+    for (const id of [...this.pending.keys()]) this.answerPermission(id, 'deny', false, undefined, denial);
     this.input.close();
     this.abort.abort();
     this.setStatus('closed');

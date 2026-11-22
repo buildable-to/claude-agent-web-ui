@@ -16,7 +16,9 @@ type Options = {
   port: number;
   pid?: number;
   /** Whether a process is alive (tests). */
-  alive?: (pid: number) => boolean;
+  alive?: (pid: number) => boolean;  /** When this lifetime began (the clock's now). Tests name it: two copies of
+   *  one port made in the same millisecond are otherwise the same lifetime. */
+  startedAt?: number;
 };
 
 function processAlive(pid: number): boolean {
@@ -51,7 +53,7 @@ export class Copies {
     this.pid = options.pid ?? process.pid;
     this.alive = options.alive ?? processAlive;
     let diedRetiring = false;
-    this.startedAt = Date.now();
+    this.startedAt = options.startedAt ?? Date.now();
     if (this.enabled) {
       mkdirSync(this.dir, { recursive: true });
       const before = this.read(this.port);

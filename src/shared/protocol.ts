@@ -18,6 +18,10 @@ export type StoppedWorkNotice = {
   lastActiveAt: number;
   /** Place the notice after this persisted turn when replaying history. */
   afterMessageUuid?: string;
+  /** The agent was not working when it was stopped: a card of its own (a
+   *  question, an approval) was waiting for the engineer. Nothing answered
+   *  it, so nothing continues it but the engineer. */
+  awaitingAnswer?: boolean;
 };
 
 /** A permission question the engine is waiting on. */

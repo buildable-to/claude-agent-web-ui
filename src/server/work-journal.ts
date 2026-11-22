@@ -10,6 +10,8 @@ export type WorkState = {
   lastActiveAt: number;
   afterMessageUuid?: string;
 };
+/** What a stop adds to the state it found: was a card waiting for the engineer? */
+export type StopState = WorkState & { awaitingAnswer?: boolean };
 type Entry = WorkState & { notices: StoppedWorkNotice[] };
 type Journal = { version: 1; entries: Record<string, Entry> };
 
@@ -44,7 +46,7 @@ export class WorkJournal {
     this.save({ ...this.data.entries, [state.sessionId]: { ...previous, ...state } });
   }
 
-  stop(state: WorkState, reason: StoppedWorkNotice['reason']): StoppedWorkNotice | undefined {
+  stop({ awaitingAnswer, ...state }: StopState, reason: StoppedWorkNotice['reason']): StoppedWorkNotice | undefined {
     const previous = this.data.entries[state.sessionId];
     if (!previous || previous.generation !== state.generation
       || (!previous.active && !state.active)
@@ -56,6 +58,7 @@ export class WorkJournal {
       detectedAt: Date.now(),
       lastActiveAt: state.lastActiveAt,
       ...(state.afterMessageUuid ? { afterMessageUuid: state.afterMessageUuid } : {}),
+      ...(awaitingAnswer ? { awaitingAnswer: true } : {}),
     };
     this.save({
       ...this.data.entries,
@@ -76,12 +79,17 @@ export class WorkJournal {
 
   /** Conversations our own stop cut (a deploy's drain ran out), not yet
    *  resumed and not older than `maxAgeMs`. A crash ('service_restart') is
-   *  left to the engineer: resuming it unasked could crash the service again. */
+   *  left to the engineer: resuming it unasked could crash the service again.
+   *  So is one that was only waiting for the engineer's answer
+   *  (`awaitingAnswer`): there was no work to go on with, and a "continue"
+   *  said for the engineer reads as the answer they never gave (2026-11-22:
+   *  281 changes landed on a project that way). */
   cutByServiceStop(maxAgeMs: number, now = Date.now()): string[] {
     return Object.values(this.data.entries)
       .filter((entry) => {
         const notice = entry.notices.at(-1);
-        return notice?.id === entry.generation && notice.reason === 'service_stop' && now - notice.detectedAt <= maxAgeMs;
+        return notice?.id === entry.generation && notice.reason === 'service_stop' && !notice.awaitingAnswer
+          && now - notice.detectedAt <= maxAgeMs;
       })
       .map((entry) => entry.sessionId);
   }

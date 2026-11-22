@@ -431,6 +431,9 @@ test('work our own stop cut goes on by itself after the restart; a crash waits f
   assert.equal(resumed.launches, 1);
   assert.equal(resumed.options?.resume, session.sessionId);
   assert.match(JSON.stringify(resumed.prompts[0]), /continue/);
+  // the word is the service's, and says so: it is nobody's answer or approval
+  assert.match(JSON.stringify(resumed.prompts[0]), /sent by the Buildable service, not written by the engineer/);
+  assert.match(JSON.stringify(resumed.prompts[0]), /answers no question and approves nothing/);
   assert.match(JSON.stringify(resumed.options?.systemPrompt), /reconcile writes that already landed/);
   // once: the resumed engine is a new generation, nothing is left to continue
   assert.equal(await next.continueStopped(), 0);
@@ -451,3 +454,64 @@ test('work our own stop cut goes on by itself after the restart; a crash waits f
   assert.equal(await back.continueStopped(), 0);
   assert.equal(after.launches, 0);
 });
+
+test('a question our own stop cut stays the engineer\'s to answer: nothing continues it for them', async (t) => {
+  const info = async (id: string) => ({ sessionId: id, lastModified: 1, summary: 'Stair', fileSize: 1 });
+  const dir = folder(t);
+  const old = engine();
+  const manager = new SessionManager(dir, undefined, undefined, { queryFactory: old.factory });
+  const session = await manager.open(null);
+  session.send('make the stair buildable');
+  // the agent tried the change on a copy and asks before it lands it: a card waits
+  const asked = old.options!.canUseTool!(
+    'AskUserQuestion',
+    { questions: [{ question: 'Land the changes?', options: [{ label: 'Yes' }, { label: 'No' }] }] },
+    { signal: new AbortController().signal, toolUseID: 'ask-1', requestId: 'card-1' } as Parameters<NonNullable<NonNullable<typeof old.options>['canUseTool']>>[2],
+  );
+  await setImmediate();
+  assert.equal(session.pendingRequests.length, 1);
+  // a deploy: the drain ran out with the card still unanswered
+  manager.closeAll();
+  const cut = (await asked) as { behavior: string; message?: string };
+  assert.equal(cut.behavior, 'deny');
+  assert.match(cut.message ?? '', /not a refusal and not an answer/);
+  const [notice] = manager.stoppedWork(session.sessionId);
+  assert.equal(notice?.reason, 'service_stop');
+  assert.equal(notice?.awaitingAnswer, true);
+
+  // the new service says nothing in the engineer's place
+  const resumed = engine();
+  const next = new SessionManager(dir, undefined, undefined, { queryFactory: resumed.factory, getSessionInfo: info });
+  assert.equal(await next.continueStopped(), 0);
+  assert.equal(resumed.launches, 0);
+
+  // the engineer comes back and types "continue": the agent knows the question was never answered
+  const back = await next.open(session.sessionId);
+  back.send('continue');
+  await setImmediate();
+  assert.equal(resumed.launches, 1);
+  assert.match(JSON.stringify(resumed.options?.systemPrompt), /The engineer never answered it/);
+  assert.match(JSON.stringify(resumed.options?.systemPrompt), /Ask it again and wait for the answer/);
+  assert.doesNotMatch(JSON.stringify(resumed.prompts[0]), /system-reminder/);      // their own word, as they wrote it
+  next.closeAll();
+});
+
+test('Stop is the engineer\'s own word: a card it closes is declined, and working chats still continue', async (t) => {
+  const dir = folder(t);
+  const cli = engine();
+  const manager = new SessionManager(dir, undefined, undefined, { queryFactory: cli.factory });
+  const session = await manager.open(null);
+  session.send('make the stair buildable');
+  const asked = cli.options!.canUseTool!(
+    'AskUserQuestion', { questions: [] },
+    { signal: new AbortController().signal, toolUseID: 'ask-1', requestId: 'card-1' } as Parameters<NonNullable<NonNullable<typeof cli.options>['canUseTool']>>[2],
+  );
+  await setImmediate();
+  session.close('user_stop');
+  const declined = (await asked) as { behavior: string; message?: string };
+  assert.equal(declined.behavior, 'deny');
+  assert.match(declined.message ?? '', /declined this action/);
+  // a stop by the engineer is never continued unasked
+  assert.deepEqual(new WorkJournal(dir).cutByServiceStop(60_000), []);
+});
+
