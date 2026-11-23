@@ -429,6 +429,7 @@ export class SessionManager {
       message: m.message,
       parent_tool_use_id: m.parent_tool_use_id,
       ...(times.has(m.uuid) ? { timestamp: times.get(m.uuid) } : {}),
+      ...said(m),
     }));
     for (const notice of this.stoppedWork(sessionId)) {
       const line: HistoryMessage = {
@@ -664,4 +665,15 @@ export function sessionTimes(projectDir: string, sessionId: string): Map<string,
     }
   }
   return times;
+}
+
+/** Who said it, as the SDK reads it from the file. Its type lacks both
+ *  fields (the SDK has sent them since 0.3.293), so read them with care. */
+function said(m: object): Pick<HistoryMessage, 'is_meta' | 'origin'> {
+  const { is_meta: meta, origin } = m as { is_meta?: unknown; origin?: unknown };
+  const kind = origin && typeof origin === 'object' ? (origin as { kind?: unknown }).kind : undefined;
+  return {
+    ...(meta === true ? { is_meta: true } : {}),
+    ...(typeof kind === 'string' ? { origin: { kind } } : {}),
+  };
 }

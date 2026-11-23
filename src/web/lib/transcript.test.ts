@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import type { HistoryMessage, SDKMessage } from '@shared/protocol';
 import {
@@ -228,4 +229,75 @@ test('a reply carries the time it finished; the engineer’s words the time they
   ]);
   assert.equal((t.turns[0] as Extract<Turn, { kind: 'user' }>).at, Date.parse('2026-11-03T10:00:00Z'));
   assert.equal(assistantTurn(t, 1).at, Date.parse('2026-11-03T10:04:00Z'));
+});
+
+// A sub-agent's hand-back, as the engine saved it in a real chat (shape kept, contents anonymised;
+// #1501): the user record, and the queue entry the same report came in by.
+const saved = readFileSync(new URL('./fixtures/handback-sample.jsonl', import.meta.url), 'utf8')
+  .trim().split('\n').map((l) => JSON.parse(l) as Record<string, any>);
+const handback = saved.find((r) => r.type === 'user')!;
+const queued = saved.find((r) => r.type === 'queue-operation')!;
+/** The record as getSessionMessages (SDK 0.3.323) gives it back. */
+const asHistory = (r: Record<string, any>): HistoryMessage => ({
+  ...hist('user', r.uuid, r.message),
+  ...(r.isMeta ? { is_meta: true } : {}),
+  ...(r.origin ? { origin: r.origin } : {}),
+});
+/** The queued-command attachment form: the SDK turns it into a user message
+ *  whose content is the queued prompt, with the attachment's isMeta and origin. */
+const queuedForm: HistoryMessage = {
+  ...hist('user', 'queued-1', { role: 'user', content: queued.content }),
+  is_meta: true,
+  origin: handback.origin,
+};
+const typed = (t: Transcript) => t.turns.filter((x) => x.kind === 'user').map((x) => (x as Extract<Turn, { kind: 'user' }>).text);
+
+test('reloaded: a sub-agent’s hand-back is not shown as the engineer’s message, in either saved form', () => {
+  assert.equal(handback.isMeta, true);
+  assert.equal(handback.origin.kind, 'peer');
+  assert.match(String(queued.content), /^<agent-message from=/);
+  const t = applyHistory(emptyTranscript(), [
+    hist('user', 'u1', { role: 'user', content: 'look at every piece' }),
+    asHistory(handback),
+    queuedForm,
+    // the report alone, without the wrapper the text check knows: is_meta and origin say it
+    { ...asHistory(handback), uuid: 'body', message: { role: 'user', content: handback.origin.body } },
+    hist('user', 'u2', { role: 'user', content: 'now the formwork' }),
+  ]);
+  assert.deepEqual(typed(t), ['look at every piece', 'now the formwork']);
+});
+
+test('reloaded: a hand-back without is_meta or origin (older reads) is still not shown, by its text', () => {
+  const t = applyHistory(emptyTranscript(), [
+    hist('user', 'h1', handback.message),
+    hist('user', 'h2', { role: 'user', content: queued.content }),
+    hist('user', 'h3', { role: 'user', content: [{ type: 'text', text: handback.message.content }] }),
+  ]);
+  assert.deepEqual(t.turns, []);
+});
+
+test('live: a message another session sent (peer origin) is not the engineer speaking', () => {
+  let t = addLocalUserTurn(emptyTranscript(), 'local', 'look at every piece');
+  t = applyMessage(t, live({ type: 'user', uuid: handback.uuid, message: handback.message, origin: handback.origin }));
+  t = applyMessage(t, live({ type: 'user', uuid: 'body', message: { role: 'user', content: handback.origin.body }, origin: handback.origin }));
+  t = applyMessage(t, live({ type: 'user', uuid: 'q', message: { role: 'user', content: queued.content } }));
+  assert.deepEqual(typed(t), ['look at every piece']);
+});
+
+test('what the engineer typed is shown, even when it names the hand-back words', () => {
+  const words = [
+    'why did my chat show "Another Claude session sent a message:" as mine?',
+    'the agent-message from the sub-agent showed up as my message',
+    'I see agent-message from="a0000000000000001" in the chat',
+  ];
+  const t = applyHistory(emptyTranscript(), [
+    hist('user', 'w1', { role: 'user', content: words[0] }),
+    { ...hist('user', 'w2', { role: 'user', content: words[1] }), origin: { kind: 'human' } },
+    // the engine marked it meta, but a human said it
+    { ...hist('user', 'w3', { role: 'user', content: words[2] }), is_meta: true, origin: { kind: 'human' } },
+  ]);
+  assert.deepEqual(typed(t), words);
+  let l = emptyTranscript();
+  words.forEach((w, i) => { l = applyMessage(l, live({ type: 'user', uuid: `l${i}`, message: { role: 'user', content: w }, origin: { kind: 'human' } })); });
+  assert.deepEqual(typed(l), words);
 });
