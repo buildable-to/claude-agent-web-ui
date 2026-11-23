@@ -6,7 +6,7 @@
 // (history has no stream events, no result messages and no clock):
 // thinking blocks are dropped on both paths, and nothing here reads the time.
 
-import type { HistoryMessage, SDKMessage, StoppedWorkNotice } from '@shared/protocol';
+import type { HistoryMessage, OutOfCredits, SDKMessage, StoppedWorkNotice } from '@shared/protocol';
 import { parsePartialJson } from './parsePartialJson';
 
 export type ToolImage = { mediaType: string; data: string };
@@ -65,7 +65,15 @@ export type Turn =
   /** `at`: when it was said (ms), if known; a reply's is its last message's */
   | { kind: 'user'; id: string; text: string; images: ToolImage[]; at?: number }
   | { kind: 'assistant'; id: string; blocks: Block[]; open: boolean; at?: number }
-  | { kind: 'note'; id: string; level: 'info' | 'error'; text: string; stoppedWork?: StoppedWorkNotice };
+  | {
+      kind: 'note';
+      id: string;
+      level: 'info' | 'error';
+      text: string;
+      stoppedWork?: StoppedWorkNotice;
+      /** Out of credits: where to get more, and the message to send again. */
+      credits?: { url?: string; action?: string; retry?: string };
+    };
 
 type StreamState = {
   /** Rendered blocks in API order -> index into the open assistant turn's blocks. */
@@ -282,6 +290,27 @@ export function addNote(t: Transcript, id: string, level: 'info' | 'error', text
   if (t.seen.has(id)) return t;
   const seen = new Set(t.seen).add(id);
   return { ...t, seen, turns: [...t.turns, { kind: 'note', id, level, text }] };
+}
+
+/** The engine took a message: any "out of credits" note is history (the
+ *  refused message went through, or a new one did), so it goes. */
+export function dropCreditsNotes(t: Transcript): Transcript {
+  if (!t.turns.some((turn) => turn.kind === 'note' && turn.credits)) return t;
+  return { ...t, turns: t.turns.filter((turn) => !(turn.kind === 'note' && turn.credits)) };
+}
+
+/** The app refused a message for lack of credits: a calm note with the way
+ *  out, once per refused message however often it is tried again. */
+export function addCreditsNote(t: Transcript, credits: OutOfCredits): Transcript {
+  const id = `credits-${credits.uuid ?? t.turns.length}`;
+  if (t.seen.has(id)) return t;
+  const seen = new Set(t.seen).add(id);
+  const more = {
+    ...(credits.url ? { url: credits.url } : {}),
+    ...(credits.action ? { action: credits.action } : {}),
+    ...(credits.uuid ? { retry: credits.uuid } : {}),
+  };
+  return { ...t, seen, turns: [...t.turns, { kind: 'note', id, level: 'info', text: credits.message, credits: more }] };
 }
 
 function stoppedWorkText(notice: StoppedWorkNotice): string {

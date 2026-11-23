@@ -106,6 +106,35 @@ test('the service\'s own "continue" shows as the one word; its note to the agent
   assert.doesNotMatch(shown, /system-reminder|Buildable service/);
 });
 
+test('out of credits is a calm note with the way out, once per refused message; other errors stay errors', () => {
+  const credits = {
+    message: 'You have used this month\u2019s credits. Your projects stay open. Credits come back on 23 December.',
+    url: 'https://app.buildable.to/billing',
+    action: 'Upgrade to Pro · $100 a month',
+    uuid: 'msg-1',
+  };
+  const refusal = { type: 'error' as const, sessionId: 's', message: `${credits.message} ${credits.url}`, credits };
+  let state = event({ ...initialSessionState('s'), status: 'starting' as const, busySince: 1 }, refusal);
+  const [note] = notes(state.transcript);
+  assert.ok(note?.kind === 'note');
+  assert.equal(note.level, 'info');
+  assert.equal(note.text, credits.message);                       // the words, without the bare address
+  assert.deepEqual(note.credits, { url: credits.url, action: credits.action, retry: 'msg-1' });
+  assert.equal(state.error, null);
+  assert.equal(state.status, 'idle');
+  // the same message tried again while still out: still one note
+  state = event(state, refusal);
+  assert.equal(notes(state.transcript).length, 1);
+  // anything else that goes wrong is still an error
+  state = event(state, { type: 'error', sessionId: 's', message: 'Session is not running.' });
+  const last = notes(state.transcript).at(-1);
+  assert.ok(last?.kind === 'note' && last.level === 'error' && !last.credits);
+  assert.equal(state.error, 'Session is not running.');
+  // credits are back and the message goes through: the note about them goes, the error stays
+  state = event(state, { type: 'status', sessionId: 's', status: 'running' });
+  assert.deepEqual(notes(state.transcript).map((n) => n.kind === 'note' && n.level), ['error']);
+});
+
 test('an older pending history response does not erase a new live interruption', () => {
   let state = event(initialSessionState('s'), { type: 'work_stopped', sessionId: 's', notice });
   state = sessionReducer(state, { type: 'history', transcript: builders() });

@@ -11,7 +11,7 @@ import { WebSocket } from 'ws';
 import type { Options, Query, query } from '@anthropic-ai/claude-agent-sdk';
 import type { ServerMessage } from '../shared/protocol.js';
 import type { Account } from './accounts.js';
-import { BILLING_AUDIENCE, creditCheck, refusalText, type CreditCheck } from './billing.js';
+import { BILLING_AUDIENCE, creditCheck, refusal, refusalText, type CreditCheck } from './billing.js';
 import { SessionManager } from './session-manager.js';
 import { attachWebSocket } from './ws.js';
 
@@ -59,8 +59,17 @@ test("the app's no is the page's message, with where to buy more", async () => {
     json({ allowed: false, reason: 'no_credits', message: 'You have used all your credits.', billing_url: 'https://app.buildable.to/billing' }),
   );
   const check = creditCheck({ appUrl: 'https://app.buildable.to', secret: SECRET, fetchImpl: app.fetchImpl })!;
-  assert.equal(await check('u1'), 'You have used all your credits. https://app.buildable.to/billing');
-  assert.equal(refusalText({ allowed: false }), 'You have no agent credits left.');
+  const no = await check('u1');
+  assert.deepEqual(no, { message: 'You have used all your credits.', url: 'https://app.buildable.to/billing' });
+  // one line of it, for a page that only shows text
+  assert.equal(refusalText(no!), 'You have used all your credits. https://app.buildable.to/billing');
+  // the app may name the button; an app that says nothing still gets words
+  assert.deepEqual(refusal({ allowed: false, message: 'Used up.', billing_url: 'https://x/billing', action: 'Upgrade to Pro' }), {
+    message: 'Used up.',
+    url: 'https://x/billing',
+    action: 'Upgrade to Pro',
+  });
+  assert.deepEqual(refusal({ allowed: false }), { message: 'You have no agent credits left.' });
 });
 
 test('an app that fails, refuses the token or cannot be reached lets the turn run', async () => {
@@ -125,13 +134,22 @@ test('over the socket: out of credits, a message starts no engine and the page i
   const asked: string[] = [];
   const { ws, next, cli } = await socketWith(t, async (id) => {
     asked.push(id);
-    return 'You have used all your credits. https://app.buildable.to/billing';
+    return { message: 'You have used all your credits.', url: 'https://app.buildable.to/billing', action: 'Upgrade to Pro' };
   });
 
   let reply = next();
-  ws.send(JSON.stringify({ type: 'start', sessionId: null, text: 'Reinforce C-1' }));
+  ws.send(JSON.stringify({ type: 'start', sessionId: null, text: 'Reinforce C-1', uuid: 'msg-1' }));
   const refused = await reply;
   assert.ok(refused.type === 'error' && /used all your credits/.test(refused.message));
+  // not a bare error: the way out, and which message to send again
+  assert.deepEqual(refused.type === 'error' && refused.credits, {
+    message: 'You have used all your credits.',
+    url: 'https://app.buildable.to/billing',
+    action: 'Upgrade to Pro',
+    uuid: 'msg-1',
+  });
+  // a page loaded before this still reads it all in the one line
+  assert.equal(refused.type === 'error' && refused.message, 'You have used all your credits. https://app.buildable.to/billing');
   assert.equal(cli.launches.length, 0);
   assert.deepEqual(asked, ['u1']);
 

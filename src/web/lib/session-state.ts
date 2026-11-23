@@ -1,7 +1,19 @@
 import type { PermissionMode, PermissionRequest, ServerMessage, SessionMeta, SessionStatus } from '@shared/protocol';
 import {
-  addLocalUserTurn, addNote, addStoppedWork, applyMessage, closeStoppedWork, emptyTranscript, markCut,
-  reopenLastTurn, stoppedWorkNotices, stopOrphanTasks, type ToolImage, type Transcript,
+  addLocalUserTurn,
+  addCreditsNote,
+  addNote,
+  addStoppedWork,
+  applyMessage,
+  closeStoppedWork,
+  emptyTranscript,
+  markCut,
+  reopenLastTurn,
+  stoppedWorkNotices,
+  stopOrphanTasks,
+  type ToolImage,
+  type Transcript,
+  dropCreditsNotes,
 } from './transcript';
 
 export type SessionState = {
@@ -185,17 +197,22 @@ export function sessionReducer(state: SessionState, action: Action): SessionStat
                 ? state.stopNotified
                   ? closeStoppedWork(state.transcript, [])
                   : stopOrphanTasks(markCut(state.transcript, `cut-${m.sessionId}-${state.transcript.turns.length}`))
-                : state.transcript,
+                : m.status === 'running'
+                  ? dropCreditsNotes(state.transcript)
+                  : state.transcript,
           };
         case 'meta':
           return { ...state, meta: { ...state.meta, ...m.meta } };
         case 'error':
           return {
             ...state,
-            error: m.message,
+            // out of credits is not an error: the note says what to do
+            error: m.credits ? state.error : m.message,
             status: state.status === 'starting' ? 'idle' : state.status,
             busySince: state.status === 'starting' ? null : state.busySince,
-            transcript: addNote(state.transcript, `err-${Date.now()}`, 'error', m.message),
+            transcript: m.credits
+              ? addCreditsNote(state.transcript, m.credits)
+              : addNote(state.transcript, `err-${Date.now()}`, 'error', m.message),
           };
       }
     }
