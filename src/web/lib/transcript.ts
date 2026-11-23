@@ -251,9 +251,11 @@ export function applyHistory(t: Transcript, history: HistoryMessage[]): Transcri
     const at = saidAt(h);
     if (h.type === 'assistant') next = applyAssistant(next, h.uuid, h.message, h.parent_tool_use_id, at);
     else if (h.type === 'user') {
-      // the engine's own words in the user's role: a sub-agent's hand-back
-      const engines = h.is_meta === true && h.origin?.kind !== 'human';
-      if (!engines) next = applyUser(next, h.uuid, h.message, h.parent_tool_use_id, false, at);
+      // another session (a sub-agent's hand-back) speaks in the user's role:
+      // not shown, but it ends the turn, as a task notification does
+      next = h.origin?.kind === 'peer'
+        ? closeOpenTurn(next)
+        : applyUser(next, h.uuid, h.message, h.parent_tool_use_id, false, at);
     }
     else if (h.stoppedWork) {
       // Only a notice at its recorded position may stop preceding tasks.
@@ -561,7 +563,7 @@ function applyAssistant(t: Transcript, uuid: string, message: unknown, parentToo
 }
 
 /** How the harness wraps a message from another session (a sub-agent). */
-const HANDBACK = /^Another Claude session sent a message:|<agent-message /;
+const HANDBACK = /^(?:Another Claude session sent a message:\s*)?<agent-message /;
 
 function applyUser(
   t: Transcript,
@@ -624,7 +626,7 @@ function applyUser(
   // user's voice (a skill's text after "Launching skill", a sub-agent's
   // hand-back, other context) is not the engineer speaking and is not shown.
   // History has hand-backs too (SDK 0.3.293 on); applyHistory drops them by
-  // is_meta and origin, and the text catches them where those are missing.
+  // their peer origin, and the text, at its start only, where that is missing.
   if (/^\[Request interrupted/.test(text)) {
     return addNote(t, uuid, 'info', text.replace(/^\[|\]$/g, ''));
   }

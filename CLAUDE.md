@@ -48,8 +48,8 @@ everything to a React page over a WebSocket. See README.md for the user view.
 - The engine does not echo user messages back; the client adds them locally
   and dedupes by uuid.
 - From SDK 0.3.293, `getSessionMessages` also returns a sub-agent's hand-back
-  as a user message (`is_meta`, `origin.kind: 'peer'`). `history()` passes
-  both fields on and the transcript hides it; it is never the engineer (#1501).
+  as a user message with `origin.kind: 'peer'`. `history()` passes `origin`
+  on and the transcript hides it; it is never the engineer (#1501).
 - Read-only shell commands (`echo`, `ls`, `pwd`) are auto-allowed by Claude
   Code itself; test permission flows with a Write or a file-changing command.
 - Browser automation: the automation tab can report `visibilityState: hidden`,

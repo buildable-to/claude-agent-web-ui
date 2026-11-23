@@ -83,7 +83,7 @@ test("each account is offered Buildable's skills and its own, never another acco
   }
 });
 
-test('history passes on who said a user message: is_meta and origin, as the SDK gives them (#1501)', async (t) => {
+test('history passes on who said a user message: origin, as the SDK gives it (#1501)', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'agent-history-said-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   // a sub-agent's hand-back in the shape a real chat saved it (anonymised), as SDK 0.3.323 reads it back
@@ -92,16 +92,16 @@ test('history passes on who said a user message: is_meta and origin, as the SDK 
   const base = { type: 'user', session_id: record.sessionId, parent_tool_use_id: null, parent_agent_id: null };
   const manager = new SessionManager(dir, undefined, undefined, {
     getSessionMessages: async () => [
-      { ...base, uuid: record.uuid, message: record.message, is_meta: true, origin: record.origin },
+      { ...base, uuid: record.uuid, message: record.message, origin: record.origin },
       { ...base, uuid: 'typed', message: { role: 'user', content: 'look at every piece' } },
       // not the shape the SDK sends: nothing is made up from it
-      { ...base, uuid: 'odd', message: { role: 'user', content: 'x' }, is_meta: 'yes', origin: 'peer' },
+      { ...base, uuid: 'odd', message: { role: 'user', content: 'x' }, origin: 'peer' },
     ] as never,
   });
   const history = await manager.history(record.sessionId);
-  assert.deepEqual(history.map((m) => [m.uuid, m.is_meta, m.origin]), [
-    [record.uuid, true, { kind: 'peer' }],
-    ['typed', undefined, undefined],
-    ['odd', undefined, undefined],
+  assert.deepEqual(history.map((m) => [m.uuid, m.origin]), [
+    [record.uuid, { kind: 'peer' }],
+    ['typed', undefined],
+    ['odd', undefined],
   ]);
 });
