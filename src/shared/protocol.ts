@@ -153,6 +153,9 @@ export type SessionSummary = {
   gitBranch?: string;
   live: boolean;
   status?: SessionStatus;
+  /** Helpers still working after the main turn ended (the chat is busy
+   *  though its status says idle: a restart would cut them off). */
+  background?: number;
   /** The app project this conversation was started on, if any. */
   project?: string;
   /** Started from Element Studio: about the account's element library, no project. */

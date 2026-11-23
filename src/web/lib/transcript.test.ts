@@ -152,6 +152,22 @@ test('live: a skill’s text and other injected context are not the engineer spe
   assert.equal((t.turns[1] as Extract<Turn, { kind: 'note' }>).text, 'Request interrupted by user');
 });
 
+test('a helper\u2019s hand-back is not the engineer speaking', () => {
+  let t = addLocalUserTurn(emptyTranscript(), 'local', 'reinforce the four elements');
+  t = applyMessage(
+    t,
+    live({
+      type: 'user',
+      uuid: 'handback',
+      message: {
+        role: 'user',
+        content: 'Another Claude session sent a message:\n<agent-message from="ae0696d22de99ed64">\n[Subagent hand-back] ## F1 report\n</agent-message>\n\nThat "other Claude session" is an agent working inside this same session.',
+      },
+    }),
+  );
+  assert.deepEqual(t.turns.map((x) => x.kind), ['user']);
+});
+
 test('the current step is the open turn\'s newest unanswered visible call', () => {
   const tool = (id: string, name: string, result?: string) => ({
     type: 'tool_use' as const, id, name, input: {}, done: true, images: [], children: [],
