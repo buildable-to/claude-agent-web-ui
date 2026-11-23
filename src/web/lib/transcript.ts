@@ -617,7 +617,9 @@ function applyUser(
   if (/^\[Request interrupted/.test(text)) {
     return addNote(t, uuid, 'info', text.replace(/^\[|\]$/g, ''));
   }
-  if (isSynthetic || /^Base directory for this skill:/.test(text)) return { ...t, seen };
+  // A helper's hand-back as the newer engine sends it ("Another Claude session
+  // sent a message: <agent-message …>"): the helper's report, not the engineer.
+  if (isSynthetic || /^Base directory for this skill:/.test(text) || /^Another Claude session sent a message:|<agent-message[\s>]/.test(text)) return { ...t, seen };
   return addUserTurn({ ...t, seen }, uuid, text, images, at);
 }
 
