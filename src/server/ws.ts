@@ -4,11 +4,22 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { ClientMessage, PermissionMode, ServerMessage } from '../shared/protocol.js';
 import type { Account } from './accounts.js';
 import { checkAttachments } from './attachments.js';
-import type { CreditCheck } from './billing.js';
+import { refusalText, type CreditCheck, type Refusal } from './billing.js';
 import type { LiveSession } from './live-session.js';
 import type { Scope, SessionManager } from './session-manager.js';
 
 type Attachment = { unsubscribe: () => void };
+
+/** The app refused the message for lack of credits (billing.ts). `uuid` is
+ *  the refused message's, so the page can send that same message again. */
+class OutOfCredits extends Error {
+  constructor(
+    readonly refusal: Refusal,
+    readonly uuid?: string,
+  ) {
+    super(refusalText(refusal));
+  }
+}
 
 /** Turns a token (or a dev-mode account id, and scope) into the folder's session manager. */
 export type Resolver = (
@@ -111,7 +122,16 @@ export function attachWebSocket(
         await handle(msg);
       } catch (err) {
         const text = err instanceof Error ? err.message : String(err);
-        fail(text, 'sessionId' in msg ? (msg.sessionId ?? undefined) : undefined);
+        const sessionId = 'sessionId' in msg ? (msg.sessionId ?? undefined) : undefined;
+        if (err instanceof OutOfCredits) {
+          // not an error of ours or theirs: the page shows the way out
+          send({
+            type: 'error',
+            message: text,
+            ...(sessionId ? { sessionId } : {}),
+            credits: { ...err.refusal, ...(err.uuid ? { uuid: err.uuid } : {}) },
+          });
+        } else fail(text, sessionId);
       } finally {
         done?.();
       }
@@ -148,7 +168,7 @@ export function attachWebSocket(
           refuseUnlessAsking(msg.permissionMode);
           const files = checkAttachments(ctx.dir, msg.files);
           // opening a chat to read it is free; a message that starts a turn is not
-          if (msg.text.trim() || files.length) await refuseWithoutCredits();
+          if (msg.text.trim() || files.length) await refuseWithoutCredits(msg.uuid);
           // The token's project is signed; the page's is not. A token that names
           // a project pins it, otherwise the page may say which one. A library
           // token has no project at all: whatever the page says is ignored.
@@ -189,7 +209,7 @@ export function attachWebSocket(
           const files = checkAttachments(ctx.dir, msg.files);
           const text = msg.text.trim();
           if (!text && !files.length) return;
-          await refuseWithoutCredits();
+          await refuseWithoutCredits(msg.uuid);
           session.send(text, msg.uuid, files);
           return;
         }
@@ -245,10 +265,10 @@ export function attachWebSocket(
 
     /** Out of credits: the turn does not start, and the page says why and
      *  where to get more. The app answers; when it cannot, the turn runs. */
-    async function refuseWithoutCredits() {
+    async function refuseWithoutCredits(uuid?: string) {
       if (!ctx.account || !state.credits) return;
       const refused = await state.credits(ctx.account.id);
-      if (refused) throw new Error(refused);
+      if (refused) throw new OutOfCredits(refused, uuid);
     }
 
     function requireLive(sessionId: string) {

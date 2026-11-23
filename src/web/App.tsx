@@ -397,6 +397,7 @@ export default function App() {
           status={state.status}
           loading={state.loadingHistory}
           projectName={projectName}
+          onRetry={session.retry}
           onSuggest={(text) => {
             setDraft(text);
             setFocusKey((k) => k + 1);

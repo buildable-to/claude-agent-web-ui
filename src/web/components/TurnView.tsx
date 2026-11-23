@@ -67,6 +67,8 @@ function SentPictures({ images, below }: { images: ToolImage[]; below: boolean }
 
 type TurnProps = {
   turn: Turn;
+  /** Send a refused message again as it was (the out of credits note). */
+  onRetry?: (uuid: string) => void;
 };
 
 function SaidAt({ at, className = '' }: { at: number; className?: string }) {
@@ -77,7 +79,7 @@ function SaidAt({ at, className = '' }: { at: number; className?: string }) {
   );
 }
 
-export const TurnView = memo(function TurnView({ turn }: TurnProps) {
+export const TurnView = memo(function TurnView({ turn, onRetry }: TurnProps) {
   const mentions = useMentions();
   const marks = mentions.marks.map((m) => m.mark);
   const viewing = useViewing();
@@ -125,6 +127,35 @@ export const TurnView = memo(function TurnView({ turn }: TurnProps) {
           )}
         </div>
         {turn.at && <SaidAt at={turn.at} className="mt-1" />}
+      </div>
+    );
+  }
+
+  // Out of credits: not an error. What happened, the way out as a real
+  // button, and the refused message one press from going again.
+  if (turn.kind === 'note' && turn.credits) {
+    const { url, action, retry } = turn.credits;
+    const btn = 'inline-flex h-8 items-center rounded-md px-3 text-[12.5px] font-medium transition-colors duration-150';
+    return (
+      <div className="rise rounded-lg border border-line bg-panel-2 px-3.5 py-3 text-[12.5px] text-ink-2" role="status">
+        <p className="whitespace-pre-wrap break-words text-ink">{turn.text}</p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {url && (
+            <a href={url} target="_blank" rel="noreferrer" className={`${btn} bg-ink text-paper hover:opacity-90`}>
+              {action ?? 'See plans'}
+            </a>
+          )}
+          {retry && onRetry && (
+            <button
+              type="button"
+              onClick={() => onRetry(retry)}
+              className={`${btn} border border-line-2 text-ink hover:bg-panel-3`}
+              title="Send your last message again, once you have credits"
+            >
+              Send again
+            </button>
+          )}
+        </div>
       </div>
     );
   }

@@ -13,18 +13,29 @@ import { signToken } from './accounts.js';
 export const BILLING_AUDIENCE = 'buildable-billing';
 
 /** Why this account may not start a turn now, or null when it may. */
-export type CreditCheck = (accountId: string) => Promise<string | null>;
+export type CreditCheck = (accountId: string) => Promise<Refusal | null>;
 
-type Answer = { allowed?: unknown; message?: unknown; billing_url?: unknown };
+/** The app's no: its words, its billing page, and what the button there says. */
+export type Refusal = { message: string; url?: string; action?: string };
 
-/** The words the page shows: the app's own message and where to buy more. */
-export function refusalText(answer: Answer): string {
-  const message =
-    typeof answer.message === 'string' && answer.message.trim()
-      ? answer.message.trim()
-      : 'You have no agent credits left.';
-  const url = typeof answer.billing_url === 'string' ? answer.billing_url : '';
-  return url ? `${message} ${url}` : message;
+type Answer = { allowed?: unknown; message?: unknown; billing_url?: unknown; action?: unknown };
+
+/** What the page shows: the app's own message, where to get more, and the
+ *  button's words when the app names them. */
+export function refusal(answer: Answer): Refusal {
+  const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+  const url = text(answer.billing_url);
+  const action = text(answer.action);
+  return {
+    message: text(answer.message) ?? 'You have no agent credits left.',
+    ...(url ? { url } : {}),
+    ...(action ? { action } : {}),
+  };
+}
+
+/** The refusal in one line, for a page that only shows text and for the log. */
+export function refusalText(r: Refusal): string {
+  return r.url ? `${r.message} ${r.url}` : r.message;
 }
 
 /** A check against the app at `appUrl`, signed with the secret it shares
@@ -60,7 +71,7 @@ export function creditCheck(opts: {
         return null;
       }
       const answer = (await res.json()) as Answer;
-      return answer.allowed === false ? refusalText(answer) : null;
+      return answer.allowed === false ? refusal(answer) : null;
     } catch (err) {
       console.error(`[billing] check for ${accountId} failed: ${String(err)}; the turn runs`);
       return null;

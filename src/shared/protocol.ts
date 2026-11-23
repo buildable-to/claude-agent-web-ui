@@ -141,7 +141,27 @@ export type ServerMessage =
   | { type: 'project_changed'; sessionId: string; project?: string }
   /** The agent read (or saved) an element or a draft: Project Studio's Element tab can follow it. */
   | { type: 'element_focus'; sessionId: string; id: string; kind?: 'element' | 'draft' }
-  | { type: 'error'; sessionId?: string; message: string };
+  | {
+      type: 'error';
+      sessionId?: string;
+      message: string;
+      /** The message was not run because the account is out of credits: the
+       *  page shows the way out, not an error. `message` above still says it
+       *  all in one line, for a page loaded before this field existed. */
+      credits?: OutOfCredits;
+    };
+
+/** What the app said when it refused a message for lack of credits. */
+export type OutOfCredits = {
+  /** What happened and when credits come back, in the app's words. */
+  message: string;
+  /** The app's billing page. */
+  url?: string;
+  /** What the button to that page says, e.g. "Upgrade to Pro". */
+  action?: string;
+  /** The refused message, so the page can send it again as it was. */
+  uuid?: string;
+};
 
 /** One row in the session list. */
 export type SessionSummary = {

@@ -9,6 +9,8 @@ type Props = {
   loading: boolean;
   projectName: string;
   onSuggest: (text: string) => void;
+  /** Send a refused message again (the out of credits note's button). */
+  onRetry?: (uuid: string) => void;
   /** Empty-state copy; the defaults suit a code project, Buildable passes its own. */
   kicker?: string;
   title?: string;
@@ -40,6 +42,7 @@ export function MessageList({
   loading,
   projectName,
   onSuggest,
+  onRetry,
   kicker,
   title = 'What are we building?',
   blurb,
@@ -121,7 +124,7 @@ export function MessageList({
         )}
 
         {turns.map((turn) => (
-          <TurnView key={turn.id} turn={turn} />
+          <TurnView key={turn.id} turn={turn} onRetry={onRetry} />
         ))}
 
       </div>

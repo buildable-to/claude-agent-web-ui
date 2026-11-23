@@ -25,6 +25,8 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
   const activeId = useRef<string | null>(requested);
   const attached = useRef(false);
   const awaitingNew = useRef(false);
+  /** The last message sent, kept so a refused one can go again as it was. */
+  const lastSent = useRef<{ uuid: string; text: string; files: Attachment[] } | null>(null);
   /** The newest main-conversation uuids this page holds, sent with every
    *  attach so the server replays only what is newer. */
   const known = useRef<string[]>([]);
@@ -94,10 +96,9 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requested, nonce]);
 
-  /** `pictures`: what the attached pictures look like, for the bubble at once. */
-  const send = useCallback((text: string, files: Attachment[] = [], pictures: ToolImage[] = []) => {
-    const uuid = crypto.randomUUID();
-    dispatch({ type: 'local_user', id: uuid, text, images: pictures });
+  /** The message on its way to the engine: its bubble is already up. */
+  const post = useCallback((uuid: string, text: string, files: Attachment[]) => {
+    lastSent.current = { uuid, text, files };
     const withFiles = files.length ? { files } : {};
     if (attached.current && activeId.current) {
       ws.send({ type: 'send', sessionId: activeId.current, text, uuid, ...withFiles });
@@ -115,6 +116,26 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
       ...(page.project ? { project: page.project } : {}),
     });
   }, []);
+
+  /** `pictures`: what the attached pictures look like, for the bubble at once. */
+  const send = useCallback(
+    (text: string, files: Attachment[] = [], pictures: ToolImage[] = []) => {
+      const uuid = crypto.randomUUID();
+      dispatch({ type: 'local_user', id: uuid, text, images: pictures });
+      post(uuid, text, files);
+    },
+    [post],
+  );
+
+  /** Send a refused message again as it was (out of credits, then topped
+   *  up): the same words and files under the same id, so no second bubble. */
+  const retry = useCallback(
+    (uuid: string) => {
+      const last = lastSent.current;
+      if (last && last.uuid === uuid) post(last.uuid, last.text, last.files);
+    },
+    [post],
+  );
 
   const answerPermission = useCallback(
     (requestId: string, behavior: 'allow' | 'deny', always = false, answers?: Record<string, string>) => {
@@ -153,5 +174,5 @@ export function useSession(requested: string | null, nonce: number, onTurnEnd?: 
     dispatch({ type: 'choose', model });
   }, []);
 
-  return { state, send, answerPermission, interrupt, setPermissionMode, setModel };
+  return { state, send, retry, answerPermission, interrupt, setPermissionMode, setModel };
 }
