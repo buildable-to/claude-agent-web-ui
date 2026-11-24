@@ -28,31 +28,31 @@ test('a conversation comes back on the model picked for it, not on the default',
   const deps = { queryFactory: e.factory, getSessionInfo: (async () => ({ summary: 'x' })) as never };
   const manager = new SessionManager(dir, undefined, undefined, deps);
 
-  // nothing picked: the engine's default
+  // nothing picked: the newest Opus, not the engine's default
   const chat = await manager.open(null);
-  assert.equal(e.models[0], undefined);
-  await chat.setModel('opus');
+  assert.equal(e.models[0], 'opus');
+  await chat.setModel('sonnet');
   chat.close();
 
   // the engine stopped; the same conversation resumes on what was picked
   const back = await manager.open(chat.sessionId);
-  assert.equal(e.models[1], 'opus');
+  assert.equal(e.models[1], 'sonnet');
   back.close();
 
   // also after the service itself restarted
   const later = new SessionManager(dir, undefined, undefined, deps);
   const again = await later.open(chat.sessionId);
-  assert.equal(e.models[2], 'opus');
+  assert.equal(e.models[2], 'sonnet');
 
   // back to the default: nothing is pinned any more
   await again.setModel(null);
   again.close();
   (await later.open(chat.sessionId)).close();
-  assert.equal(e.models[3], undefined);
+  assert.equal(e.models[3], 'opus');
 
   // a model picked before the first message is kept too
-  const picked = await manager.open(null, { model: 'sonnet' });
+  const picked = await manager.open(null, { model: 'haiku' });
   picked.close();
   (await manager.open(picked.sessionId)).close();
-  assert.equal(e.models[5], 'sonnet');
+  assert.equal(e.models[5], 'haiku');
 });

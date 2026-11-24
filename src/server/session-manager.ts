@@ -9,7 +9,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { EngineInfo, HistoryMessage, SessionSummary } from '../shared/protocol.js';
+import { DEFAULT_MODEL, type EngineInfo, type HistoryMessage, type SessionSummary } from '../shared/protocol.js';
 import { redactHistory } from './redact.js';
 import { claudeConfigDir, installedSkills, probeEngine, skillCommands } from './commands.js';
 import { LiveSession, automatic, engineEnv, type LiveSessionOptions } from './live-session.js';
@@ -222,7 +222,7 @@ export class SessionManager {
     const project = library ? undefined : (opts.project ?? tag);
     const { project: _p, scope: _s, firstPrompt: _f, ...rest } = opts;
     // what the page picks now, else what was picked for this conversation before
-    const model = opts.model ?? (sessionId ? this.models[sessionId] : undefined);
+    const model = opts.model ?? (sessionId ? this.models[sessionId] : undefined) ?? DEFAULT_MODEL;
     const only = await this.offeredCommands();
     // On the server every engine runs on the Claude login the admin picked
     // (logins.ts); a laptop keeps its own.
@@ -240,7 +240,7 @@ export class SessionManager {
       // write still ask, the deny rules still deny.
       ...(this.accountId ? { permissionMode: 'auto' as const } : {}),
       ...rest,
-      ...(model ? { model } : {}),
+      model,
       onModel: (picked) => this.keepModel(session.sessionId, picked),
       ...(project ? { project } : {}),
       ...(library ? { scope: 'library' as const } : {}),

@@ -47,7 +47,7 @@ test('the composer offers only the installed skills when told so', () => {
   );
 });
 
-test('the model picker lists each current model once', () => {
+test('the model picker lists the current models, without the engine default', () => {
   const m = (value: string, resolvedModel: string, displayName: string) =>
     ({ value, resolvedModel, displayName, description: '' });
   const engine = [
@@ -61,6 +61,6 @@ test('the model picker lists each current model once', () => {
   ];
   assert.deepEqual(
     toModelOptions(engine).map((o) => o.value),
-    ['default', 'fable', 'sonnet', 'haiku'],
+    ['opus', 'fable', 'sonnet', 'haiku'],
   );
 });
