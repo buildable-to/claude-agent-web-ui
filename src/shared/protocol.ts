@@ -40,6 +40,11 @@ export type PermissionRequest = {
   createdAt: number;
 };
 
+/** The model a conversation runs on unless the engineer picks another: the
+ *  newest Opus. The engine's own default follows the Claude login's plan and
+ *  can be Sonnet. */
+export const DEFAULT_MODEL = 'opus';
+
 export type ModelOption = {
   value: string;
   label: string;

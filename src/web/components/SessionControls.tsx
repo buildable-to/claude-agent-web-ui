@@ -1,4 +1,4 @@
-import type { ModelOption, PermissionMode, SessionMeta } from '@shared/protocol';
+import { DEFAULT_MODEL, type ModelOption, type PermissionMode, type SessionMeta } from '@shared/protocol';
 import { Menu } from './Menu';
 
 export const MODES: Array<{ value: PermissionMode; label: string; hint: string }> = [
@@ -10,23 +10,12 @@ export const MODES: Array<{ value: PermissionMode; label: string; hint: string }
   // everyone who can reach the page. The terminal keeps it for throwaway work.
 ];
 
-/** "Default (recommended)" says nothing about which model runs; name it:
- *  "Default · Opus 5 with 1M context" (the engine's own description, first
- *  part). In the composer footer the word "Default" is dropped — the footer
- *  is narrow and the model's own name says enough. */
-export function modelLabel(m: ModelOption, short = false): string {
-  if (m.value !== 'default' || !m.description) return m.label;
-  const what = m.description.split(' · ')[0]?.trim();
-  if (!what) return m.label;
-  return short ? what : `Default · ${what}`;
-}
-
 /** The engine reports a resolved id; the menu lists aliases. Match either. */
 export function currentModel(meta: SessionMeta, models: ModelOption[]): ModelOption | undefined {
   const current = meta.model ?? '';
   return (
     models.find((m) => m.value === current || m.resolved === current) ??
-    (current ? undefined : (models.find((m) => m.value === 'default') ?? models[0]))
+    (current ? undefined : (models.find((m) => m.value === DEFAULT_MODEL) ?? models[0]))
   );
 }
 
@@ -55,7 +44,7 @@ export function SessionControls({ meta, models, locked, embedded = false, look, 
   const align = look === 'pill' ? 'right' : 'left';     // pills hug the bar's right edge
   const modelItems = [
     ...(!match ? [{ value: '', label: current || 'Default model' }] : []),
-    ...models.map((m) => ({ value: m.value, label: modelLabel(m, look === 'text'), hint: m.description })),
+    ...models.map((m) => ({ value: m.value, label: m.label, hint: m.description })),
   ];
   return (
     <>
@@ -71,7 +60,7 @@ export function SessionControls({ meta, models, locked, embedded = false, look, 
         disabled={locked}
         items={modelItems}
       >
-        {match ? modelLabel(match, look === 'text') : current || 'Default model'}
+        {match ? match.label : current || 'Default model'}
       </Menu>
       <Menu
         look={look}

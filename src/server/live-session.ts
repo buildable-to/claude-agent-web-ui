@@ -13,14 +13,15 @@ import {
   type SDKRateLimitInfo,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import type {
-  EngineInfo,
-  Attachment,
-  PermissionRequest,
-  ServerMessage,
-  SessionMeta,
-  SessionStatus,
-  StoppedWorkNotice,
+import {
+  DEFAULT_MODEL,
+  type EngineInfo,
+  type Attachment,
+  type PermissionRequest,
+  type ServerMessage,
+  type SessionMeta,
+  type SessionStatus,
+  type StoppedWorkNotice,
 } from '../shared/protocol.js';
 import { toCommandInfo, toModelOptions } from './commands.js';
 import { userContent } from './attachments.js';
@@ -434,8 +435,9 @@ export class LiveSession {
   }
 
   async setModel(model: string | null) {
-    await this.q.setModel(model ?? undefined);
-    this.meta = { ...this.meta, model: model ?? undefined };
+    const use = model ?? DEFAULT_MODEL;
+    await this.q.setModel(use);
+    this.meta = { ...this.meta, model: use };
     this.onModel?.(model);
     this.broadcast({ type: 'meta', sessionId: this.sessionId, meta: this.meta });
   }
