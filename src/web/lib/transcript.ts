@@ -234,6 +234,8 @@ export function applyMessage(t: Transcript, msg: SDKMessage): Transcript {
     case 'assistant':
       return applyAssistant(t, msg.uuid, msg.message as unknown, msg.parent_tool_use_id, saidAt(msg));
     case 'user':
+      // another session (a sub-agent's hand-back) speaks in the user's role
+      if (msg.origin?.kind === 'peer') return t;
       return applyUser(t, msg.uuid ?? cryptoId(), msg.message as unknown, msg.parent_tool_use_id, msg.isSynthetic, saidAt(msg));
     case 'result':
       return applyResult(t, msg);
@@ -256,7 +258,13 @@ export function applyHistory(t: Transcript, history: HistoryMessage[]): Transcri
   for (const h of history) {
     const at = saidAt(h);
     if (h.type === 'assistant') next = applyAssistant(next, h.uuid, h.message, h.parent_tool_use_id, at);
-    else if (h.type === 'user') next = applyUser(next, h.uuid, h.message, h.parent_tool_use_id, false, at);
+    else if (h.type === 'user') {
+      // another session (a sub-agent's hand-back) speaks in the user's role:
+      // not shown, but it ends the turn, as a task notification does
+      next = h.origin?.kind === 'peer'
+        ? closeOpenTurn(next)
+        : applyUser(next, h.uuid, h.message, h.parent_tool_use_id, false, at);
+    }
     else if (h.stoppedWork) {
       // Only a notice at its recorded position may stop preceding tasks.
       // An unanchored fallback could follow work from a later resumed engine.
@@ -583,6 +591,9 @@ function applyAssistant(t: Transcript, uuid: string, message: unknown, parentToo
   return next;
 }
 
+/** How the harness wraps a message from another session (a sub-agent). */
+const HANDBACK = /^(?:Another Claude session sent a message:\s*)?<agent-message /;
+
 function applyUser(
   t: Transcript,
   uuid: string,
@@ -641,14 +652,14 @@ function applyUser(
   if (!text && !images.length) return { ...t, seen };
 
   // An interruption is worth a note. Anything else the engine adds in the
-  // user's voice (a skill's text after "Launching skill", other context) is
-  // not the engineer speaking and is not shown; history never has it either.
+  // user's voice (a skill's text after "Launching skill", a sub-agent's
+  // hand-back, other context) is not the engineer speaking and is not shown.
+  // History has hand-backs too (SDK 0.3.293 on); applyHistory drops them by
+  // their peer origin, and the text, at its start only, where that is missing.
   if (/^\[Request interrupted/.test(text)) {
     return addNote(t, uuid, 'info', text.replace(/^\[|\]$/g, ''));
   }
-  // A helper's hand-back as the newer engine sends it ("Another Claude session
-  // sent a message: <agent-message …>"): the helper's report, not the engineer.
-  if (isSynthetic || /^Base directory for this skill:/.test(text) || /^Another Claude session sent a message:|<agent-message[\s>]/.test(text)) return { ...t, seen };
+  if (isSynthetic || /^Base directory for this skill:/.test(text) || HANDBACK.test(text)) return { ...t, seen };
   return addUserTurn({ ...t, seen }, uuid, text, images, at);
 }
 

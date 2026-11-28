@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import type { HistoryMessage, SDKMessage } from '@shared/protocol';
 import {
@@ -244,4 +245,91 @@ test('a reply carries the time it finished; the engineer’s words the time they
   ]);
   assert.equal((t.turns[0] as Extract<Turn, { kind: 'user' }>).at, Date.parse('2026-11-03T10:00:00Z'));
   assert.equal(assistantTurn(t, 1).at, Date.parse('2026-11-03T10:04:00Z'));
+});
+
+// A sub-agent's hand-back, as the engine saved it in a real chat (shape kept, contents anonymised;
+// #1501): the user record, and the queue entry the same report came in by.
+const saved = readFileSync(new URL('./fixtures/handback-sample.jsonl', import.meta.url), 'utf8')
+  .trim().split('\n').map((l) => JSON.parse(l) as Record<string, any>);
+const handback = saved.find((r) => r.type === 'user')!;
+const queued = saved.find((r) => r.type === 'queue-operation')!;
+/** The record as getSessionMessages (SDK 0.3.323) gives it back. */
+const asHistory = (r: Record<string, any>): HistoryMessage => ({
+  ...hist('user', r.uuid, r.message),
+  ...(r.origin ? { origin: r.origin } : {}),
+});
+/** The queued-command attachment form: the SDK turns it into a user message
+ *  whose content is the queued prompt, with the attachment's origin. */
+const queuedForm: HistoryMessage = {
+  ...hist('user', 'queued-1', { role: 'user', content: queued.content }),
+  origin: handback.origin,
+};
+const typed = (t: Transcript) => t.turns.filter((x) => x.kind === 'user').map((x) => (x as Extract<Turn, { kind: 'user' }>).text);
+
+test('reloaded: a sub-agent’s hand-back is not shown as the engineer’s message, in either saved form', () => {
+  assert.equal(handback.isMeta, true);
+  assert.equal(handback.origin.kind, 'peer');
+  assert.match(String(queued.content), /^<agent-message from=/);
+  const t = applyHistory(emptyTranscript(), [
+    hist('user', 'u1', { role: 'user', content: 'look at every piece' }),
+    asHistory(handback),
+    queuedForm,
+    hist('user', 'u2', { role: 'user', content: 'now the formwork' }),
+  ]);
+  assert.deepEqual(typed(t), ['look at every piece', 'now the formwork']);
+});
+
+test('reloaded: a hand-back without origin (older reads) is still not shown, by its text', () => {
+  const t = applyHistory(emptyTranscript(), [
+    hist('user', 'h1', handback.message),
+    hist('user', 'h2', { role: 'user', content: queued.content }),
+    hist('user', 'h3', { role: 'user', content: [{ type: 'text', text: handback.message.content }] }),
+  ]);
+  assert.deepEqual(t.turns, []);
+});
+
+test('reloaded: a hand-back between two replies ends the first, so there are two turns, as live', () => {
+  const said = (text: string) => ({ role: 'assistant', content: [{ type: 'text', text }] });
+  const t = applyHistory(emptyTranscript(), [
+    hist('user', 'u1', { role: 'user', content: 'look at every piece' }),
+    hist('assistant', 'a1', said('Asked a sub-agent.')),
+    asHistory(handback),
+    hist('assistant', 'a2', said('It reports every piece is fine.')),
+  ]);
+  let l = addLocalUserTurn(emptyTranscript(), 'u1', 'look at every piece');
+  l = applyMessage(l, live({ type: 'assistant', uuid: 'a1', message: said('Asked a sub-agent.') }));
+  l = applyMessage(l, live({ type: 'result', uuid: 'r1', subtype: 'success', is_error: false, result: 'Asked a sub-agent.' }));
+  l = applyMessage(l, live({ type: 'user', uuid: handback.uuid, message: handback.message, origin: handback.origin }));
+  l = applyMessage(l, live({ type: 'assistant', uuid: 'a2', message: said('It reports every piece is fine.') }));
+  l = applyMessage(l, live({ type: 'result', uuid: 'r2', subtype: 'success', is_error: false, result: 'It reports every piece is fine.' }));
+  for (const x of [t, l]) {
+    assert.deepEqual(x.turns.map((y) => y.kind), ['user', 'assistant', 'assistant']);
+    assert.deepEqual([1, 2].map((i) => assistantTurn(x, i).blocks.map((b) => (b as { text?: string }).text)),
+      [['Asked a sub-agent.'], ['It reports every piece is fine.']]);
+  }
+});
+
+test('live: a message another session sent (peer origin) is not the engineer speaking', () => {
+  let t = addLocalUserTurn(emptyTranscript(), 'local', 'look at every piece');
+  t = applyMessage(t, live({ type: 'user', uuid: handback.uuid, message: handback.message, origin: handback.origin }));
+  t = applyMessage(t, live({ type: 'user', uuid: 'q', message: { role: 'user', content: queued.content } }));
+  assert.deepEqual(typed(t), ['look at every piece']);
+});
+
+test('what the engineer typed is shown, even when it names the hand-back words', () => {
+  const words = [
+    'why did my chat show "Another Claude session sent a message:" as mine?',
+    'the agent-message from the sub-agent showed up as my message',
+    'I see <agent-message from="a1"> in the chat',
+  ];
+  const t = applyHistory(emptyTranscript(), [
+    hist('user', 'w1', { role: 'user', content: words[0] }),
+    { ...hist('user', 'w2', { role: 'user', content: words[1] }), origin: { kind: 'human' } },
+    // the wrapper quoted mid-text: only a message that starts with it is a hand-back
+    hist('user', 'w3', { role: 'user', content: words[2] }),
+  ]);
+  assert.deepEqual(typed(t), words);
+  let l = emptyTranscript();
+  words.forEach((w, i) => { l = applyMessage(l, live({ type: 'user', uuid: `l${i}`, message: { role: 'user', content: w }, origin: { kind: 'human' } })); });
+  assert.deepEqual(typed(l), words);
 });

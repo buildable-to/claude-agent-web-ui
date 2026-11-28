@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -81,4 +81,27 @@ test("each account is offered Buildable's skills and its own, never another acco
     if (was === undefined) delete process.env.CLAUDE_CONFIG_DIR;
     else process.env.CLAUDE_CONFIG_DIR = was;
   }
+});
+
+test('history passes on who said a user message: origin, as the SDK gives it (#1501)', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'agent-history-said-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  // a sub-agent's hand-back in the shape a real chat saved it (anonymised), as SDK 0.3.323 reads it back
+  const lines = (await readFile(new URL('../web/lib/fixtures/handback-sample.jsonl', import.meta.url), 'utf8')).trim().split('\n');
+  const record = lines.map((l) => JSON.parse(l)).find((r) => r.type === 'user');
+  const base = { type: 'user', session_id: record.sessionId, parent_tool_use_id: null, parent_agent_id: null };
+  const manager = new SessionManager(dir, undefined, undefined, {
+    getSessionMessages: async () => [
+      { ...base, uuid: record.uuid, message: record.message, origin: record.origin },
+      { ...base, uuid: 'typed', message: { role: 'user', content: 'look at every piece' } },
+      // not the shape the SDK sends: nothing is made up from it
+      { ...base, uuid: 'odd', message: { role: 'user', content: 'x' }, origin: 'peer' },
+    ] as never,
+  });
+  const history = await manager.history(record.sessionId);
+  assert.deepEqual(history.map((m) => [m.uuid, m.origin]), [
+    [record.uuid, { kind: 'peer' }],
+    ['typed', undefined],
+    ['odd', undefined],
+  ]);
 });

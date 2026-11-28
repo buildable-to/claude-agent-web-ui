@@ -202,6 +202,8 @@ export type HistoryMessage = {
   parent_tool_use_id: string | null;
   /** When it was said (ISO), read from the saved conversation. */
   timestamp?: string;
+  /** Who said a user message: `human`, or a `peer` session such as a sub-agent. */
+  origin?: { kind: string };
   stoppedWork?: StoppedWorkNotice;
 };
 
